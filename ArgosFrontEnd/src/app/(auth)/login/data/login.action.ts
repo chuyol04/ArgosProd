@@ -57,7 +57,7 @@ export async function loginAction(
     const cookieStore = await cookies();
     cookieStore.set("session", sessionCookie, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: process.env.COOKIE_SECURE !== "false",
       sameSite: "lax",
       path: "/",
       maxAge: Math.floor(SESSION_MAX_AGE_MS / 1000),
