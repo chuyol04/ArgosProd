@@ -1,0 +1,19 @@
+# Environment files — never commit real credentials
+**/.env
+**/.env.local
+**/.env.production
+
+# Dependencies
+**/node_modules/
+
+# Next.js build output
+**/.next/
+**/out/
+
+# Logs
+**/logs/
+**/*.log
+
+# OS
+.DS_Store
+Thumbs.db
