@@ -1,0 +1,44 @@
+Q: 1. Could you describe the main purpose of the "OzCab" application in a few sentences? What is the primary problem it solves?
+A: The system aims to be a scalable (feature wise) application. the First MVP aims to provide the digitalization of an otherwise manual process of inspecting, aproving and rejecting manufactured pieces. later on, other features relevant to other departments within the company may be added (HR, engineering, FInance,etc.) which is why roles, accesses and modularity are important. Ozcab is a company dedicated to auditing manufacturing processes and the piezes built by their clients.
+
+Q: 2. Who are the main users of this application? (e.g., inspectors, managers, administrators, clients)
+A: In the first MVP, inspectors, managers and admins. later on, clients and others may be included.
+
+Q: 3. Could you walk me through a typical "inspection" process from start to finish?
+A: Before an inspection, we must first start with a client. a client requests the service of auditing their manufactured pieces to certify the quality of produced batches. A service is then generated. a service may then generate one or more "Instrucciones de trabajo" (TI) Which is associated to one specific part (model) manufactured. The TI specifies how an inspection should be done for that specific part (what steps to follow, success or failure criteria, common defects, etc. it includes pictures of such steps, and a rate_it (how many pieces can be inspected per hour by one inspector). After an IT is generated, the inspections are to be started. when done manually, the information of a inspection to a batch is filled in a "reporte de inspecciones" (RI) an RI holds the info and results of several inspections to a batch of the piece instructed by the TI. a TI generates an RI. and an RI has several detalles de inspección.
+
+Q: 4. What is a "servicio" (service)? Is it a contract or a project for a cliente (client)?
+A:  A service is a contract, which defines the scope of the work to be done, this may include one or many TI's, Pieces to be inspected, etc.
+
+Q: 5. What is an "instruccion de trabajo" (IT) or "work instruction"? How does it relate to a "servicio"?
+A: I think this has been answered on a previous question.
+
+Q: 6. What is the difference between a reporte_inspeccion and a detalle_inspeccion? It seems like a reporte_inspeccion is a summary and a detalle_inspeccion contains the specific details, is that correct?
+A: Answered aswell in previous questions.
+
+Q: 7. What are "incidencias" (incidents) and "defectos" (defects)? How are they related to an inspection?
+A: The table "defectos" holds a catalog of defects (categories). when inspecting a piece, and a defect is fount, it must be documented as one of the known defect, one found defect is an incidencia.
+
+Q: 8. What does a pieza (part) represent in your business? Are these the items being inspected?
+A: a pieze, part is a manufactured piece, these may be screws, auto parts, etc. but these are the ones to be inspected.
+
+Q: 9. The schema has usuarios, roles, privilegios, and roles_usuarios. It seems like a user can have multiple roles. What are the typical roles you have in the system (e.g., "Inspector", "Supervisor", "Administrator")?
+A: users can be inspectors, managers and admins for the meantime.
+
+Q: 10. The privilegios table links roles to rutas (routes/paths). Does this mean that a user's role defines which pages or sections of the application they can access?
+A: yes, the privileges link roles to what paths and categories the user can access.
+
+Q: 11. The rutas table has a path column. Does this correspond to a URL in the frontend application (e.g., /home/inspections)?
+A: the pathh corresponds to a frontend path, the next.js route to be precise.
+
+Q: 12. The rutas table is linked to categoria. What is the purpose of grouping routes into categories? Is it for organizing the navigation menu in the UI?
+A: a categorya is a section, for example "clientes", the category clientes may have several views for different purposes. it is mostly to organize and grant access to all paths within a category depending on the role.
+
+Q: 13. You mentioned that the logic for categories and paths is too complex. Could you give an example of what makes it complex? Are there too many categories, or is the relationship between them not straightforward?
+A: I meant that the process for granting access, revoking, or updating becomes too complex. If a change is done within the frontend routing, the change must be also applied to the backend, I believe it is way too coupled. but I do not know if this is good or bad.
+
+Q: 14. What is the purpose of rutas_favoritas? Is it just a "bookmarks" feature for users?
+A: rutas favoritas allows users to have a bookmars or favourites for quick access in the ui. The favourites are to be displayed, added or removed by the user.
+
+Q: 15. I noticed some inconsistencies in naming conventions (e.g., roles vs. usuarios, id_instruccion_trabajo vs rate_id). Are you open to standardizing these names, for example, using English names for all tables and columns, and using a consistent naming convention like snake_case? (e.g., inspection_reports, work_instructions). This would greatly improve readability and maintainability.
+A: I wish to standarize all names, translate them to english for both frontend and backend, any naming convention works as long as there is a defined standar.

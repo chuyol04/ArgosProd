@@ -1,0 +1,10 @@
+@import "tailwindcss";
+@layer components{
+
+    .headerColumn{
+        @apply flex flex-row p-2.5 self-center;
+    }
+    .headerBtnText{
+        @apply font-semibold text-base text-white;
+    }
+}

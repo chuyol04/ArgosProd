@@ -1,0 +1,897 @@
+================================================================================
+CODE TEMPLATES FOR OZCAB
+================================================================================
+Copy-paste ready templates for common patterns. Replace <feature> with actual name.
+
+================================================================================
+1. TYPES FILE: front/src/app/(protected)/<feature>/types/<feature>.types.ts
+================================================================================
+
+export interface I<Feature> {
+    id: number;
+    name: string;
+    // ... other fields
+}
+
+export interface I<Feature>sResponse {
+    <feature>s: I<Feature>[];
+    total?: number;
+}
+
+export interface Create<Feature>Data {
+    name: string;
+    // required fields
+}
+
+export interface Update<Feature>Data {
+    name?: string;
+    // optional fields for partial update
+}
+
+================================================================================
+2. SERVER ACTIONS: front/src/app/(protected)/<feature>/actions/<feature>.actions.ts
+================================================================================
+
+"use server";
+
+import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
+import {
+    I<Feature>,
+    Create<Feature>Data,
+    Update<Feature>Data
+} from "@/app/(protected)/<feature>/types/<feature>.types";
+
+const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
+
+export async function create<Feature>(
+    data: Create<Feature>Data
+): Promise<{ success: boolean; id?: number; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/<endpoint>`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': `session=${session}`,
+            },
+            body: JSON.stringify(data),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to create");
+        }
+
+        revalidatePath('/<feature>');
+        return { success: true, id: json.id };
+    } catch (err) {
+        console.error("Create error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function update<Feature>(
+    id: number,
+    data: Update<Feature>Data
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/<endpoint>/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': `session=${session}`,
+            },
+            body: JSON.stringify(data),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to update");
+        }
+
+        revalidatePath('/<feature>');
+        return { success: true };
+    } catch (err) {
+        console.error("Update error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function get<Feature>ById(
+    id: number
+): Promise<{ success: boolean; data?: I<Feature>; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/<endpoint>/${id}`, {
+            method: 'GET',
+            headers: {
+                'Cookie': `session=${session}`,
+            },
+            cache: 'no-store',
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to fetch");
+        }
+
+        return { success: true, data: json.data };
+    } catch (err) {
+        console.error("Get error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function delete<Feature>(
+    id: number
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/<endpoint>/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Cookie': `session=${session}`,
+            },
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to delete");
+        }
+
+        revalidatePath('/<feature>');
+        return { success: true };
+    } catch (err) {
+        console.error("Delete error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+================================================================================
+3. DATA FETCHING: front/src/app/(protected)/<feature>/data/<feature>.data.ts
+================================================================================
+
+import { cookies } from "next/headers";
+import { I<Feature> } from "@/app/(protected)/<feature>/types/<feature>.types";
+
+const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
+
+export async function get<Feature>s(): Promise<I<Feature>[]> {
+    if (!EXPRESS_BASE_URL) {
+        console.error("EXPRESS_BASE_URL is not defined");
+        return [];
+    }
+
+    try {
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            console.error("No session cookie");
+            return [];
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/<endpoint>`, {
+            method: 'GET',
+            headers: {
+                'Cookie': `session=${session}`,
+            },
+            cache: 'no-store',
+        });
+
+        if (!res.ok) {
+            console.error("Failed to fetch:", res.status);
+            return [];
+        }
+
+        const json = await res.json();
+        return json.data || [];
+    } catch (err) {
+        console.error("Error fetching:", err);
+        return [];
+    }
+}
+
+================================================================================
+4. CREATE MODAL: front/src/app/(protected)/<feature>/_components/Create<Feature>Modal.tsx
+================================================================================
+
+"use client";
+
+import { useState, useEffect, useTransition } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { create<Feature> } from "@/app/(protected)/<feature>/actions/<feature>.actions";
+
+interface Create<Feature>ModalProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export default function Create<Feature>Modal({
+  open,
+  onOpenChange,
+}: Create<Feature>ModalProps) {
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    name: "",
+    // ... other fields
+  });
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setError(null);
+      setFormData({
+        name: "",
+      });
+    }
+  }, [open]);
+
+  const handleChange = (field: keyof typeof formData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    setError(null);
+    startTransition(async () => {
+      const result = await create<Feature>({
+        name: formData.name,
+      });
+      if (result.success) {
+        onOpenChange(false);
+      } else {
+        setError(result.error || "Error al crear");
+      }
+    });
+  };
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && isPending) return;
+    onOpenChange(newOpen);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Crear <Feature></DialogTitle>
+          <DialogDescription>
+            Ingresa los datos.
+          </DialogDescription>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit}>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="create-name">Nombre *</Label>
+              <Input
+                id="create-name"
+                value={formData.name}
+                onChange={(e) => handleChange("name", e.target.value)}
+                disabled={isPending}
+                required
+              />
+            </div>
+
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isPending}
+            >
+              Cancelar
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Creando..." : "Crear"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+================================================================================
+5. UPDATE MODAL: front/src/app/(protected)/<feature>/_components/Update<Feature>Modal.tsx
+================================================================================
+
+"use client";
+
+import { useState, useEffect, useTransition } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { update<Feature>, get<Feature>ById } from "@/app/(protected)/<feature>/actions/<feature>.actions";
+
+interface Update<Feature>ModalProps {
+  <feature>Id: number | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export default function Update<Feature>Modal({
+  <feature>Id,
+  open,
+  onOpenChange,
+}: Update<Feature>ModalProps) {
+  const [isPending, startTransition] = useTransition();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    name: "",
+  });
+
+  // Reset state when modal closes
+  useEffect(() => {
+    if (!open) {
+      setError(null);
+      setFormData({
+        name: "",
+      });
+    }
+  }, [open]);
+
+  // Fetch data when modal opens
+  useEffect(() => {
+    if (open && <feature>Id) {
+      setIsLoading(true);
+      setError(null);
+      get<Feature>ById(<feature>Id)
+        .then((result) => {
+          if (result.success && result.data) {
+            setFormData({
+              name: result.data.name || "",
+            });
+          } else {
+            setError(result.error || "Error al cargar");
+          }
+        })
+        .catch(() => {
+          setError("Error al cargar");
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+  }, [open, <feature>Id]);
+
+  const handleChange = (field: keyof typeof formData, value: string) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!<feature>Id) return;
+
+    setError(null);
+    startTransition(async () => {
+      const result = await update<Feature>(<feature>Id, formData);
+      if (result.success) {
+        onOpenChange(false);
+      } else {
+        setError(result.error || "Error al actualizar");
+      }
+    });
+  };
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && isPending) return;
+    onOpenChange(newOpen);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>Actualizar</DialogTitle>
+          <DialogDescription>
+            Modifica los datos y guarda los cambios.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="update-name">Nombre</Label>
+                <Input
+                  id="update-name"
+                  value={formData.name}
+                  onChange={(e) => handleChange("name", e.target.value)}
+                  disabled={isPending}
+                  required
+                />
+              </div>
+
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isPending}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {isPending ? "Guardando..." : "Guardar Cambios"}
+              </Button>
+            </DialogFooter>
+          </form>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+================================================================================
+6. TABLE COMPONENT: front/src/app/(protected)/<feature>/_components/<Feature>sTable.tsx
+================================================================================
+
+"use client";
+
+import { I<Feature> } from "@/app/(protected)/<feature>/types/<feature>.types";
+import { useMemo, useState, useTransition } from "react";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Eye,
+  Plus,
+} from "lucide-react";
+import Create<Feature>Modal from "./Create<Feature>Modal";
+import Update<Feature>Modal from "./Update<Feature>Modal";
+import { delete<Feature> } from "@/app/(protected)/<feature>/actions/<feature>.actions";
+
+type Props = {
+  <feature>s: I<Feature>[];
+};
+
+export default function <Feature>sTable({ <feature>s }: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  // Modal state
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  const tableRows = useMemo(
+    () =>
+      <feature>s.map((item) => ({
+        id: item.id,
+        name: item.name,
+      })),
+    [<feature>s]
+  );
+
+  const handleUpdate = (id: number) => {
+    setSelectedId(id);
+    setUpdateModalOpen(true);
+  };
+
+  const handleDelete = (id: number) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar?")) return;
+    startTransition(async () => {
+      const result = await delete<Feature>(id);
+      if (!result.success) {
+        alert(result.error || "Error al eliminar");
+      }
+    });
+  };
+
+  const handleViewDetails = (id: number) => {
+    router.push(`/<feature>/${id}`);
+  };
+
+  return (
+    <div className="mt-4 flex w-full flex-col gap-4 px-4 lg:gap-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
+          <Feature>s
+        </h1>
+        <Button onClick={() => setCreateModalOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Crear
+        </Button>
+      </div>
+
+      {/* Table - Desktop */}
+      <div className="border-border hidden overflow-hidden rounded-lg border md:block">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-muted">
+              <tr>
+                <th className="text-muted-foreground p-3 text-left text-xs font-medium lg:p-4 lg:text-sm">
+                  ID
+                </th>
+                <th className="text-muted-foreground p-3 text-left text-xs font-medium lg:p-4 lg:text-sm">
+                  Nombre
+                </th>
+                <th className="text-muted-foreground p-3 text-center text-xs font-medium lg:p-4 lg:text-sm">
+                  Acciones
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-card">
+              {tableRows.map((record, index) => (
+                <tr
+                  key={record.id}
+                  className={index !== tableRows.length - 1 ? "border-border border-b" : ""}
+                >
+                  <td className="text-card-foreground p-3 text-xs lg:p-4 lg:text-sm">
+                    {record.id}
+                  </td>
+                  <td className="text-card-foreground p-3 text-xs lg:p-4 lg:text-sm">
+                    {record.name}
+                  </td>
+                  <td className="p-3 text-center lg:p-4">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleViewDetails(record.id)}>
+                          <Eye className="mr-2 h-4 w-4" />
+                          Ver Detalles
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Actualizar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => handleDelete(record.id)}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Borrar
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </td>
+                </tr>
+              ))}
+              {tableRows.length === 0 && (
+                <tr>
+                  <td className="text-muted-foreground p-4 text-sm" colSpan={3}>
+                    No hay registros.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Mobile Cards */}
+      <div className="space-y-3 md:hidden">
+        {tableRows.map((record) => (
+          <div
+            key={record.id}
+            className="border-border bg-card space-y-3 rounded-lg border p-4"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-card-foreground text-sm font-medium">
+                  #{record.id} - {record.name}
+                </p>
+              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handleViewDetails(record.id)}>
+                    <Eye className="mr-2 h-4 w-4" />
+                    Ver Detalles
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Actualizar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleDelete(record.id)}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Borrar
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        ))}
+        {tableRows.length === 0 && (
+          <div className="text-muted-foreground text-sm">No hay registros.</div>
+        )}
+      </div>
+
+      {/* Modals */}
+      <Create<Feature>Modal
+        open={createModalOpen}
+        onOpenChange={setCreateModalOpen}
+      />
+
+      <Update<Feature>Modal
+        <feature>Id={selectedId}
+        open={updateModalOpen}
+        onOpenChange={setUpdateModalOpen}
+      />
+    </div>
+  );
+}
+
+================================================================================
+7. PAGE: front/src/app/(protected)/<feature>/page.tsx
+================================================================================
+
+import { get<Feature>s } from "@/app/(protected)/<feature>/data/<feature>.data";
+import <Feature>sTable from "@/app/(protected)/<feature>/_components/<Feature>sTable";
+
+export default async function <Feature>sPage() {
+  const <feature>s = await get<Feature>s();
+
+  return <<Feature>sTable <feature>s={<feature>s} />;
+}
+
+================================================================================
+8. BACKEND HANDLER TEMPLATE: back/handlers/<feature>Handler.js
+================================================================================
+
+import MysqlClient from '../connections/mysqldb.js';
+
+// CREATE
+export async function create<Feature>(req, res) {
+  try {
+    const { name } = req.body || {};
+
+    if (!name) {
+      return res.status(400).json({ success: false, motive: 'name is required' });
+    }
+
+    const [result] = await MysqlClient.execute(
+      'INSERT INTO <table> (name) VALUES (?)',
+      [name]
+    );
+
+    return res.status(201).json({
+      success: true,
+      id: result.insertId,
+      motive: 'Created successfully'
+    });
+  } catch (error) {
+    console.error('Error creating:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// READ - all
+export async function get<Feature>s(req, res) {
+  try {
+    const [rows] = await MysqlClient.execute('SELECT * FROM <table> ORDER BY id DESC');
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) {
+    console.error('Error getting:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// READ - by ID
+export async function get<Feature>ById(req, res) {
+  try {
+    const { id } = req.params;
+    const [rows] = await MysqlClient.execute(
+      'SELECT * FROM <table> WHERE id = ? LIMIT 1',
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Not found' });
+    }
+
+    return res.status(200).json({ success: true, data: rows[0] });
+  } catch (error) {
+    console.error('Error getting by ID:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// UPDATE
+export async function update<Feature>(req, res) {
+  try {
+    const { id } = req.params;
+    const { name } = req.body || {};
+
+    const [exists] = await MysqlClient.execute(
+      'SELECT id FROM <table> WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Not found' });
+    }
+
+    const fields = [];
+    const params = [];
+
+    if (name !== undefined) {
+      fields.push('name = ?');
+      params.push(name);
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ success: false, motive: 'No fields to update' });
+    }
+
+    params.push(id);
+
+    const [result] = await MysqlClient.execute(
+      `UPDATE <table> SET ${fields.join(', ')} WHERE id = ?`,
+      params
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({ success: false, motive: 'No record was updated' });
+    }
+
+    return res.status(200).json({ success: true, motive: 'Updated successfully' });
+  } catch (error) {
+    console.error('Error updating:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// DELETE
+export async function delete<Feature>(req, res) {
+  try {
+    const { id } = req.params;
+
+    const [exists] = await MysqlClient.execute(
+      'SELECT id FROM <table> WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Not found' });
+    }
+
+    const [result] = await MysqlClient.execute('DELETE FROM <table> WHERE id = ?', [id]);
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({ success: false, motive: 'No record was deleted' });
+    }
+
+    return res.status(200).json({ success: true, motive: 'Deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+================================================================================
+9. BACKEND ROUTES TEMPLATE: back/routes/<feature>Routes.js
+================================================================================
+
+import express from 'express';
+import * as handlers from '../handlers/<feature>Handler.js';
+
+const router = express.Router();
+
+router.post('/create', handlers.create<Feature>);
+router.get('/', handlers.get<Feature>s);
+router.get('/:id', handlers.get<Feature>ById);
+router.put('/:id', handlers.update<Feature>);
+router.delete('/:id', handlers.delete<Feature>);
+
+export default router;
+
+================================================================================
+10. FOLDER CREATION COMMAND
+================================================================================
+
+mkdir -p front/src/app/\(protected\)/<feature>/{_components,types,actions,data,utils}
+
+================================================================================

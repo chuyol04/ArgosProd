@@ -1,0 +1,65 @@
+{
+  "categories": [
+    {
+      "name": "Clientes",
+      "routes": [
+        {
+          "name": "Ver Clientes",
+          "path": "/clients"
+        }
+      ]
+    },
+    {
+      "name": "Servicios",
+      "routes": [
+        {
+          "name": "Ver Servicios",
+          "path": "/services"
+        }
+      ]
+    },
+    {
+      "name": "Inspecciones",
+      "routes": [
+        {
+          "name": "Instrucciones de Trabajo",
+          "path": "/instrucciones-trabajo"
+        },
+        {
+          "name": "Reportes de Inspección",
+          "path": "/reportes-inspeccion"
+        },
+        {
+          "name": "Crear Detalle de Inspección",
+          "path": "/detalles-inspeccion/crear"
+        }
+      ]
+    },
+    {
+      "name": "Catálogos",
+      "routes": [
+        {
+          "name": "Piezas",
+          "path": "/parts"
+        },
+        {
+          "name": "Defectos",
+          "path": "/defects"
+        }
+      ]
+    },
+    {
+      "name": "Administración",
+      "routes": [
+        {
+          "name": "Usuarios",
+          "path": "/users"
+        },
+        {
+          "name": "Roles",
+          "path": "/roles"
+        }
+      ]
+    }
+  ]
+}

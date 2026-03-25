@@ -1,0 +1,355 @@
+[PROJECT: OzCab]
+[GOAL: Digitize manufacturing audit process]
+* MVP: Inspect, approve, reject manufactured parts.
+* Future: HR, Finance modules. !Modularity critical.
+
+[BIZ_LOGIC]
+* [WORKFLOW: Main]
+    * Client -> Service (Contract with start_date, end_date)
+    * Service -> 1+ WorkInstruction (IT)
+    * WorkInstruction -> 1 Part (model)
+        * Defines inspection steps, criteria, defects.
+        * inspection_rate_per_hour: Pieces/hour/inspector.
+    * WorkInstruction -> 1+ InspectionReport (RI)
+    * InspectionReport -> n InspectionDetail
+    * InspectionDetail -> n Incident (if defect found)
+    * Incident -> 1 Defect (from catalog)
+* [USERS]
+    * MVP Roles: Inspector, Manager, Admin.
+    * Future: Client.
+
+================================================================================
+[TECH_STACK]
+================================================================================
+
+[BACKEND: /back]
+* Framework: Express 5, ESM JavaScript
+* DB: MySQL (ozcab_db) via mysql2 promise pool
+* Auth: Firebase Admin SDK (session cookie verification)
+* Pattern: Routes -> Handlers -> MySQL queries
+* Response format: { success: true/false, data?: any, motive?: string }
+
+[FRONTEND: /front]
+* Framework: Next.js 15, App Router, TypeScript
+* UI: shadcn-ui components, Tailwind CSS v4
+* Auth: Firebase Client SDK + BFF pattern (API routes)
+* State: React Context (UserContext for user/permissions)
+* URL State: nuqs for query parameter management
+* Data Mutations: Server Actions pattern
+
+================================================================================
+[FRONTEND ARCHITECTURE]
+================================================================================
+
+[ROUTE GROUPS]
+* (auth)/ - Public auth pages (login)
+* (protected)/ - Protected pages requiring authentication
+
+[FEATURE STRUCTURE: /front/src/app/(protected)/<feature>/]
+├── _components/    # Feature-specific React components
+├── actions/        # Server actions for data mutations
+├── data/           # Data fetching functions (server-side)
+├── types/          # TypeScript interfaces
+├── utils/          # Helper functions (parsers, etc.)
+├── page.tsx        # Route page component
+
+[KEY DIRECTORIES]
+* src/components/ui/     - shadcn-ui components (Button, Dialog, Input, Select, etc.)
+* src/components/layout/ - Header, Sidebar
+* src/lib/auth/          - Firebase client utilities
+* src/contexts/          - React contexts (UserContext)
+* src/middleware.ts      - Route protection and permission checks
+
+[LAYOUT COMPONENTS]
+* Header (src/components/layout/Header.tsx)
+    - Top navigation with home, sitemap, burger menu
+    - Accepts onMenuClick prop for sidebar toggle
+* Sidebar (src/components/layout/Sidebar.tsx)
+    - Slide-in navigation with categories/routes filtered by permissions
+    - Uses sitemapData from map.json
+* ProtectedLayoutWrapper (src/app/(protected)/_components/ProtectedLayoutWrapper.tsx)
+    - Combines Header + Sidebar with shared state
+* UserDataProvider (src/app/(protected)/_components/UserDataProvider.tsx)
+    - Fetches user data on mount, populates UserContext
+    - Uses mounted state to prevent hydration mismatch
+
+================================================================================
+[AUTH FLOW]
+================================================================================
+1. User logs in via Firebase Client SDK on frontend
+2. Frontend calls /api/auth/handleLogin which creates session cookie
+3. All protected API calls include session cookie
+4. Backend validates via Firebase Admin SDK (verifySession middleware)
+5. Frontend middleware fetches user permissions via /api/auth/getCurrentUser
+
+================================================================================
+[PERMISSION SYSTEM]
+================================================================================
+* Permissions follow resource.action format (e.g., clients.view, inspections.create)
+* Roles have permissions via role_permissions table
+* Frontend middleware enforces route-level permissions
+* Three default roles: Inspector, Manager, Admin (id=1,2,3)
+
+================================================================================
+[SITEMAP & NAVIGATION]
+================================================================================
+* Source of truth: front/src/app/(protected)/sitemap/types/map.json
+* Structure:
+{
+  "categories": [
+    {
+      "name": "Clientes",
+      "routes": [
+        { "id": "clients-view", "name": "Ver Clientes", "path": "/clients", "permission": "clients.view" }
+      ]
+    }
+  ]
+}
+* Each route has: id (for favorites), name, path, permission
+* Used by: Sidebar, SiteMap page, Home favorites section
+
+[FAVORITES SYSTEM]
+* Users can star routes in sitemap
+* Stored in favorite_routes table with route_id (references map.json id)
+* Server actions in front/src/app/(protected)/favorite-routes/actions/
+* Displayed on Home page grouped by category
+
+================================================================================
+[DB SCHEMA: ozcab_db]
+================================================================================
+* clients: {id, name, contact_person, email, phone_number}
+* services: {id, client_id, name, start_date, end_date}
+* parts: {id, name, description}
+* defects: {id, name, description}
+* work_instructions: {id, service_id, part_id, description, inspection_rate_per_hour}
+* users: {id, firebase_uid, name, email, phone_number, is_active}
+* inspection_reports: {id, work_instruction_id, start_date, po_number, po_hours, description, problem, photo_url}
+* inspection_details: {id, inspection_report_id, inspector_id, serial_number, lot_number, ...}
+* incidents: {id, inspection_detail_id, defect_id, quantity, evidence_url}
+* roles: {id, name, description}
+* user_roles: {user_id, role_id}
+* permissions: {id, name, category, description}
+* role_permissions: {role_id, permission_id}
+* favorite_routes: {id, user_id, route_id}  # route_id references map.json id
+* work_instruction_evidence: {id, work_instruction_id, photo_url, comment}
+
+================================================================================
+[API ENDPOINTS]
+================================================================================
+All protected except /login:
+* /login - Authentication
+* /users, /clients, /roles, /parts, /defects
+* /work-instructions, /reports, /inspection-details, /incidents
+* /user-roles, /favorite-routes, /services
+
+[CLIENTS: /clients]
+* GET /clients?search=&limit=&offset= - List with pagination
+* GET /clients/:id - Get by ID
+* POST /clients - Create (requires: name, email)
+* PUT /clients/:id - Update
+* DELETE /clients/:id - Delete
+
+[SERVICES: /services]
+* GET /services - List all with client data
+* GET /services/by-client?client_id= - Filter by client
+* GET /services/:id - Get by ID with work_instructions, collaborators
+* POST /services/create - Create (requires: client_id, start_date)
+* PUT /services/:id - Update
+* PUT /services/:id/detail - Update with collaborators
+* DELETE /services/:id - Delete
+
+================================================================================
+[IMPLEMENTED FEATURES]
+================================================================================
+
+[CLIENTS PAGE: /clients]
+* Server-side pagination with nuqs URL state
+* Search filter
+* Table with columns: Nombre, Correo, Teléfono, Acciones
+* Dropdown: Actualizar, Borrar, Ver Servicios
+* Create/Update modals with server actions
+* Files:
+    - page.tsx (server component, fetches data)
+    - _components/ClientsTable.tsx (client component with nuqs)
+    - _components/CreateClientModal.tsx
+    - _components/UpdateClientModal.tsx
+    - actions/clients.actions.ts (createClient, updateClient, getClientById, deleteClient)
+    - data/clients.data.ts (fetchClients, getClients)
+    - types/clients.types.ts (IClient, CreateClientData, UpdateClientData)
+    - utils/parsers.client.ts (nuqs parsers)
+
+[SERVICES PAGE: /services]
+* Table with columns: ID, Cliente, En Curso, Descripción, Acciones
+* "En Curso" calculated from start_date/end_date (green=active, gray=inactive)
+* Dropdown: Ver Detalles, Actualizar, Borrar
+* Create/Update modals with client dropdown
+* Files:
+    - page.tsx
+    - _components/ServicesTable.tsx
+    - _components/CreateServiceModal.tsx
+    - _components/UpdateServiceModal.tsx
+    - actions/services.actions.ts
+    - data/services.data.ts
+    - types/services.types.ts
+
+================================================================================
+[PATTERNS & BEST PRACTICES]
+================================================================================
+
+[SERVER ACTIONS PATTERN]
+Location: front/src/app/(protected)/<feature>/actions/<feature>.actions.ts
+
+"use server";
+import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
+
+export async function updateSomething(id: number, data: Data) {
+    const cookieStore = await cookies();
+    const session = cookieStore.get('session')?.value;
+    // Fetch to backend with session cookie
+    const res = await fetch(`${EXPRESS_BASE_URL}/endpoint/${id}`, {
+        method: 'PUT',
+        headers: {
+            'Content-Type': 'application/json',
+            'Cookie': `session=${session}`,
+        },
+        body: JSON.stringify(data),
+    });
+    // Handle response
+    revalidatePath('/path');  // Revalidate on success
+    return { success: true };
+}
+
+[MODAL PATTERN (SHADCN DIALOG)]
+* Use Dialog from @radix-ui/react-dialog (via src/components/ui/dialog.tsx)
+* Control with open/onOpenChange props
+* Fetch data with useEffect when modal opens (for update modals)
+* Submit with useTransition for pending state
+* Reset state when modal closes (useEffect on !open)
+* Prevent close during submission: if (!newOpen && isPending) return;
+
+Example structure:
+export default function UpdateModal({ id, open, onOpenChange }) {
+  const [isPending, startTransition] = useTransition();
+  const [formData, setFormData] = useState({...});
+
+  // Reset on close
+  useEffect(() => { if (!open) resetForm(); }, [open]);
+
+  // Fetch on open
+  useEffect(() => { if (open && id) fetchData(); }, [open, id]);
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen && isPending) return;
+    onOpenChange(newOpen);
+  };
+
+  return <Dialog open={open} onOpenChange={handleOpenChange}>...</Dialog>;
+}
+
+[HYDRATION SAFETY]
+* Use mounted state for client-only rendering
+* Return null until mounted when using browser-only APIs
+
+const [mounted, setMounted] = useState(false);
+useEffect(() => { setMounted(true); }, []);
+if (!mounted) return null;
+
+[URL STATE WITH NUQS]
+* Define parsers in utils/parsers.client.ts
+* Use useQueryState hook in components
+
+// parsers.client.ts
+export const searchParser = parseAsString.withDefault("");
+export const limitParser = parseAsInteger.withDefault(10);
+export const pageParser = parseAsInteger.withDefault(1);
+
+// component
+const [qSearch, setQSearch] = useQueryState("search", searchParser);
+
+[DATA FETCHING PATTERN]
+* Server-side: data/<feature>.data.ts with "server-only"
+* Fetches with session cookie from cookies()
+* Page component (server) calls data function, passes to client component
+
+[PAGINATION WITH MYSQL]
+* Use safe integer interpolation for LIMIT/OFFSET (not prepared statement placeholders)
+const limitNum = Math.max(1, Math.min(1000, parseInt(limit, 10) || 100));
+query += ` ORDER BY id DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
+
+================================================================================
+[COMMON ISSUES & FIXES]
+================================================================================
+
+[HYDRATION MISMATCH]
+* Cause: Server/client render different content
+* Fix: Add mounted state check, return null until mounted
+
+[MODAL NOT CLOSING / PAGE UNRESPONSIVE]
+* Cause: onOpenChange not properly forwarding state
+* Fix: Use handleOpenChange that passes boolean through to parent
+* Reset state in useEffect when !open, not in handleClose
+
+[SQL LIMIT/OFFSET ERROR]
+* Error: "Incorrect arguments to mysqld_stmt_execute"
+* Cause: Using ? placeholders for LIMIT/OFFSET
+* Fix: Use integer interpolation after validation
+
+[USER HAS NO PERMISSIONS]
+* Check user_roles table has entry for user
+* Add role: INSERT INTO user_roles (user_id, role_id) VALUES (user_id, role_id)
+
+================================================================================
+[COMMANDS]
+================================================================================
+
+[BACKEND: /back]
+npm run dev     # Development with hot reload
+npm start       # Production
+
+[FRONTEND: /front]
+npm run dev     # Development server
+npm run build   # Production build
+npm run lint    # Lint
+
+[DATABASE]
+* Schema: back/new_mysql_schema.sql
+* Mock data: back/populate_mock_data.sql
+* Connection: MySQL via mysql2, credentials in back/.env
+
+================================================================================
+[FILE REFERENCES]
+================================================================================
+
+[BACKEND KEY FILES]
+* back/.env - Database credentials (MYSQL_HOST, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE)
+* back/connections/mysqldb.js - MySQL pool
+* back/middleware/verifySession.js - Firebase session verification
+* back/app.js - Express app setup, route mounting
+* back/new_mysql_schema.sql - Database schema
+* back/populate_mock_data.sql - Test data
+
+[FRONTEND KEY FILES]
+* front/.env - EXPRESS_BASE_URL, Firebase config
+* front/src/middleware.ts - Route protection
+* front/src/contexts/UserContext.tsx - User state
+* front/src/app/(protected)/sitemap/types/map.json - Navigation source of truth
+* front/src/components/ui/dialog.tsx - Shadcn Dialog component
+
+================================================================================
+[CODEBASE STATUS]
+================================================================================
+
+[COMPLETED]
+* Authentication flow (Firebase + session cookies)
+* Protected layout with Header/Sidebar navigation
+* Sitemap with permission-based route filtering
+* Favorites system (star routes, display on home)
+* Clients CRUD with pagination, search, modals
+* Services CRUD with "En Curso" calculation, modals
+
+[PENDING/TODO]
+* Work Instructions (ITs) page
+* Inspection Reports page
+* Parts and Defects catalog pages
+* Users and Roles admin pages

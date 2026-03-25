@@ -1,0 +1,71 @@
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: argos_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: argos_db
+      MYSQL_USER: argos_user
+      MYSQL_PASSWORD: argos_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./new_mysql_schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7.0
+    container_name: argos_mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: argos_user
+      MONGO_INITDB_ROOT_PASSWORD: argos_pass
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: argos_backend
+    restart: always
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      SERVICE_IP: 0.0.0.0
+      DBHOST: mysql
+      DBPORT: 3306
+      DBDB: argos_db
+      DBUSER: argos_user
+      DBPASS: argos_pass
+      CORS_FRONT_ORIGIN: http://localhost:3000
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+volumes:
+  mysql_data:
+  mongo_data:
