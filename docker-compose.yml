@@ -86,6 +86,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      COOKIE_SECURE: "false"
       # Dentro de Docker, frontend habla con backend por nombre de servicio
       EXPRESS_BASE_URL: http://backend:3001
       FB_SESSION_MAX_AGE_MS: 3600000

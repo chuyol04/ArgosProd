@@ -68,10 +68,10 @@ export async function POST(req: NextRequest) {
 
         const url = new URL('/home', req.url);
         const res = NextResponse.redirect(url, { status: 303 });
-        const isProd = process.env.NODE_ENV === 'production';
+        const secureCookie = process.env.COOKIE_SECURE !== 'false';
         res.cookies.set('session', sessionCookie, {
             httpOnly: true,
-            secure: isProd,
+            secure: secureCookie,
             sameSite: 'lax', // if you will do cross-site to other domains, change to 'none' + secure
             path: '/',
             maxAge: Math.floor(SESSION_MAX_AGE_MS / 1000),
