@@ -24,11 +24,38 @@ export async function createPieza(req, res) {
   }
 }
 
-// READ ALL
+// READ ALL with search and pagination
 export async function getPiezas(req, res) {
   try {
-    const [rows] = await MysqlClient.execute('SELECT * FROM parts');
-    return res.status(200).json({ success: true, data: rows });
+    const { search } = req.query;
+    const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
+    const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    let query = 'SELECT * FROM parts';
+    const params = [];
+
+    if (search) {
+      query += ' WHERE name LIKE ? OR description LIKE ?';
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern);
+    }
+
+    query += ` ORDER BY id DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
+
+    const [rows] = await MysqlClient.execute(query, params);
+
+    // Get total count
+    let countQuery = 'SELECT COUNT(*) as total FROM parts';
+    const countParams = [];
+    if (search) {
+      countQuery += ' WHERE name LIKE ? OR description LIKE ?';
+      const searchPattern = `%${search}%`;
+      countParams.push(searchPattern, searchPattern);
+    }
+    const [countResult] = await MysqlClient.execute(countQuery, countParams);
+    const total = countResult[0]?.total || 0;
+
+    return res.status(200).json({ success: true, data: rows, total });
   } catch (error) {
     console.error('Error getting parts:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });

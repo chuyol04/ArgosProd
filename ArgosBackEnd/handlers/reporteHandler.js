@@ -35,12 +35,16 @@ export async function createReporte(req, res) {
   }
 }
 
-// READ ALL - Reports with Work Instruction + Service + Client + Part
+// READ ALL - Reports with Work Instruction + Service + Client + Part (with pagination and search)
 export async function getReportes(req, res) {
   try {
-    const [rows] = await MysqlClient.execute(`
+    const { search, work_instruction_id } = req.query;
+    const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
+    const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    let query = `
       SELECT
-        ir.id, ir.start_date, ir.description, ir.problem, ir.po_number,
+        ir.id, ir.start_date, ir.description, ir.problem, ir.po_number, ir.po_hours,
         wi.id AS work_instruction_id, wi.description AS work_instruction_description,
         wi.part_id, p.name AS part_name,
         s.id AS service_id, s.name AS service_name,
@@ -50,9 +54,57 @@ export async function getReportes(req, res) {
       INNER JOIN parts p ON p.id = wi.part_id
       INNER JOIN services s ON s.id = wi.service_id
       INNER JOIN clients c ON c.id = s.client_id
-      ORDER BY ir.id DESC
-    `);
-    return res.status(200).json({ success: true, data: rows });
+    `;
+
+    const params = [];
+    const conditions = [];
+
+    if (work_instruction_id) {
+      conditions.push('ir.work_instruction_id = ?');
+      params.push(work_instruction_id);
+    }
+
+    if (search) {
+      conditions.push('(p.name LIKE ? OR s.name LIKE ? OR c.name LIKE ? OR ir.po_number LIKE ?)');
+      const searchPattern = `%${search}%`;
+      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    query += ` ORDER BY ir.id DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
+
+    const [rows] = await MysqlClient.execute(query, params);
+
+    // Count query for total
+    let countQuery = `
+      SELECT COUNT(*) AS total
+      FROM inspection_reports ir
+      INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
+      INNER JOIN parts p ON p.id = wi.part_id
+      INNER JOIN services s ON s.id = wi.service_id
+      INNER JOIN clients c ON c.id = s.client_id
+    `;
+    if (conditions.length > 0) {
+      countQuery += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    const countParams = [];
+    if (work_instruction_id) countParams.push(work_instruction_id);
+    if (search) {
+      const searchPattern = `%${search}%`;
+      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
+    }
+
+    const [countResult] = await MysqlClient.execute(countQuery, countParams);
+
+    return res.status(200).json({
+      success: true,
+      data: rows,
+      total: countResult[0]?.total || 0
+    });
   } catch (error) {
     console.error('Error getting reports:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });

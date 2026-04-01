@@ -126,13 +126,35 @@ export async function getServicioById(req, res) {
       [id]
     );
 
+    // Get users linked to this service:
+    // 1. Work instruction collaborators
+    // 2. Inspectors from inspection details
     const [users] = await MysqlClient.execute(`
-      SELECT u.id, u.name, u.email, r.name AS role
-      FROM user_roles ur
-      INNER JOIN users u ON ur.user_id = u.id
-      INNER JOIN roles r ON ur.role_id = r.id
+      SELECT DISTINCT u.id, u.name, u.email, COALESCE(r.name, 'Sin rol') AS role
+      FROM users u
+      LEFT JOIN user_roles ur ON ur.user_id = u.id
+      LEFT JOIN roles r ON ur.role_id = r.id
       WHERE u.is_active = 1
-    `);
+        AND (
+          -- Work instruction collaborators
+          u.id IN (
+            SELECT wic.user_id
+            FROM work_instruction_collaborators wic
+            INNER JOIN work_instructions wi ON wi.id = wic.work_instruction_id
+            WHERE wi.service_id = ?
+          )
+          OR
+          -- Inspectors from inspection details
+          u.id IN (
+            SELECT id.inspector_id
+            FROM inspection_details id
+            INNER JOIN inspection_reports ir ON ir.id = id.inspection_report_id
+            INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
+            WHERE wi.service_id = ?
+          )
+        )
+      ORDER BY u.name
+    `, [id, id]);
 
     return res.status(200).json({
       success: true,
