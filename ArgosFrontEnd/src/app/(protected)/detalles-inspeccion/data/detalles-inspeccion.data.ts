@@ -104,7 +104,7 @@ export async function fetchInspectors(): Promise<IInspector[]> {
   }
 
   try {
-    const res = await fetch(`${EXPRESS_BASE_URL}/users`, {
+    const res = await fetch(`${EXPRESS_BASE_URL}/work-instructions/users/select`, {
       method: "GET",
       headers: {
         Cookie: `session=${session}`,
@@ -115,7 +115,7 @@ export async function fetchInspectors(): Promise<IInspector[]> {
     const json = await res.json();
 
     if (!res.ok || !json.success) {
-      console.error("Failed to fetch users:", json.motive);
+      console.error("Failed to fetch inspectors:", json.motive);
       return [];
     }
 

@@ -188,7 +188,7 @@ export async function fetchInspectorsForSelect(): Promise<IInspector[]> {
       throw new Error("No session cookie");
     }
 
-    const res = await fetch(`${EXPRESS_BASE_URL}/users`, {
+    const res = await fetch(`${EXPRESS_BASE_URL}/work-instructions/users/select`, {
       method: "GET",
       headers: {
         Cookie: `session=${session}`,
@@ -199,7 +199,7 @@ export async function fetchInspectorsForSelect(): Promise<IInspector[]> {
     const json = await res.json();
 
     if (!res.ok || !json.success) {
-      throw new Error(json.motive || "Failed to fetch users");
+      throw new Error(json.motive || "Failed to fetch inspectors");
     }
 
     return (json.data || []).map((u: { id: number; name: string }) => ({
