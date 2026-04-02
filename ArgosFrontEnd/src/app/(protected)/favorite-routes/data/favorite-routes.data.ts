@@ -32,7 +32,7 @@ export async function addFavoriteRoute(route_id: string): Promise<{ success: boo
 
 // Client-side: removes a route from favorites
 export async function removeFavoriteRoute(route_id: string): Promise<{ success: boolean; motive?: string }> {
-    const res = await fetch(`/api/favorite-routes/${route_id}`, {
+    const res = await fetch(`/api/favorite-routes/${encodeURIComponent(route_id)}`, {
         method: 'DELETE',
         credentials: 'include',
     });

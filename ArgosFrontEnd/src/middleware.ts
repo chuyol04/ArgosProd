@@ -9,8 +9,20 @@ export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
     const session = req.cookies.get('session')?.value;
 
-    // Allow requests to public routes (login and forbidden page)
-    if (pathname === '/login' || pathname === '/forbidden') {
+    // Allow requests to forbidden page
+    if (pathname === '/forbidden') {
+        return NextResponse.next();
+    }
+
+    // If on login page with a session, redirect to home
+    if (pathname === '/login' && session) {
+        const url = req.nextUrl.clone();
+        url.pathname = '/home';
+        return NextResponse.redirect(url);
+    }
+
+    // Allow login page for unauthenticated users
+    if (pathname === '/login') {
         return NextResponse.next();
     }
 
