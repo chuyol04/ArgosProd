@@ -75,6 +75,7 @@ export interface IInspector {
 // For report dropdown when creating
 export interface IReportOption {
   id: number;
+  work_instruction_id: number;
   part_name: string;
   service_name: string;
   po_number: string | null;

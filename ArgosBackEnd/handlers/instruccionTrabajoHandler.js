@@ -339,17 +339,41 @@ export async function updateWorkInstructionCollaborators(req, res) {
   }
 }
 
-// GET USERS FOR SELECT - Fetch all active users for collaborator selection
+// GET USERS FOR SELECT - Fetch users for collaborator/inspector selection
+// If work_instruction_id is provided, returns only collaborators for that work instruction
+// Otherwise returns all active users
 export async function getUsersForSelect(req, res) {
   try {
-    const [users] = await MysqlClient.execute(`
-      SELECT u.id, u.name, u.email, r.name AS role
-      FROM users u
-      LEFT JOIN user_roles ur ON ur.user_id = u.id
-      LEFT JOIN roles r ON r.id = ur.role_id
-      WHERE u.is_active = TRUE
-      ORDER BY u.name ASC
-    `);
+    const { work_instruction_id } = req.query;
+
+    let query;
+    let params = [];
+
+    if (work_instruction_id) {
+      // Return only collaborators for the specified work instruction
+      query = `
+        SELECT DISTINCT u.id, u.name, u.email, r.name AS role
+        FROM users u
+        INNER JOIN work_instruction_collaborators wic ON wic.user_id = u.id
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        WHERE u.is_active = TRUE AND wic.work_instruction_id = ?
+        ORDER BY u.name ASC
+      `;
+      params = [work_instruction_id];
+    } else {
+      // Return all active users (for work instruction collaborator assignment)
+      query = `
+        SELECT u.id, u.name, u.email, r.name AS role
+        FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        WHERE u.is_active = TRUE
+        ORDER BY u.name ASC
+      `;
+    }
+
+    const [users] = await MysqlClient.execute(query, params);
 
     return res.status(200).json({ success: true, data: users });
   } catch (error) {

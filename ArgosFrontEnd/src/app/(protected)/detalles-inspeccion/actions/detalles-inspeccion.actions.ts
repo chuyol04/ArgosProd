@@ -175,7 +175,7 @@ export async function deleteInspectionDetail(
   }
 }
 
-export async function fetchInspectorsForSelect(): Promise<IInspector[]> {
+export async function fetchInspectorsForSelect(workInstructionId?: number): Promise<IInspector[]> {
   try {
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
@@ -188,7 +188,12 @@ export async function fetchInspectorsForSelect(): Promise<IInspector[]> {
       throw new Error("No session cookie");
     }
 
-    const res = await fetch(`${EXPRESS_BASE_URL}/work-instructions/users/select`, {
+    // If work_instruction_id is provided, filter inspectors by collaborators
+    const url = workInstructionId
+      ? `${EXPRESS_BASE_URL}/work-instructions/users/select?work_instruction_id=${workInstructionId}`
+      : `${EXPRESS_BASE_URL}/work-instructions/users/select`;
+
+    const res = await fetch(url, {
       method: "GET",
       headers: {
         Cookie: `session=${session}`,
@@ -242,11 +247,13 @@ export async function fetchReportsForSelect(): Promise<IReportOption[]> {
     return (json.data || []).map(
       (r: {
         id: number;
+        work_instruction_id: number;
         part_name: string;
         service_name: string;
         po_number: string | null;
       }) => ({
         id: r.id,
+        work_instruction_id: r.work_instruction_id,
         part_name: r.part_name,
         service_name: r.service_name,
         po_number: r.po_number,
