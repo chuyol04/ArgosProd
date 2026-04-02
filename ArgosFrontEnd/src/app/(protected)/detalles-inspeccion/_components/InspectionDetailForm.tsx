@@ -27,6 +27,7 @@ import {
   deleteInspectionDetail,
   fetchInspectorsForSelect,
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
+import { DefectsSection } from "./DefectsSection";
 
 type Mode = "view" | "edit" | "create";
 
@@ -633,6 +634,19 @@ export default function InspectionDetailForm({
               rows={4}
             />
           )}
+        </CardContent>
+      </Card>
+
+      {/* Defects Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Defectos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DefectsSection
+            inspectionDetailId={detail?.id ?? null}
+            disabled={isReadOnly || !canEdit}
+          />
         </CardContent>
       </Card>
     </div>

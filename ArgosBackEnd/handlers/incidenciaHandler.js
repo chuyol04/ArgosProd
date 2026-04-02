@@ -38,18 +38,31 @@ export async function createIncidencia(req, res) {
   }
 }
 
-// READ - all (with useful joins)
+// READ - all (with useful joins), optionally filtered by inspection_detail_id
 export async function getIncidencias(req, res) {
   try {
-    const [rows] = await MysqlClient.execute(
-      `SELECT i.*,
-              d.name AS defect_name,
-              di.serial_number AS inspection_serial_number,
-              di.lot_number AS inspection_lot_number
-       FROM incidents i
-       INNER JOIN defects d ON d.id = i.defect_id
-       INNER JOIN inspection_details di ON di.id = i.inspection_detail_id`
-    );
+    const { inspection_detail_id } = req.query;
+
+    let query = `
+      SELECT i.*,
+             d.name AS defect_name,
+             d.description AS defect_description,
+             di.serial_number AS inspection_serial_number,
+             di.lot_number AS inspection_lot_number
+      FROM incidents i
+      INNER JOIN defects d ON d.id = i.defect_id
+      INNER JOIN inspection_details di ON di.id = i.inspection_detail_id
+    `;
+    const params = [];
+
+    if (inspection_detail_id) {
+      query += ' WHERE i.inspection_detail_id = ?';
+      params.push(inspection_detail_id);
+    }
+
+    query += ' ORDER BY i.id DESC';
+
+    const [rows] = await MysqlClient.execute(query, params);
     return res.status(200).json({ success: true, data: rows });
   } catch (error) {
     console.error('Error getting incidents:', error);

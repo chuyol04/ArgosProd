@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useTransition, useRef } from "react";
+import { useState, useEffect, useTransition } from "react";
 import {
   Dialog,
   DialogContent,
@@ -35,20 +35,13 @@ import {
   IUserOption,
 } from "@/app/(protected)/instrucciones-trabajo/actions/instrucciones-trabajo.actions";
 import { IEvidence } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
-import { ImageIcon, Upload, X, Plus } from "lucide-react";
+import { WorkInstructionFiles } from "./WorkInstructionFiles";
 
 interface WorkInstructionModalProps {
   workInstructionId?: number | null; // null/undefined = create mode, number = edit mode
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultServiceId?: number; // For create mode, pre-select service
-}
-
-interface NewPhoto {
-  id: string;
-  file: File;
-  preview: string;
-  comment: string;
 }
 
 export default function WorkInstructionModal({
@@ -73,12 +66,8 @@ export default function WorkInstructionModal({
     description: "",
   });
 
-  // Photo management state
-  const [existingPhotos, setExistingPhotos] = useState<IEvidence[]>([]);
-  const [photosToDelete, setPhotosToDelete] = useState<number[]>([]);
-  const [newPhotos, setNewPhotos] = useState<NewPhoto[]>([]);
-  const [editingNewPhotoId, setEditingNewPhotoId] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Files/evidence state
+  const [existingFiles, setExistingFiles] = useState<IEvidence[]>([]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -91,10 +80,7 @@ export default function WorkInstructionModal({
         description: "",
       });
       setSelectedCollaborators([]);
-      setExistingPhotos([]);
-      setPhotosToDelete([]);
-      setNewPhotos([]);
-      setEditingNewPhotoId(null);
+      setExistingFiles([]);
     }
   }, [open, defaultServiceId]);
 
@@ -126,7 +112,7 @@ export default function WorkInstructionModal({
               });
               const collaboratorIds = wiResult.data.collaborators.map(c => c.id);
               setSelectedCollaborators(collaboratorIds);
-              setExistingPhotos(wiResult.data.evidences || []);
+              setExistingFiles(wiResult.data.evidences || []);
             } else {
               setError(wiResult.error || "Error al cargar instrucción de trabajo");
             }
@@ -174,52 +160,6 @@ export default function WorkInstructionModal({
     );
   };
 
-  // Photo handlers
-  const handleDeleteExistingPhoto = (photoId: number) => {
-    setPhotosToDelete((prev) => [...prev, photoId]);
-  };
-
-  const handleRestorePhoto = (photoId: number) => {
-    setPhotosToDelete((prev) => prev.filter((id) => id !== photoId));
-  };
-
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    const newPhotoEntries: NewPhoto[] = Array.from(files).map((file) => ({
-      id: `new-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
-      file,
-      preview: URL.createObjectURL(file),
-      comment: "",
-    }));
-
-    setNewPhotos((prev) => [...prev, ...newPhotoEntries]);
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  const handleRemoveNewPhoto = (photoId: string) => {
-    setNewPhotos((prev) => {
-      const photo = prev.find((p) => p.id === photoId);
-      if (photo) {
-        URL.revokeObjectURL(photo.preview);
-      }
-      return prev.filter((p) => p.id !== photoId);
-    });
-    if (editingNewPhotoId === photoId) {
-      setEditingNewPhotoId(null);
-    }
-  };
-
-  const handleUpdateNewPhotoComment = (photoId: string, comment: string) => {
-    setNewPhotos((prev) =>
-      prev.map((p) => (p.id === photoId ? { ...p, comment } : p))
-    );
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -254,11 +194,7 @@ export default function WorkInstructionModal({
           setError(collabResult.error || "Error al actualizar colaboradores");
           return;
         }
-
-        // TODO: Handle photo deletions (photosToDelete)
-        // TODO: Handle photo uploads (newPhotos)
-        console.log("Photos to delete:", photosToDelete);
-        console.log("New photos to upload:", newPhotos.map(p => ({ comment: p.comment, fileName: p.file.name })));
+        // Files are uploaded in real-time via WorkInstructionFiles component
       } else {
         // Create new work instruction
         const result = await createWorkInstruction({
@@ -273,13 +209,11 @@ export default function WorkInstructionModal({
           return;
         }
 
-        // TODO: For create mode, we'd need the new ID to add collaborators and photos
-        // For now, collaborators and photos can only be added in edit mode
+        // Add collaborators if any selected
         if (selectedCollaborators.length > 0 && result.id) {
           await updateWorkInstructionCollaborators(result.id, selectedCollaborators);
         }
-
-        console.log("New photos to upload:", newPhotos.map(p => ({ comment: p.comment, fileName: p.file.name })));
+        // Files can be added after creating, in edit mode
       }
 
       onOpenChange(false);
@@ -290,13 +224,6 @@ export default function WorkInstructionModal({
     if (!newOpen && isPending) return;
     onOpenChange(newOpen);
   };
-
-  const visibleExistingPhotos = existingPhotos.filter(
-    (p) => !photosToDelete.includes(p.id)
-  );
-  const deletedPhotos = existingPhotos.filter((p) =>
-    photosToDelete.includes(p.id)
-  );
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -436,182 +363,17 @@ export default function WorkInstructionModal({
 
                 <Separator />
 
-                {/* Photos Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium text-muted-foreground">
-                      Fotos ({visibleExistingPhotos.length + newPhotos.length})
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isPending}
-                    >
-                      <Plus className="h-4 w-4 mr-1" />
-                      Agregar
-                    </Button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={handleFileSelect}
-                      className="hidden"
-                    />
-                  </div>
-
-                  {/* Photo Grid */}
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* Existing Photos (only in edit mode) */}
-                    {visibleExistingPhotos.map((photo) => (
-                      <div
-                        key={photo.id}
-                        className="relative group border rounded-lg overflow-hidden bg-muted/30"
-                      >
-                        <div className="aspect-video flex items-center justify-center">
-                          {photo.photo_url ? (
-                            <img
-                              src={photo.photo_url}
-                              alt={photo.comment || "Foto"}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <ImageIcon className="h-8 w-8 text-muted-foreground" />
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteExistingPhoto(photo.id)}
-                          className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Eliminar foto"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                        {photo.comment && (
-                          <div className="p-2 border-t bg-background/80">
-                            <p className="text-xs text-muted-foreground line-clamp-2">
-                              {photo.comment}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-
-                    {/* New Photos (pending upload) */}
-                    {newPhotos.map((photo) => (
-                      <div
-                        key={photo.id}
-                        className="relative group border-2 border-dashed border-primary/50 rounded-lg overflow-hidden bg-primary/5"
-                      >
-                        <div className="aspect-video flex items-center justify-center">
-                          <img
-                            src={photo.preview}
-                            alt="Nueva foto"
-                            className="w-full h-full object-cover"
-                          />
-                        </div>
-                        <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-primary text-primary-foreground text-xs rounded">
-                          Nueva
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveNewPhoto(photo.id)}
-                          className="absolute top-2 right-2 p-1 bg-destructive text-destructive-foreground rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Quitar foto"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                        <div className="p-2 border-t bg-background/90">
-                          {editingNewPhotoId === photo.id ? (
-                            <div className="space-y-1">
-                              <Input
-                                value={photo.comment}
-                                onChange={(e) =>
-                                  handleUpdateNewPhotoComment(photo.id, e.target.value)
-                                }
-                                placeholder="Descripción de la foto..."
-                                className="h-7 text-xs"
-                                autoFocus
-                                onBlur={() => setEditingNewPhotoId(null)}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") {
-                                    setEditingNewPhotoId(null);
-                                  }
-                                }}
-                              />
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setEditingNewPhotoId(photo.id)}
-                              className="w-full text-left"
-                            >
-                              <p className="text-xs text-muted-foreground line-clamp-2">
-                                {photo.comment || (
-                                  <span className="italic">Click para agregar descripción...</span>
-                                )}
-                              </p>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Empty State / Upload Dropzone */}
-                    {visibleExistingPhotos.length === 0 && newPhotos.length === 0 && (
-                      <div
-                        onClick={() => fileInputRef.current?.click()}
-                        className="col-span-2 border-2 border-dashed rounded-lg p-8 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors"
-                      >
-                        <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground text-center">
-                          Arrastra imágenes aquí o haz click para seleccionar
-                        </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          PNG, JPG hasta 10MB
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Deleted Photos (can restore) - only in edit mode */}
-                  {deletedPhotos.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">
-                        Fotos marcadas para eliminar ({deletedPhotos.length}):
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {deletedPhotos.map((photo) => (
-                          <div
-                            key={photo.id}
-                            className="relative w-16 h-16 rounded border opacity-50 overflow-hidden group"
-                          >
-                            {photo.photo_url ? (
-                              <img
-                                src={photo.photo_url}
-                                alt="Foto eliminada"
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-muted">
-                                <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                              </div>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleRestorePhoto(photo.id)}
-                              className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Restaurar foto"
-                            >
-                              <span className="text-xs text-white">Restaurar</span>
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                {/* Files Section */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-muted-foreground">
+                    Archivos ({existingFiles.length})
+                  </Label>
+                  <WorkInstructionFiles
+                    workInstructionId={workInstructionId ?? null}
+                    existingFiles={existingFiles}
+                    onFilesChange={setExistingFiles}
+                    disabled={isPending}
+                  />
                 </div>
 
                 {error && <p className="text-sm text-destructive">{error}</p>}

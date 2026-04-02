@@ -339,6 +339,78 @@ export async function updateWorkInstructionCollaborators(req, res) {
   }
 }
 
+// ADD EVIDENCE - Add a single evidence file to a work instruction
+export async function addEvidence(req, res) {
+  try {
+    const { id } = req.params;
+    const { file_url, file_name, file_type, comment } = req.body || {};
+
+    if (!file_url) {
+      return res.status(400).json({ success: false, motive: 'file_url is required' });
+    }
+
+    // Validate work instruction exists
+    const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Work instruction not found' });
+    }
+
+    const [result] = await MysqlClient.execute(
+      'INSERT INTO work_instruction_evidence (work_instruction_id, photo_url, comment) VALUES (?, ?, ?)',
+      [id, file_url, comment || null]
+    );
+
+    return res.status(201).json({
+      success: true,
+      id: result.insertId,
+      motive: 'Evidence added successfully'
+    });
+  } catch (error) {
+    console.error('Error adding evidence:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// DELETE EVIDENCE - Delete an evidence file from a work instruction
+export async function deleteEvidence(req, res) {
+  try {
+    const { id, evidenceId } = req.params;
+
+    // Validate work instruction exists
+    const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Work instruction not found' });
+    }
+
+    // Validate evidence exists and belongs to this work instruction
+    const [evidence] = await MysqlClient.execute(
+      'SELECT id, photo_url FROM work_instruction_evidence WHERE id = ? AND work_instruction_id = ? LIMIT 1',
+      [evidenceId, id]
+    );
+    if (evidence.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Evidence not found' });
+    }
+
+    const [result] = await MysqlClient.execute(
+      'DELETE FROM work_instruction_evidence WHERE id = ?',
+      [evidenceId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({ success: false, motive: 'No evidence was deleted' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      deleted_url: evidence[0].photo_url,
+      motive: 'Evidence deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting evidence:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
 // GET USERS FOR SELECT - Fetch users for collaborator/inspector selection
 // If work_instruction_id is provided, returns only collaborators for that work instruction
 // Otherwise returns all active users
