@@ -12,8 +12,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -321,31 +321,20 @@ export default function WorkInstructionModal({
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-2 gap-6 p-6 pt-4 h-[calc(85vh-180px)]">
-              {/* Left Column - Description (Markdown Editor) */}
+              {/* Left Column - Description (Rich Text Editor) */}
               <div className="flex flex-col h-full">
                 <Label htmlFor="description" className="text-sm font-medium text-muted-foreground mb-2">
-                  Descripción (Markdown)
+                  Descripción
                 </Label>
-                <Textarea
-                  id="description"
-                  value={formData.description}
-                  onChange={(e) => handleChange("description", e.target.value)}
-                  disabled={isPending}
-                  placeholder="Escribe la descripción en formato Markdown...
-
-# Título
-## Subtítulo
-
-- Lista de elementos
-- Otro elemento
-
-**Texto en negrita**
-*Texto en cursiva*"
-                  className="flex-1 resize-none font-mono text-sm min-h-0"
-                />
-                <p className="text-xs text-muted-foreground mt-2">
-                  Soporta formato Markdown: encabezados (#), listas (-), **negrita**, *cursiva*
-                </p>
+                <div className="flex-1 min-h-0">
+                  <RichTextEditor
+                    value={formData.description}
+                    onChange={(value) => handleChange("description", value)}
+                    disabled={isPending}
+                    placeholder="Escribe la descripción de la instrucción de trabajo..."
+                    className="h-full"
+                  />
+                </div>
               </div>
 
               {/* Right Column - Other Fields + Photos (scrollable) */}

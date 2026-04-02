@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Pencil, Save, X, Trash2 } from "lucide-react";
+import { useUser } from "@/contexts/users/userContext";
 import {
   IInspectionDetailExtended,
   IInspectionDetailFormData,
@@ -104,9 +105,28 @@ export default function InspectionDetailForm({
   reportId,
 }: InspectionDetailFormProps) {
   const router = useRouter();
+  const { user } = useUser();
   const [isPending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [error, setError] = useState<string | null>(null);
+
+  // Role-based permissions
+  const isManagerOrAbove = useMemo(() => {
+    return user?.roles?.some((r) => r === "Manager" || r === "Admin") ?? false;
+  }, [user?.roles]);
+
+  // Check if inspection is from a past date
+  const isPastInspection = useMemo(() => {
+    if (!detail?.inspection_date) return false;
+    const today = new Date().toISOString().split("T")[0];
+    const inspDate = new Date(detail.inspection_date).toISOString().split("T")[0];
+    return inspDate < today;
+  }, [detail?.inspection_date]);
+
+  // Can edit: M+A always, Inspectors only same-day
+  const canEdit = isManagerOrAbove || !isPastInspection;
+  // Can delete: M+A only
+  const canDelete = isManagerOrAbove;
 
   const [formData, setFormData] = useState<IInspectionDetailFormData>({
     inspection_report_id: detail?.inspection_report_id || reportId || 0,
@@ -261,14 +281,18 @@ export default function InspectionDetailForm({
         <div className="flex items-center gap-2">
           {isReadOnly && (
             <>
-              <Button variant="outline" size="sm" onClick={() => setMode("edit")}>
-                <Pencil className="mr-1.5 h-4 w-4" />
-                Editar
-              </Button>
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={isPending}>
-                <Trash2 className="mr-1.5 h-4 w-4" />
-                Eliminar
-              </Button>
+              {canEdit && (
+                <Button variant="outline" size="sm" onClick={() => setMode("edit")}>
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Editar
+                </Button>
+              )}
+              {canDelete && (
+                <Button variant="destructive" size="sm" onClick={handleDelete} disabled={isPending}>
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Eliminar
+                </Button>
+              )}
             </>
           )}
           {!isReadOnly && (

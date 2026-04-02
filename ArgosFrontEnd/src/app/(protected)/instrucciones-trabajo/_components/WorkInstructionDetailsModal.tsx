@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import { RichTextViewer } from "@/components/ui/rich-text-editor";
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,24 @@ function formatDate(dateStr: string | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+// Helper component to render description content (HTML or legacy Markdown)
+function DescriptionContent({ content }: { content: string }) {
+  // Check if content looks like HTML (starts with < tag)
+  const isHtml = content.trim().startsWith("<");
+
+  if (isHtml) {
+    // Render HTML content directly
+    return <RichTextViewer content={content} />;
+  }
+
+  // Fall back to Markdown for legacy content
+  return (
+    <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-ol:my-1">
+      <ReactMarkdown>{content}</ReactMarkdown>
+    </div>
+  );
 }
 
 export default function WorkInstructionDetailsModal({
@@ -102,9 +121,7 @@ export default function WorkInstructionDetailsModal({
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Descripción</h3>
               <div className="flex-1 p-4 rounded-lg bg-muted/30 border overflow-y-auto">
                 {details.instruction.description ? (
-                  <div className="prose prose-sm max-w-none dark:prose-invert prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-ol:my-1">
-                    <ReactMarkdown>{details.instruction.description}</ReactMarkdown>
-                  </div>
+                  <DescriptionContent content={details.instruction.description} />
                 ) : (
                   <p className="text-sm text-muted-foreground italic">Sin descripción</p>
                 )}

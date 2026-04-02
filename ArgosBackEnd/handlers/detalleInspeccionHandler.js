@@ -1,4 +1,6 @@
 import MysqlClient from '../connections/mysqldb.js';
+import { isManagerOrAbove } from '../lib/constants/roles.js';
+import userHelper from '../lib/helpers/userHelpers.js';
 
 // CREATE
 export async function createDetalleInspeccion(req, res) {
@@ -136,10 +138,33 @@ export async function updateDetalleInspeccion(req, res) {
     const { id } = req.params;
     const payload = req.body || {};
 
-    // Check existence
-    const [exist] = await MysqlClient.execute('SELECT id FROM inspection_details WHERE id = ? LIMIT 1', [id]);
+    // Check existence and get inspection_date
+    const [exist] = await MysqlClient.execute(
+      'SELECT id, inspection_date FROM inspection_details WHERE id = ? LIMIT 1',
+      [id]
+    );
     if (exist.length === 0) {
       return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
+    }
+
+    // Check if editing past inspection - only Manager/Admin allowed
+    const inspectionDate = exist[0].inspection_date;
+    if (inspectionDate) {
+      const today = new Date().toISOString().split('T')[0];
+      const inspDateStr = new Date(inspectionDate).toISOString().split('T')[0];
+
+      if (inspDateStr < today) {
+        // Past inspection - check user role
+        const { uid } = res.locals.firebase_uid;
+        const { success, value: user } = await userHelper.getUserDetails(uid);
+
+        if (!success || !isManagerOrAbove(user.roles)) {
+          return res.status(403).json({
+            success: false,
+            motive: 'Solo Managers y Administradores pueden editar inspecciones de días anteriores'
+          });
+        }
+      }
     }
 
     // If new FKs are sent, validate
@@ -182,10 +207,21 @@ export async function updateDetalleInspeccion(req, res) {
   }
 }
 
-// DELETE
+// DELETE (Manager/Admin only)
 export async function deleteDetalleInspeccion(req, res) {
   try {
     const { id } = req.params;
+
+    // Check user role - only Manager/Admin can delete
+    const { uid } = res.locals.firebase_uid;
+    const { success, value: user } = await userHelper.getUserDetails(uid);
+
+    if (!success || !isManagerOrAbove(user.roles)) {
+      return res.status(403).json({
+        success: false,
+        motive: 'Solo Managers y Administradores pueden eliminar detalles de inspección'
+      });
+    }
 
     const [exist] = await MysqlClient.execute('SELECT id FROM inspection_details WHERE id = ? LIMIT 1', [id]);
     if (exist.length === 0) {

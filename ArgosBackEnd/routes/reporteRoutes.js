@@ -9,6 +9,9 @@ router.post('/create', reporteHandlers.createReporte);
 // GET /reports
 router.get('/', reporteHandlers.getReportes);
 
+// GET /reports/:id/export - Export to Excel (must be before :id route)
+router.get('/:id/export', reporteHandlers.exportReporteToExcel);
+
 // GET /reports/:id
 router.get('/:id', reporteHandlers.getReporteById);
 

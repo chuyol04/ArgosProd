@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Eye, Plus } from "lucide-react";
+import { Loader2, Eye, Plus, Download } from "lucide-react";
 import {
   IWorkInstructionOption,
   IInspectionDetail,
@@ -182,6 +182,12 @@ export default function ReportModal({
   const handleCreateInspectionDetail = () => {
     onOpenChange(false);
     router.push(`/detalles-inspeccion/crear?report_id=${reportId}`);
+  };
+
+  const handleExportToExcel = () => {
+    if (!reportId) return;
+    // Open the export endpoint in a new tab - browser will download the file
+    window.open(`/api/reports/${reportId}/export`, "_blank");
   };
 
   const getTitle = () => {
@@ -467,6 +473,12 @@ export default function ReportModal({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {isViewMode ? "Cerrar" : "Cancelar"}
           </Button>
+          {isViewMode && reportId && (
+            <Button variant="outline" onClick={handleExportToExcel}>
+              <Download className="mr-2 h-4 w-4" />
+              Exportar Excel
+            </Button>
+          )}
           {!isViewMode && (
             <Button onClick={handleSubmit} disabled={isPending || loading}>
               {isPending ? (
