@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowLeft, Pencil, Save, X, Trash2 } from "lucide-react";
+import { useUser } from "@/contexts/users/userContext";
 import {
   IInspectionDetailExtended,
   IInspectionDetailFormData,
@@ -24,7 +25,9 @@ import {
   createInspectionDetail,
   updateInspectionDetail,
   deleteInspectionDetail,
+  fetchInspectorsForSelect,
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
+import { DefectsSection } from "./DefectsSection";
 
 type Mode = "view" | "edit" | "create";
 
@@ -103,9 +106,28 @@ export default function InspectionDetailForm({
   reportId,
 }: InspectionDetailFormProps) {
   const router = useRouter();
+  const { user } = useUser();
   const [isPending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [error, setError] = useState<string | null>(null);
+
+  // Role-based permissions
+  const isManagerOrAbove = useMemo(() => {
+    return user?.roles?.some((r) => r === "Manager" || r === "Admin") ?? false;
+  }, [user?.roles]);
+
+  // Check if inspection is from a past date
+  const isPastInspection = useMemo(() => {
+    if (!detail?.inspection_date) return false;
+    const today = new Date().toISOString().split("T")[0];
+    const inspDate = new Date(detail.inspection_date).toISOString().split("T")[0];
+    return inspDate < today;
+  }, [detail?.inspection_date]);
+
+  // Can edit: M+A always, Inspectors only same-day
+  const canEdit = isManagerOrAbove || !isPastInspection;
+  // Can delete: M+A only
+  const canDelete = isManagerOrAbove;
 
   const [formData, setFormData] = useState<IInspectionDetailFormData>({
     inspection_report_id: detail?.inspection_report_id || reportId || 0,
@@ -125,6 +147,39 @@ export default function InspectionDetailForm({
     end_time: detail?.end_time ?? "",
     shift: detail?.shift != null ? String(detail.shift) : "",
   });
+
+  // State for filtered inspectors based on selected report's work instruction
+  const [filteredInspectors, setFilteredInspectors] = useState<IInspector[]>(inspectors);
+  const [isLoadingInspectors, setIsLoadingInspectors] = useState(false);
+
+  // Fetch inspectors filtered by work instruction when report changes
+  useEffect(() => {
+    const selectedReportId = formData.inspection_report_id;
+    if (!selectedReportId || selectedReportId === 0) {
+      setFilteredInspectors(inspectors);
+      return;
+    }
+
+    // Find the selected report to get its work_instruction_id
+    const selectedReport = reports.find((r) => r.id === selectedReportId);
+    if (!selectedReport?.work_instruction_id) {
+      setFilteredInspectors(inspectors);
+      return;
+    }
+
+    // Fetch inspectors for this work instruction
+    setIsLoadingInspectors(true);
+    fetchInspectorsForSelect(selectedReport.work_instruction_id)
+      .then((data) => {
+        setFilteredInspectors(data.length > 0 ? data : inspectors);
+      })
+      .catch(() => {
+        setFilteredInspectors(inspectors);
+      })
+      .finally(() => {
+        setIsLoadingInspectors(false);
+      });
+  }, [formData.inspection_report_id, reports, inspectors]);
 
   const isReadOnly = mode === "view";
   const isCreate = mode === "create";
@@ -227,14 +282,18 @@ export default function InspectionDetailForm({
         <div className="flex items-center gap-2">
           {isReadOnly && (
             <>
-              <Button variant="outline" size="sm" onClick={() => setMode("edit")}>
-                <Pencil className="mr-1.5 h-4 w-4" />
-                Editar
-              </Button>
-              <Button variant="destructive" size="sm" onClick={handleDelete} disabled={isPending}>
-                <Trash2 className="mr-1.5 h-4 w-4" />
-                Eliminar
-              </Button>
+              {canEdit && (
+                <Button variant="outline" size="sm" onClick={() => setMode("edit")}>
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  Editar
+                </Button>
+              )}
+              {canDelete && (
+                <Button variant="destructive" size="sm" onClick={handleDelete} disabled={isPending}>
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  Eliminar
+                </Button>
+              )}
             </>
           )}
           {!isReadOnly && (
@@ -323,64 +382,68 @@ export default function InspectionDetailForm({
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">Identificación</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-          <FormField label="Número de Serie" value={detail?.serial_number} isReadOnly={isReadOnly}>
-            <Input
-              value={formData.serial_number || ""}
-              onChange={(e) => handleInputChange("serial_number", e.target.value)}
-              placeholder="Ej: SN-001"
-            />
-          </FormField>
+        <CardContent className="space-y-4">
+          {/* Serial and Lot Number - Full Width */}
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+            <FormField label="Número de Serie" value={detail?.serial_number} isReadOnly={isReadOnly}>
+              <Input
+                value={formData.serial_number || ""}
+                onChange={(e) => handleInputChange("serial_number", e.target.value)}
+                placeholder="Ej: SN-001-ABCD-1234-XYZ"
+                className="font-mono"
+              />
+            </FormField>
 
-          <FormField label="Número de Lote" value={detail?.lot_number} isReadOnly={isReadOnly}>
-            <Input
-              value={formData.lot_number || ""}
-              onChange={(e) => handleInputChange("lot_number", e.target.value)}
-              placeholder="Ej: LOT-2024-001"
-            />
-          </FormField>
+            <FormField label="Número de Lote" value={detail?.lot_number} isReadOnly={isReadOnly}>
+              <Input
+                value={formData.lot_number || ""}
+                onChange={(e) => handleInputChange("lot_number", e.target.value)}
+                placeholder="Ej: LOT-2024-001-ABCD"
+                className="font-mono"
+              />
+            </FormField>
+          </div>
 
-          <FormField label="Inspector" value={detail?.inspector_name} isReadOnly={isReadOnly}>
-            <Select
-              value={formData.inspector_id ? String(formData.inspector_id) : ""}
-              onValueChange={(val) =>
-                handleInputChange("inspector_id", val ? Number(val) : undefined)
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Seleccione inspector" />
-              </SelectTrigger>
-              <SelectContent>
-                {inspectors.length === 0 ? (
-                  <SelectItem value="_empty" disabled>
-                    No hay inspectores
-                  </SelectItem>
-                ) : (
-                  inspectors.map((inspector) => (
-                    <SelectItem key={inspector.id} value={String(inspector.id)}>
-                      {inspector.name}
+          {/* Inspector and Shift */}
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+            <FormField label="Inspector" value={detail?.inspector_name} isReadOnly={isReadOnly}>
+              <Select
+                value={formData.inspector_id ? String(formData.inspector_id) : ""}
+                onValueChange={(val) =>
+                  handleInputChange("inspector_id", val ? Number(val) : undefined)
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Seleccione inspector" />
+                </SelectTrigger>
+                <SelectContent>
+                  {isLoadingInspectors ? (
+                    <SelectItem value="_loading" disabled>
+                      Cargando inspectores...
                     </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </FormField>
+                  ) : filteredInspectors.length === 0 ? (
+                    <SelectItem value="_empty" disabled>
+                      No hay inspectores asignados
+                    </SelectItem>
+                  ) : (
+                    filteredInspectors.map((inspector) => (
+                      <SelectItem key={inspector.id} value={String(inspector.id)}>
+                        {inspector.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </FormField>
 
-          <FormField label="Turno" value={detail?.shift ? `Turno ${detail.shift}` : null} isReadOnly={isReadOnly}>
-            <Select
-              value={formData.shift ? String(formData.shift) : ""}
-              onValueChange={(val) => handleInputChange("shift", val)}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Seleccione turno" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">Turno 1</SelectItem>
-                <SelectItem value="2">Turno 2</SelectItem>
-                <SelectItem value="3">Turno 3</SelectItem>
-              </SelectContent>
-            </Select>
-          </FormField>
+            <FormField label="Turno" value={detail?.shift} isReadOnly={isReadOnly}>
+              <Input
+                value={formData.shift || ""}
+                onChange={(e) => handleInputChange("shift", e.target.value)}
+                placeholder="Ej: Turno 1, Matutino, etc."
+              />
+            </FormField>
+          </div>
         </CardContent>
       </Card>
 
@@ -418,12 +481,11 @@ export default function InspectionDetailForm({
             <Input
               type="number"
               min="1"
-              max="53"
               value={formData.week ?? ""}
               onChange={(e) =>
                 handleInputChange("week", e.target.value ? Number(e.target.value) : undefined)
               }
-              placeholder="1-53"
+              placeholder="Ej: 1, 52, 104..."
             />
           </FormField>
 
@@ -572,6 +634,19 @@ export default function InspectionDetailForm({
               rows={4}
             />
           )}
+        </CardContent>
+      </Card>
+
+      {/* Defects Section */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-medium">Defectos</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DefectsSection
+            inspectionDetailId={detail?.id ?? null}
+            disabled={isReadOnly || !canEdit}
+          />
         </CardContent>
       </Card>
     </div>

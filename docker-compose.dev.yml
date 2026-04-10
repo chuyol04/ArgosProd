@@ -1,0 +1,101 @@
+# Dev mode — hot-reload for backend and frontend
+# Usage: docker compose -f docker-compose.dev.yml up
+services:
+
+  mysql:
+    image: mysql:8.0
+    container_name: argos_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: argos_db
+      MYSQL_USER: argos_user
+      MYSQL_PASSWORD: argos_pass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./ArgosBackEnd/new_mysql_schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:7.0
+    container_name: argos_mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: argos_user
+      MONGO_INITDB_ROOT_PASSWORD: argos_pass
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: node:20-alpine
+    container_name: argos_backend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./ArgosBackEnd:/app
+      - backend_node_modules:/app/node_modules
+    env_file:
+      - ./ArgosBackEnd/.env
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      SERVICE_IP: 0.0.0.0
+      DBHOST: mysql
+      DBPORT: 3306
+      DBDB: argos_db
+      DBUSER: argos_user
+      DBPASS: argos_pass
+      CORS_FRONT_ORIGIN: http://localhost:3000
+
+  frontend:
+    image: node:20-alpine
+    container_name: argos_frontend
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+      mongo:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./ArgosFrontEnd:/app
+      - frontend_node_modules:/app/node_modules
+    env_file:
+      - ./ArgosBackEnd/.env
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      COOKIE_SECURE: "false"
+      EXPRESS_BASE_URL: http://backend:3001
+      FB_SESSION_MAX_AGE_MS: 3600000
+      MONGO_URI: mongodb://argos_user:argos_pass@mongo:27017
+
+volumes:
+  mysql_data:
+  mongo_data:
+  backend_node_modules:
+  frontend_node_modules:

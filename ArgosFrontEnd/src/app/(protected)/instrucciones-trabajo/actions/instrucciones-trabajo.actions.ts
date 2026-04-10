@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { deleteMediaIfExists } from "@/lib/storage/deleteMedia";
 import {
     IWorkInstruction,
     CreateWorkInstructionData,
@@ -403,6 +404,92 @@ export async function updateWorkInstructionCollaborators(
         return { success: true };
     } catch (err) {
         console.error("Update collaborators error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function addWorkInstructionEvidence(
+    workInstructionId: number,
+    fileUrl: string,
+    comment?: string
+): Promise<{ success: boolean; id?: number; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/work-instructions/${workInstructionId}/evidence`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': `session=${session}`,
+            },
+            body: JSON.stringify({ file_url: fileUrl, comment }),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to add evidence");
+        }
+
+        revalidatePath('/instrucciones-trabajo');
+        return { success: true, id: json.id };
+    } catch (err) {
+        console.error("Add evidence error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function deleteWorkInstructionEvidence(
+    workInstructionId: number,
+    evidenceId: number
+): Promise<{ success: boolean; deletedUrl?: string; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/work-instructions/${workInstructionId}/evidence/${evidenceId}`, {
+            method: 'DELETE',
+            headers: {
+                'Cookie': `session=${session}`,
+            },
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to delete evidence");
+        }
+
+        // Clean up GridFS file
+        await deleteMediaIfExists(json.deleted_url);
+
+        revalidatePath('/instrucciones-trabajo');
+        return { success: true, deletedUrl: json.deleted_url };
+    } catch (err) {
+        console.error("Delete evidence error:", err);
         return {
             success: false,
             error: err instanceof Error ? err.message : "Unknown error"

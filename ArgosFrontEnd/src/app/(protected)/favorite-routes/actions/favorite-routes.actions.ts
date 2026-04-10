@@ -36,7 +36,7 @@ export async function toggleFavoriteRoute(routeId: string): Promise<{ success: b
 
         if (isFavorited) {
             // Remove from favorites
-            const deleteRes = await fetch(`${EXPRESS_BASE_URL}/favorite-routes/${routeId}`, {
+            const deleteRes = await fetch(`${EXPRESS_BASE_URL}/favorite-routes/${encodeURIComponent(routeId)}`, {
                 method: 'DELETE',
                 headers: {
                     'Cookie': `session=${session}`,

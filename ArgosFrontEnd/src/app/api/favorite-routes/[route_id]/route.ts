@@ -21,7 +21,7 @@ export async function DELETE(
     const { route_id } = await params;
 
     try {
-        const expressResp = await fetch(`${EXPRESS_BASE_URL}/favorite-routes/${route_id}`, {
+        const expressResp = await fetch(`${EXPRESS_BASE_URL}/favorite-routes/${encodeURIComponent(route_id)}`, {
             method: 'DELETE',
             headers: {
                 'Cookie': `session=${session}`,

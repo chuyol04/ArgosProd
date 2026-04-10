@@ -44,6 +44,126 @@ export async function createUser(req, res) {
     }
 }
  
+// GET /users — paginated list with roles
+export async function getUsers(req, res) {
+    try {
+        const { search } = req.query;
+        const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
+        const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+        let baseWhere = '';
+        const params = [];
+
+        if (search) {
+            baseWhere = ' WHERE u.name LIKE ? OR u.email LIKE ? OR u.phone_number LIKE ?';
+            const pattern = `%${search}%`;
+            params.push(pattern, pattern, pattern);
+        }
+
+        const query = `
+            SELECT u.id, u.name, u.email, u.phone_number, u.is_active,
+                   GROUP_CONCAT(r.name ORDER BY r.name SEPARATOR ', ') AS roles
+            FROM users u
+            LEFT JOIN user_roles ur ON ur.user_id = u.id
+            LEFT JOIN roles r ON r.id = ur.role_id
+            ${baseWhere}
+            GROUP BY u.id
+            ORDER BY u.id DESC
+            LIMIT ${limitNum} OFFSET ${offsetNum}
+        `;
+
+        const countQuery = `SELECT COUNT(*) as total FROM users u ${baseWhere}`;
+        const countParams = search ? [`%${search}%`, `%${search}%`, `%${search}%`] : [];
+
+        const [rows] = await MysqlClient.execute(query, params);
+        const [countResult] = await MysqlClient.execute(countQuery, countParams);
+        const total = countResult[0]?.total || 0;
+
+        return res.status(200).json({ success: true, data: rows, total });
+    } catch (error) {
+        console.error('Get users error:', error);
+        return res.status(500).json({ success: false, motive: 'Server Error' });
+    }
+}
+
+// GET /users/:id — user with roles + work instructions
+export async function getUserById(req, res) {
+    const { id } = req.params;
+    try {
+        const [users] = await MysqlClient.execute(
+            'SELECT id, name, email, phone_number, is_active FROM users WHERE id = ?',
+            [id]
+        );
+        if (users.length === 0) {
+            return res.status(404).json({ success: false, motive: 'User not found' });
+        }
+
+        const [roles] = await MysqlClient.execute(
+            `SELECT r.id, r.name FROM user_roles ur
+             INNER JOIN roles r ON r.id = ur.role_id
+             WHERE ur.user_id = ?`,
+            [id]
+        );
+
+        const [workInstructions] = await MysqlClient.execute(
+            `SELECT wi.id, wi.description, wi.inspection_rate_per_hour,
+                    p.name AS part_name, s.name AS service_name, c.name AS client_name
+             FROM work_instruction_collaborators wic
+             INNER JOIN work_instructions wi ON wi.id = wic.work_instruction_id
+             INNER JOIN parts p ON p.id = wi.part_id
+             INNER JOIN services s ON s.id = wi.service_id
+             INNER JOIN clients c ON c.id = s.client_id
+             WHERE wic.user_id = ?`,
+            [id]
+        );
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                ...users[0],
+                roles,
+                work_instructions: workInstructions,
+            },
+        });
+    } catch (error) {
+        console.error('Get user by ID error:', error);
+        return res.status(500).json({ success: false, motive: 'Server Error' });
+    }
+}
+
+// PUT /users/:id — update user info + role
+export async function updateUser(req, res) {
+    const { id } = req.params;
+    const { name, email, phone_number, is_active, role_id } = req.body;
+    try {
+        const [existing] = await MysqlClient.execute('SELECT id FROM users WHERE id = ?', [id]);
+        if (existing.length === 0) {
+            return res.status(404).json({ success: false, motive: 'User not found' });
+        }
+
+        await MysqlClient.execute(
+            'UPDATE users SET name = ?, email = ?, phone_number = ?, is_active = ? WHERE id = ?',
+            [name, email, phone_number, is_active ?? true, id]
+        );
+
+        // Update role if provided
+        if (role_id !== undefined) {
+            await MysqlClient.execute('DELETE FROM user_roles WHERE user_id = ?', [id]);
+            if (role_id) {
+                await MysqlClient.execute(
+                    'INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)',
+                    [id, role_id]
+                );
+            }
+        }
+
+        return res.status(200).json({ success: true, motive: 'User updated successfully' });
+    } catch (error) {
+        console.error('Update user error:', error);
+        return res.status(500).json({ success: false, motive: 'Server Error' });
+    }
+}
+
 export async function getUserDetails(req, res) {
     const { uid } = res.locals.firebase_uid;
     const firebase_uid = uid; // Renamed for clarity

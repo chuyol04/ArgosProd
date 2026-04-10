@@ -25,7 +25,7 @@ export async function createClient(
             throw new Error("No session cookie");
         }
 
-        const res = await fetch(`${EXPRESS_BASE_URL}/clients`, {
+        const res = await fetch(`${EXPRESS_BASE_URL}/clients/create`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

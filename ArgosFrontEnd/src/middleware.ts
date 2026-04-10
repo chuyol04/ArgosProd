@@ -5,12 +5,26 @@ export const config = {
     matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.jpeg$|.*\\.svg$|.*\\.gif$|.*\\.ico$).*)'],
 };
 
+const ADMIN_ONLY_PATHS = ['/media', '/users', '/roles'];
+
 export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
     const session = req.cookies.get('session')?.value;
 
-    // Allow requests to public routes (login and forbidden page)
-    if (pathname === '/login' || pathname === '/forbidden') {
+    // Allow requests to forbidden page
+    if (pathname === '/forbidden') {
+        return NextResponse.next();
+    }
+
+    // If on login page with a session, redirect to home
+    if (pathname === '/login' && session) {
+        const url = req.nextUrl.clone();
+        url.pathname = '/home';
+        return NextResponse.redirect(url);
+    }
+
+    // Allow login page for unauthenticated users
+    if (pathname === '/login') {
         return NextResponse.next();
     }
 
@@ -40,9 +54,31 @@ export async function middleware(req: NextRequest) {
         }
 
         // On other errors (500, network issues), let request through
-        // The page will handle showing errors if needed
         if (!userRes.ok) {
             console.warn('Auth check failed with status:', userRes.status, '- letting request through');
+        }
+
+        // Parse user data for role checks
+        const isAdminRoute = ADMIN_ONLY_PATHS.some((p) => pathname.startsWith(p));
+        if (isAdminRoute && userRes.ok) {
+            try {
+                const userData = await userRes.json();
+                const roles: string[] = userData.roles ?? [];
+                if (!roles.includes('Admin')) {
+                    const url = req.nextUrl.clone();
+                    url.pathname = '/forbidden';
+                    return NextResponse.redirect(url);
+                }
+            } catch {
+                const url = req.nextUrl.clone();
+                url.pathname = '/forbidden';
+                return NextResponse.redirect(url);
+            }
+        } else if (isAdminRoute && !userRes.ok) {
+            // Can't verify role, deny access to admin routes
+            const url = req.nextUrl.clone();
+            url.pathname = '/forbidden';
+            return NextResponse.redirect(url);
         }
 
         // Redirect from root to home for authenticated users
@@ -57,6 +93,13 @@ export async function middleware(req: NextRequest) {
     } catch (error) {
         // On network/transient errors, let request through - don't clear session
         console.error('Middleware fetch error (not clearing session):', error);
+
+        // But block admin routes on error
+        if (ADMIN_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+            const url = req.nextUrl.clone();
+            url.pathname = '/forbidden';
+            return NextResponse.redirect(url);
+        }
 
         // Still redirect root to home
         if (pathname === '/') {

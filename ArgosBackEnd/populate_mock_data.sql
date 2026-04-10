@@ -4,7 +4,7 @@ USE argos_db;
 
 SET FOREIGN_KEY_CHECKS = 0;
 
--- Clear existing data (preserves admin user)
+-- Clear existing data
 TRUNCATE TABLE favorite_routes;
 TRUNCATE TABLE user_roles;
 TRUNCATE TABLE roles;
@@ -14,11 +14,11 @@ TRUNCATE TABLE inspection_reports;
 TRUNCATE TABLE work_instruction_evidence;
 TRUNCATE TABLE work_instruction_collaborators;
 TRUNCATE TABLE work_instructions;
+TRUNCATE TABLE users;
 TRUNCATE TABLE defects;
 TRUNCATE TABLE parts;
 TRUNCATE TABLE services;
 TRUNCATE TABLE clients;
-DELETE FROM users WHERE email != 'admin@admin.com';
 
 -- 1. clients
 INSERT INTO clients (id, name, contact_person, email, phone_number) VALUES
@@ -59,8 +59,9 @@ INSERT INTO work_instructions (id, service_id, part_id, description, inspection_
 (4, 3, 4, 'Dimensional check for Bracket B3',        200),
 (5, 4, 5, '100% visual inspection for Cover Plate',  300);
 
--- 6. users (fake firebase UIDs — for mock data only, cannot login)
+-- 6. users (admin has real firebase UID, others are mock)
 INSERT INTO users (id, firebase_uid, name, email, phone_number, is_active) VALUES
+(1, 'aUOBp5wqlFhZmFequ3TBHM9wITz1', 'Fernando Fabrizzio Ramírez Flores', 'admin@admin.com', '987-654-3210', TRUE),
 (2, 'mock_firebase_inspector1', 'Juan Pérez',    'juan.perez@argos.com',   '664-111-0001', TRUE),
 (3, 'mock_firebase_inspector2', 'María López',   'maria.lopez@argos.com',  '664-111-0002', TRUE),
 (4, 'mock_firebase_manager1',   'Carlos Soto',   'carlos.soto@argos.com',  '664-111-0003', TRUE);
@@ -71,15 +72,12 @@ INSERT INTO roles (id, name, description) VALUES
 (2, 'Manager',   'Manages inspections, services, and users'),
 (3, 'Admin',     'Full administrative access');
 
--- 8. user_roles (assign roles including existing admin)
+-- 8. user_roles
 INSERT INTO user_roles (user_id, role_id) VALUES
+(1, 3), -- Fernando (admin@admin.com) → Admin
 (2, 1), -- Juan Pérez → Inspector
 (3, 1), -- María López → Inspector
 (4, 2); -- Carlos Soto → Manager
-
--- Assign Admin role to admin@admin.com
-INSERT INTO user_roles (user_id, role_id)
-SELECT u.id, 3 FROM users u WHERE u.email = 'admin@admin.com';
 
 -- 9. inspection_reports
 INSERT INTO inspection_reports (id, work_instruction_id, start_date, po_number, po_hours, description, problem, photo_url) VALUES
@@ -120,7 +118,7 @@ INSERT INTO work_instruction_evidence (id, work_instruction_id, photo_url, comme
 (3, 4, NULL, 'Caliper measurements for Bracket B3');
 
 -- 13. favorite_routes
-INSERT INTO favorite_routes (id, user_id, route_id)
-SELECT 1, u.id, 'reports-create' FROM users u WHERE u.email = 'admin@admin.com';
+INSERT INTO favorite_routes (id, user_id, route_id) VALUES
+(1, 1, 'reports-create');
 
 SET FOREIGN_KEY_CHECKS = 1;

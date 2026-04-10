@@ -71,6 +71,7 @@ export default function ClientsTable({ initialData }: Props) {
         id: c.id,
         name: c.name,
         email: c.email,
+        contact_person: c.contact_person || "Sin información",
         phone_number: c.phone_number || "Sin información",
       })),
     [initialData.clients]
@@ -157,6 +158,9 @@ export default function ClientsTable({ initialData }: Props) {
                   Correo
                 </th>
                 <th className="text-muted-foreground p-3 text-left text-xs font-medium lg:p-4 lg:text-sm">
+                  Persona de Contacto
+                </th>
+                <th className="text-muted-foreground p-3 text-left text-xs font-medium lg:p-4 lg:text-sm">
                   Teléfono
                 </th>
                 <th className="text-muted-foreground p-3 text-center text-xs font-medium lg:p-4 lg:text-sm">
@@ -175,6 +179,9 @@ export default function ClientsTable({ initialData }: Props) {
                   </td>
                   <td className="text-card-foreground p-3 text-xs lg:p-4 lg:text-sm">
                     {record.email}
+                  </td>
+                  <td className="text-card-foreground p-3 text-xs lg:p-4 lg:text-sm">
+                    {record.contact_person}
                   </td>
                   <td className="text-card-foreground p-3 text-xs lg:p-4 lg:text-sm">
                     {record.phone_number}
@@ -209,7 +216,7 @@ export default function ClientsTable({ initialData }: Props) {
               ))}
               {tableRows.length === 0 && (
                 <tr>
-                  <td className="text-muted-foreground p-4 text-sm" colSpan={4}>
+                  <td className="text-muted-foreground p-4 text-sm" colSpan={5}>
                     No hay clientes registrados.
                   </td>
                 </tr>
@@ -233,6 +240,9 @@ export default function ClientsTable({ initialData }: Props) {
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
                   {record.email}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {record.contact_person}
                 </p>
                 <p className="text-muted-foreground mt-1 text-xs">
                   {record.phone_number}

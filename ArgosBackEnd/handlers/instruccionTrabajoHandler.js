@@ -339,17 +339,113 @@ export async function updateWorkInstructionCollaborators(req, res) {
   }
 }
 
-// GET USERS FOR SELECT - Fetch all active users for collaborator selection
+// ADD EVIDENCE - Add a single evidence file to a work instruction
+export async function addEvidence(req, res) {
+  try {
+    const { id } = req.params;
+    const { file_url, file_name, file_type, comment } = req.body || {};
+
+    if (!file_url) {
+      return res.status(400).json({ success: false, motive: 'file_url is required' });
+    }
+
+    // Validate work instruction exists
+    const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Work instruction not found' });
+    }
+
+    const [result] = await MysqlClient.execute(
+      'INSERT INTO work_instruction_evidence (work_instruction_id, photo_url, comment) VALUES (?, ?, ?)',
+      [id, file_url, comment || null]
+    );
+
+    return res.status(201).json({
+      success: true,
+      id: result.insertId,
+      motive: 'Evidence added successfully'
+    });
+  } catch (error) {
+    console.error('Error adding evidence:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// DELETE EVIDENCE - Delete an evidence file from a work instruction
+export async function deleteEvidence(req, res) {
+  try {
+    const { id, evidenceId } = req.params;
+
+    // Validate work instruction exists
+    const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Work instruction not found' });
+    }
+
+    // Validate evidence exists and belongs to this work instruction
+    const [evidence] = await MysqlClient.execute(
+      'SELECT id, photo_url FROM work_instruction_evidence WHERE id = ? AND work_instruction_id = ? LIMIT 1',
+      [evidenceId, id]
+    );
+    if (evidence.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Evidence not found' });
+    }
+
+    const [result] = await MysqlClient.execute(
+      'DELETE FROM work_instruction_evidence WHERE id = ?',
+      [evidenceId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(500).json({ success: false, motive: 'No evidence was deleted' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      deleted_url: evidence[0].photo_url,
+      motive: 'Evidence deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting evidence:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// GET USERS FOR SELECT - Fetch users for collaborator/inspector selection
+// If work_instruction_id is provided, returns only collaborators for that work instruction
+// Otherwise returns all active users
 export async function getUsersForSelect(req, res) {
   try {
-    const [users] = await MysqlClient.execute(`
-      SELECT u.id, u.name, u.email, r.name AS role
-      FROM users u
-      LEFT JOIN user_roles ur ON ur.user_id = u.id
-      LEFT JOIN roles r ON r.id = ur.role_id
-      WHERE u.is_active = TRUE
-      ORDER BY u.name ASC
-    `);
+    const { work_instruction_id } = req.query;
+
+    let query;
+    let params = [];
+
+    if (work_instruction_id) {
+      // Return only collaborators for the specified work instruction
+      query = `
+        SELECT DISTINCT u.id, u.name, u.email, r.name AS role
+        FROM users u
+        INNER JOIN work_instruction_collaborators wic ON wic.user_id = u.id
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        WHERE u.is_active = TRUE AND wic.work_instruction_id = ?
+        ORDER BY u.name ASC
+      `;
+      params = [work_instruction_id];
+    } else {
+      // Return all active users (for work instruction collaborator assignment)
+      query = `
+        SELECT u.id, u.name, u.email, r.name AS role
+        FROM users u
+        LEFT JOIN user_roles ur ON ur.user_id = u.id
+        LEFT JOIN roles r ON r.id = ur.role_id
+        WHERE u.is_active = TRUE
+        ORDER BY u.name ASC
+      `;
+    }
+
+    const [users] = await MysqlClient.execute(query, params);
 
     return res.status(200).json({ success: true, data: users });
   } catch (error) {

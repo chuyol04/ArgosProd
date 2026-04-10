@@ -78,7 +78,10 @@ services:
     container_name: argos_frontend
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_started
+      mongo:
+        condition: service_healthy
     ports:
       - "3000:3000"
     env_file:
@@ -90,6 +93,8 @@ services:
       # Dentro de Docker, frontend habla con backend por nombre de servicio
       EXPRESS_BASE_URL: http://backend:3001
       FB_SESSION_MAX_AGE_MS: 3600000
+      # MongoDB para media storage (GridFS)
+      MONGO_URI: mongodb://argos_user:argos_pass@mongo:27017
 
 volumes:
   mysql_data:

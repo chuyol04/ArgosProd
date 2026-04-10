@@ -58,6 +58,10 @@
         {
           "name": "Roles",
           "path": "/roles"
+        },
+        {
+          "name": "Media",
+          "path": "/media"
         }
       ]
     }
