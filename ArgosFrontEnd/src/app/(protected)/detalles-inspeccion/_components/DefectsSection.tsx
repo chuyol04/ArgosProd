@@ -28,10 +28,12 @@ import {
   IIncident,
 } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
 import { uploadFile, getFileCategory } from "@/lib/storage/fileUpload";
+import { MediaItem } from "@/components/ui/media-item";
 import {
   Plus,
   Trash2,
   Image as ImageIcon,
+  File as FileIcon,
   AlertTriangle,
   Loader2,
   Upload,
@@ -240,19 +242,18 @@ export function DefectsSection({
               className="flex items-center gap-3 p-3 border rounded-lg bg-card"
             >
               {/* Evidence thumbnail */}
-              <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
-                {incident.evidence_url ? (
-                  <img
-                    src={incident.evidence_url}
-                    alt="Evidencia"
-                    className="w-full h-full object-cover rounded"
-                    onClick={() => window.open(incident.evidence_url!, "_blank")}
-                    style={{ cursor: "pointer" }}
+              {incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) ? (
+                <div className="flex-shrink-0">
+                  <MediaItem
+                    mediaId={incident.evidence_url}
+                    size="sm"
                   />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                )}
-              </div>
+                </div>
+              ) : (
+                <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
+                  <FileIcon className="h-5 w-5 text-muted-foreground" />
+                </div>
+              )}
 
               {/* Info */}
               <div className="flex-1 min-w-0">

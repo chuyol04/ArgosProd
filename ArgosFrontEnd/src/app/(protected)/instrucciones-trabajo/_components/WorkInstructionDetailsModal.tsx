@@ -13,9 +13,10 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { MediaItem } from "@/components/ui/media-item";
 import { getWorkInstructionDetails } from "@/app/(protected)/instrucciones-trabajo/actions/instrucciones-trabajo.actions";
 import { IWorkInstructionDetails } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
-import { ImageIcon } from "lucide-react";
+import { File as FileIcon } from "lucide-react";
 
 interface WorkInstructionDetailsModalProps {
   workInstructionId: number | null;
@@ -153,34 +154,35 @@ export default function WorkInstructionDetailsModal({
 
               <Separator />
 
-              {/* Photos */}
+              {/* Archivos */}
               <div className="space-y-2">
                 <h3 className="text-sm font-medium text-muted-foreground">
-                  Fotos ({details.evidences.length})
+                  Archivos ({details.evidences.length})
                 </h3>
                 {details.evidences.length > 0 ? (
                   <div className="grid grid-cols-4 gap-2">
-                    {details.evidences.map((evidence) => (
-                      <div
-                        key={evidence.id}
-                        className="aspect-square rounded-lg bg-muted flex items-center justify-center border border-dashed"
-                      >
-                        {evidence.photo_url ? (
-                          <img
-                            src={evidence.photo_url}
-                            alt={evidence.comment || "Evidencia"}
-                            className="w-full h-full object-cover rounded-lg"
-                          />
-                        ) : (
-                          <ImageIcon className="h-6 w-6 text-muted-foreground" />
-                        )}
-                      </div>
-                    ))}
+                    {details.evidences.map((evidence) =>
+                      evidence.photo_url && /^[a-f0-9]{24}$/.test(evidence.photo_url) ? (
+                        <MediaItem
+                          key={evidence.id}
+                          mediaId={evidence.photo_url}
+                          label={evidence.comment || undefined}
+                          size="lg"
+                        />
+                      ) : (
+                        <div
+                          key={evidence.id}
+                          className="aspect-square rounded-lg bg-muted/30 border flex items-center justify-center"
+                        >
+                          <FileIcon className="h-8 w-8 text-muted-foreground" />
+                        </div>
+                      )
+                    )}
                   </div>
                 ) : (
                   <div className="flex items-center justify-center p-4 rounded-lg bg-muted/30 border border-dashed">
-                    <ImageIcon className="h-6 w-6 text-muted-foreground mr-2" />
-                    <p className="text-sm text-muted-foreground">No hay fotos asociadas</p>
+                    <FileIcon className="h-6 w-6 text-muted-foreground mr-2" />
+                    <p className="text-sm text-muted-foreground">No hay archivos asociados</p>
                   </div>
                 )}
               </div>

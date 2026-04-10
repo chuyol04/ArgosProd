@@ -21,6 +21,7 @@ import detalleRouter from './routes/detalleInspeccionRoutes.js';
 import incidenciaRouter from './routes/incidenciaRoutes.js';
 import rolesUsuariosRouter from './routes/rolesUsuariosRoutes.js';
 import rutasFavoritasRouter from './routes/rutasFavoritasRoutes.js';
+import mediaRouter from './routes/mediaRoutes.js';
 
 const app = express();
 
@@ -53,5 +54,6 @@ app.use('/incidents', verifySession, incidenciaRouter);
 app.use('/user-roles', verifySession, rolesUsuariosRouter);
 app.use('/favorite-routes', verifySession, rutasFavoritasRouter);
 app.use('/services', verifySession, servicioRouter);
+app.use('/media', verifySession, mediaRouter);
 
 export default app;

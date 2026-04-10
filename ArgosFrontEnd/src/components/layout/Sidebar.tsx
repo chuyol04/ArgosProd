@@ -1,8 +1,12 @@
 "use client";
 
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { sitemapData } from "@/app/(protected)/sitemap/data/sitemapData";
+import { useUser } from "@/contexts/users/userContext";
 import { X } from "lucide-react";
+
+const ADMIN_ONLY_CATEGORIES = ["Administración"];
 
 interface SidebarProps {
     isOpen: boolean;
@@ -11,9 +15,16 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const router = useRouter();
+    const { user } = useUser();
 
-    // Show all categories and routes - role-based filtering will be added later
-    const categories = sitemapData;
+    const isAdmin = user?.roles?.includes("Admin") ?? false;
+
+    const categories = useMemo(() => {
+        if (isAdmin) return sitemapData;
+        return sitemapData.filter(
+            (cat) => !ADMIN_ONLY_CATEGORIES.includes(cat.name)
+        );
+    }, [isAdmin]);
 
     const handleNavigate = (path: string) => {
         router.push(path);

@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { deleteMediaIfExists } from "@/lib/storage/deleteMedia";
 import {
     IWorkInstruction,
     CreateWorkInstructionData,
@@ -481,6 +482,9 @@ export async function deleteWorkInstructionEvidence(
         if (!res.ok) {
             throw new Error(json.motive || "Failed to delete evidence");
         }
+
+        // Clean up GridFS file
+        await deleteMediaIfExists(json.deleted_url);
 
         revalidatePath('/instrucciones-trabajo');
         return { success: true, deletedUrl: json.deleted_url };

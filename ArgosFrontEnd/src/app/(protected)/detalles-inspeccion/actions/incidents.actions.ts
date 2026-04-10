@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { deleteMediaIfExists } from "@/lib/storage/deleteMedia";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
 
@@ -211,6 +212,9 @@ export async function deleteIncident(
     if (!res.ok || !json.success) {
       throw new Error(json.motive || "Failed to delete incident");
     }
+
+    // Clean up GridFS file
+    await deleteMediaIfExists(json.deleted_evidence_url);
 
     revalidatePath("/detalles-inspeccion");
     return { success: true };

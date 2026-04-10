@@ -8,6 +8,8 @@ import {
   uploadFile,
   getFileCategory,
   formatFileSize,
+  mediaViewUrl,
+  mediaDownloadUrl,
 } from "@/lib/storage/fileUpload";
 import {
   Upload,
@@ -24,7 +26,7 @@ import {
 export interface UploadedFile {
   id: string;
   name: string;
-  url: string;
+  url: string; // media_id stored here
   type: "image" | "pdf" | "document" | "spreadsheet" | "other";
   size?: number;
   comment?: string;
@@ -37,14 +39,14 @@ interface PendingFile {
   progress: number;
   status: "pending" | "uploading" | "completed" | "error";
   error?: string;
-  url?: string;
+  mediaId?: string;
 }
 
 interface FileUploaderProps {
   folder: string;
   existingFiles?: UploadedFile[];
   onFilesChange: (files: UploadedFile[]) => void;
-  onFileDelete?: (fileId: string, url: string) => void;
+  onFileDelete?: (fileId: string, mediaId: string) => void;
   maxFiles?: number;
   maxSizeMB?: number;
   acceptedTypes?: string;
@@ -125,7 +127,7 @@ export function FileUploader({
         );
 
         try {
-          const url = await uploadFile(
+          const mediaId = await uploadFile(
             pendingFile.file,
             folder,
             (progress) => {
@@ -142,7 +144,7 @@ export function FileUploader({
           const uploadedFile: UploadedFile = {
             id: pendingFile.id,
             name: pendingFile.file.name,
-            url,
+            url: mediaId,
             type: getFileCategory(pendingFile.file),
             size: pendingFile.file.size,
           };
@@ -150,12 +152,11 @@ export function FileUploader({
           setPendingFiles((prev) =>
             prev.map((f) =>
               f.id === pendingFile.id
-                ? { ...f, status: "completed", url }
+                ? { ...f, status: "completed", mediaId }
                 : f
             )
           );
 
-          // Notify parent of new file
           onFilesChange([...existingFiles, uploadedFile]);
         } catch (error) {
           console.error("Upload error:", error);
@@ -205,8 +206,8 @@ export function FileUploader({
     });
   };
 
-  const handleDeleteExisting = (fileId: string, url: string) => {
-    onFileDelete?.(fileId, url);
+  const handleDeleteExisting = (fileId: string, mediaId: string) => {
+    onFileDelete?.(fileId, mediaId);
     onFilesChange(existingFiles.filter((f) => f.id !== fileId));
   };
 
@@ -298,22 +299,23 @@ export function FileUploader({
               key={file.id}
               className="group relative border rounded-lg overflow-hidden bg-card"
             >
-              {file.type === "image" ? (
-                <div className="aspect-video">
-                  <img
-                    src={file.url}
-                    alt={file.name}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              ) : (
-                <div className="aspect-video flex flex-col items-center justify-center p-4 bg-muted/30">
+              <div className="aspect-video relative">
+                <img
+                  src={mediaViewUrl(file.url)}
+                  alt={file.name}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                    e.currentTarget.nextElementSibling?.classList.remove("hidden");
+                  }}
+                />
+                <div className="hidden w-full h-full flex flex-col items-center justify-center p-4 bg-muted/30">
                   <FileTypeIcon type={file.type} />
                   <p className="text-xs text-muted-foreground mt-2 text-center truncate max-w-full">
                     {file.name}
                   </p>
                 </div>
-              )}
+              </div>
 
               {/* Actions overlay */}
               <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -322,7 +324,7 @@ export function FileUploader({
                   variant="secondary"
                   size="icon"
                   className="h-8 w-8"
-                  onClick={() => window.open(file.url, "_blank")}
+                  onClick={() => window.open(mediaDownloadUrl(file.url), "_blank")}
                   title="Descargar"
                 >
                   <Download className="h-4 w-4" />

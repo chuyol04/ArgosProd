@@ -50,8 +50,11 @@ const SiteMap: React.FC = () => {
         return null;
     }
 
-    // Show all routes - role-based filtering will be added later
-    const categories = sitemapData;
+    const isAdmin = user?.roles?.includes("Admin") ?? false;
+    const ADMIN_ONLY_CATEGORIES = ["Administración"];
+    const categories = isAdmin
+        ? sitemapData
+        : sitemapData.filter((cat) => !ADMIN_ONLY_CATEGORIES.includes(cat.name));
 
     return (
         <div className='flex flex-col'>

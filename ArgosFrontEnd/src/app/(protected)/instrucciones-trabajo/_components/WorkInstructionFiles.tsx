@@ -7,8 +7,9 @@ import { cn } from "@/lib/utils";
 import {
   uploadFile,
   getFileCategory,
-  formatFileSize,
+  mediaDownloadUrl,
 } from "@/lib/storage/fileUpload";
+import { MediaItem } from "@/components/ui/media-item";
 import {
   addWorkInstructionEvidence,
   deleteWorkInstructionEvidence,
@@ -43,10 +44,8 @@ interface WorkInstructionFilesProps {
   className?: string;
 }
 
-const FileTypeIcon = ({ url }: { url: string }) => {
-  const ext = url.split(".").pop()?.toLowerCase() || "";
-  const category = getFileCategory(url);
-
+const FileTypeIcon = ({ name }: { name: string }) => {
+  const category = getFileCategory(name);
   switch (category) {
     case "image":
       return <ImageIcon className="h-6 w-6 text-green-500" />;
@@ -80,7 +79,6 @@ export function WorkInstructionFiles({
     async (files: FileList | null) => {
       if (!files || disabled) return;
 
-      // In create mode (no workInstructionId), just show a message
       if (!workInstructionId) {
         alert("Guarda la instrucción de trabajo primero para poder subir archivos.");
         return;
@@ -103,7 +101,6 @@ export function WorkInstructionFiles({
         filesToUpload.push(file);
       }
 
-      // Upload each file
       for (const file of filesToUpload) {
         const id = `upload-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
         const category = getFileCategory(file);
@@ -119,8 +116,8 @@ export function WorkInstructionFiles({
         setPendingUploads((prev) => [...prev, pending]);
 
         try {
-          // Upload to Firebase Storage
-          const url = await uploadFile(
+          // Upload to MongoDB GridFS
+          const mediaId = await uploadFile(
             file,
             `work-instructions/${workInstructionId}`,
             (progress) => {
@@ -132,25 +129,22 @@ export function WorkInstructionFiles({
             }
           );
 
-          // Save to backend
+          // Save media_id to backend
           setPendingUploads((prev) =>
             prev.map((p) =>
               p.id === id ? { ...p, status: "saving", progress: 100 } : p
             )
           );
 
-          const result = await addWorkInstructionEvidence(workInstructionId, url);
+          const result = await addWorkInstructionEvidence(workInstructionId, mediaId);
 
           if (result.success && result.id) {
-            // Add to existing files
             const newEvidence: IEvidence = {
               id: result.id,
-              photo_url: url,
+              photo_url: mediaId,
               comment: null,
             };
             onFilesChange([...existingFiles, newEvidence]);
-
-            // Remove from pending
             setPendingUploads((prev) => prev.filter((p) => p.id !== id));
           } else {
             throw new Error(result.error || "Error saving to database");
@@ -221,9 +215,9 @@ export function WorkInstructionFiles({
     });
   };
 
-  const isImage = (url: string) => {
-    const category = getFileCategory(url);
-    return category === "image";
+  const isMediaId = (value: string | null) => {
+    if (!value) return false;
+    return /^[a-f0-9]{24}$/.test(value);
   };
 
   return (
@@ -281,7 +275,7 @@ export function WorkInstructionFiles({
                   className="h-8 w-8 object-cover rounded"
                 />
               ) : (
-                <FileTypeIcon url={upload.file.name} />
+                <FileTypeIcon name={upload.file.name} />
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate">{upload.file.name}</p>
@@ -321,42 +315,33 @@ export function WorkInstructionFiles({
               key={file.id}
               className="group relative border rounded-lg overflow-hidden bg-card"
             >
-              {file.photo_url && isImage(file.photo_url) ? (
-                <div className="aspect-video">
-                  <img
-                    src={file.photo_url}
-                    alt={file.comment || "Archivo"}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+              {file.photo_url && isMediaId(file.photo_url) ? (
+                <MediaItem
+                  mediaId={file.photo_url}
+                  label={file.comment || undefined}
+                  size="md"
+                />
               ) : (
-                <div className="aspect-video flex flex-col items-center justify-center p-2 bg-muted/30">
-                  <FileTypeIcon url={file.photo_url || ""} />
+                <div className="aspect-video flex flex-col items-center justify-center bg-muted/30">
+                  <FileTypeIcon name={file.photo_url || ""} />
                   <p className="text-xs text-muted-foreground mt-1 text-center truncate max-w-full px-1">
-                    {file.photo_url?.split("/").pop() || "Archivo"}
+                    {file.comment || "Archivo"}
                   </p>
                 </div>
               )}
 
-              {/* Actions overlay */}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={() => file.photo_url && window.open(file.photo_url, "_blank")}
-                  title="Descargar"
-                >
-                  <Download className="h-3 w-3" />
-                </Button>
-                {!disabled && (
+              {/* Delete button */}
+              {!disabled && (
+                <div className="absolute top-1 right-1 z-10">
                   <Button
                     type="button"
                     variant="destructive"
                     size="icon"
-                    className="h-7 w-7"
-                    onClick={() => handleDelete(file.id)}
+                    className="h-6 w-6"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(file.id);
+                    }}
                     disabled={deletingIds.includes(file.id)}
                     title="Eliminar"
                   >
@@ -366,13 +351,6 @@ export function WorkInstructionFiles({
                       <Trash2 className="h-3 w-3" />
                     )}
                   </Button>
-                )}
-              </div>
-
-              {/* Comment footer */}
-              {file.comment && (
-                <div className="p-1 border-t text-xs text-muted-foreground truncate">
-                  {file.comment}
                 </div>
               )}
             </div>
@@ -380,7 +358,7 @@ export function WorkInstructionFiles({
         </div>
       )}
 
-      {/* Empty state message for create mode */}
+      {/* Empty state for create mode */}
       {!workInstructionId && existingFiles.length === 0 && pendingUploads.length === 0 && (
         <p className="text-xs text-muted-foreground text-center py-2">
           Los archivos se pueden agregar después de guardar la instrucción de trabajo.

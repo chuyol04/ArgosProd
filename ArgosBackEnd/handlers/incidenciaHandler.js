@@ -148,10 +148,12 @@ export async function deleteIncidencia(req, res) {
     const { id } = req.params;
 
     const [ex] = await MysqlClient.execute(
-      'SELECT id FROM incidents WHERE id = ? LIMIT 1',
+      'SELECT id, evidence_url FROM incidents WHERE id = ? LIMIT 1',
       [id]
     );
     if (ex.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
+
+    const deletedEvidenceUrl = ex[0].evidence_url;
 
     const [result] = await MysqlClient.execute(
       'DELETE FROM incidents WHERE id = ?',
@@ -159,7 +161,7 @@ export async function deleteIncidencia(req, res) {
     );
     if (result.affectedRows === 0) return res.status(500).json({ success: false, motive: 'No record was deleted' });
 
-    return res.status(200).json({ success: true, motive: 'Incident deleted' });
+    return res.status(200).json({ success: true, deleted_evidence_url: deletedEvidenceUrl, motive: 'Incident deleted' });
   } catch (error) {
     console.error('Error deleting incident:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });

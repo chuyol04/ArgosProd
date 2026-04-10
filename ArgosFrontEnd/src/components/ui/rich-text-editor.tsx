@@ -35,6 +35,7 @@ export function RichTextEditor({
   className,
 }: RichTextEditorProps) {
   const editor = useEditor({
+    immediatelyRender: false,
     extensions: [
       StarterKit.configure({
         heading: {
@@ -53,7 +54,7 @@ export function RichTextEditor({
     editorProps: {
       attributes: {
         class:
-          "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[200px] px-3 py-2",
+          "rich-text-content max-w-none focus:outline-none min-h-[200px] px-3 py-2 text-sm",
       },
     },
   });
@@ -238,7 +239,7 @@ export function RichTextViewer({ content, className }: RichTextViewerProps) {
   return (
     <div
       className={cn(
-        "prose prose-sm max-w-none dark:prose-invert prose-headings:mt-2 prose-headings:mb-1 prose-p:my-1 prose-ul:my-1 prose-ol:my-1",
+        "rich-text-content text-sm",
         className
       )}
       dangerouslySetInnerHTML={{ __html: content }}
