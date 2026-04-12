@@ -101,6 +101,7 @@ services:
     build:
       context: ./argos-backup
       dockerfile: Dockerfile
+      network: host
     container_name: argos_backup
     restart: unless-stopped
     depends_on:
