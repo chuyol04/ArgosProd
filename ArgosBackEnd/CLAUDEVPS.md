@@ -1,126 +1,177 @@
-1. Resumen del Proyecto
-Este documento describe el proceso completo de despliegue del sistema Argos (sistema de reporte de inspección) en una VPS de Neubox con Ubuntu 24, usando Docker y Docker Compose.
+# Argos — Documentación de Despliegue VPS
 
-Repositorios utilizados:
-•	Frontend: https://github.com/chuyol04/ArgosFrontEnd (Next.js + TypeScript + Tailwind)
-•	Backend: https://github.com/chuyol04/ArgosBackEnd (Express.js + MySQL + MongoDB)
+## 1. Resumen del Proyecto
 
-2. Infraestructura
-2.1 Especificaciones del Servidor
-Componente	Valor
-Proveedor	Neubox
-OS	Ubuntu 24 LTS
-CPU	3 Cores
-RAM	4 GB
-IP	72.249.60.141
-Dominio	ozcabinspeccion.com
-Git	2.43.0
-Docker	29.3.0
+Sistema de gestión de inspecciones (Argos) desplegado en VPS Neubox.
+Monorepo unificado con frontend (Next.js) + backend (Express) + bases de datos.
 
-3. Arquitectura de Contenedores
-El sistema está compuesto por 4 contenedores Docker:
-•	argos_frontend — Next.js en puerto 3000
-•	argos_backend — Express.js en puerto 3001
-•	argos_mysql — MySQL 8.0 en puerto 3306
-•	argos_mongo — MongoDB 7.0 en puerto 27017
+- **Repositorio**: https://github.com/chuyol04/ArgosProd
+- **Frontend**: Next.js 15 + TypeScript + Tailwind
+- **Backend**: Express.js + MySQL 8 + MongoDB 7
 
-El backend (mysql + mongo + express) se orquesta con Docker Compose. El frontend corre de forma independiente con docker run.
+---
 
-4. Pasos Realizados
+## 2. Infraestructura
 
-Paso	Estado	Notas
-Actualizar sistema (apt update && upgrade)	✅ Completado	
-Instalar Git 2.43.0	✅ Completado	
-Instalar Docker 29.3.0	✅ Completado	via get.docker.com
-Crear carpeta /opt/argos	✅ Completado	
-Clonar repo backend (2.50 MiB)	✅ Completado	rama main
-Clonar repo frontend (3.25 MiB)	✅ Completado	rama master
-Crear Dockerfile backend	✅ Completado	node:20-alpine
-Crear Dockerfile frontend	✅ Completado	multi-stage build
-Crear docker-compose.yml	✅ Completado	con healthchecks
-Levantar backend (docker compose up)	✅ Completado	MySQL + Mongo + Express
-Instalar y configurar UFW	✅ Completado	puertos 22, 3000, 3001
-Build frontend (docker build)	✅ Completado	con .env Firebase
-Run frontend (docker run)	✅ Completado	puerto 3000
-Instalar Nginx	✅ Completado	proxy inverso
-Configurar dominio con Nginx	⏳ Pendiente	ozcabinspeccion.com
-Configurar HTTPS (SSL)	⏳ Pendiente	Let's Encrypt
-Configurar .env seguro	⏳ Pendiente	mejoras futuras
+| Componente | Valor              |
+|------------|--------------------|
+| Proveedor  | Neubox             |
+| OS         | Ubuntu 24 LTS      |
+| CPU        | 3 Cores            |
+| RAM        | 4 GB               |
+| IP         | 72.249.60.141      |
+| Dominio    | ozcabinspeccion.com |
+| Docker     | 29.3.0             |
 
- 
-5. Archivos de Configuración
-5.1 Dockerfile — Backend
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --production
-COPY . .
-EXPOSE 3001
-CMD ["node", "server.js"]
+---
 
-5.2 Dockerfile — Frontend (Multi-stage)
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
+## 3. Arquitectura de Contenedores
 
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-RUN npm run build
+4 contenedores orquestados con un único `docker-compose.yml` en `/opt/argos`:
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-EXPOSE 3000
-CMD ["npm", "start"]
+| Contenedor      | Imagen         | Puerto  |
+|-----------------|----------------|---------|
+| argos_frontend  | Next.js        | 3000    |
+| argos_backend   | Express.js     | 3001    |
+| argos_mysql     | mysql:8.0      | 3307→3306 |
+| argos_mongo     | mongo:7.0      | 27017   |
 
-5.3 docker-compose.yml
-Incluye servicios: mysql, mongo, backend. Configurado con:
-•	restart: always — reinicio automático si falla
-•	healthcheck — espera que MySQL y Mongo estén listos antes de arrancar el backend
-•	volumes persistentes — mysql_data y mongo_data
-•	SERVICE_IP: 0.0.0.0 — para escuchar en todas las interfaces
+Todos tienen `restart: unless-stopped`. El servicio systemd `argos.service` los levanta al reiniciar la VPS.
 
- 
-6. Comandos de Referencia
-6.1 Levantar Backend
-cd /opt/argos/backend
+---
+
+## 4. Archivos Clave
+
+### `/opt/argos/ArgosBackEnd/.env`
+Contiene todas las variables de entorno sensibles (Firebase, DB, etc.).
+**No está en git** — debe configurarse manualmente en la VPS.
+
+### `/etc/systemd/system/argos.service`
+Servicio systemd que levanta Docker Compose automáticamente al arrancar la VPS.
+
+### `/etc/nginx/sites-available/default`
+Proxy inverso Nginx apuntando al frontend en puerto 3000.
+
+---
+
+## 5. Fixes Importantes Realizados
+
+### Cookie `Secure` en HTTP
+El login usa un Server Action (`login.action.ts`) que tenía:
+```typescript
+secure: process.env.NODE_ENV === "production"  // siempre true en Docker
+```
+**Fix**: Cambiado a `secure: process.env.COOKIE_SECURE !== "false"`.
+El `docker-compose.yml` tiene `COOKIE_SECURE: "false"` en el frontend.
+
+### Error `returnNaN is not defined`
+Causado por `@types/react: ^18` con React 19 instalado + `ignoreBuildErrors: true`.
+**Fix**: Actualizado `@types/react` y `@types/react-dom` a `^19.0.0` y removido `ignoreBuildErrors` de `next.config.ts`.
+
+### Build lento por contexto grande
+`node_modules` se incluía en el contexto de Docker.
+**Fix**: Creado `.dockerignore` en `ArgosFrontEnd/` con `node_modules`, `.next`, `.git`.
+
+---
+
+## 6. Comandos de Referencia
+
+### Ver estado de contenedores
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+### Ver logs
+```bash
+docker logs argos_frontend --tail 50
+docker logs argos_backend --tail 50
+docker logs argos_mysql --tail 50
+```
+
+### Reiniciar un contenedor
+```bash
+docker restart argos_frontend
+```
+
+### Reiniciar todo el stack
+```bash
+cd /opt/argos
+docker compose down
+docker compose up -d
+```
+
+### Ver estado del servicio systemd
+```bash
+systemctl status argos
+```
+
+---
+
+## 7. Flujo para Subir Cambios
+
+### Paso 1 — Local: push a GitHub
+```bash
+cd /c/Argos
+git add .
+git commit -m "descripción del cambio"
+git push
+```
+
+### Paso 2 — VPS: pull y rebuild
+```bash
+cd /opt/argos
+git pull
+docker compose up --build -d frontend   # solo frontend
+# o ambos:
 docker compose up --build -d
+```
 
-6.2 Levantar Frontend
-cd /opt/argos/frontend
-docker build -t argos_frontend .
-docker run -d --name argos_frontend --restart always -p 3000:3000 argos_frontend
+### Paso 3 — Verificar
+```bash
+docker logs argos_frontend --tail 20
+curl -I http://localhost:3000
+```
 
-6.3 Ver estado de contenedores
-docker ps
+---
 
-6.4 Ver logs
-docker logs argos_backend
-docker logs argos_mysql
-docker logs argos_frontend
+## 8. Nginx
 
-6.5 Reiniciar servicios
-docker compose down && docker compose up -d   # backend
-docker restart argos_frontend                 # frontend
+Configuración en `/etc/nginx/sites-available/default`:
+```nginx
+server {
+    listen 80;
+    server_name ozcabinspeccion.com www.ozcabinspeccion.com;
 
-7. Mejoras Pendientes
-•	Configurar Nginx como proxy inverso para acceso por dominio sin puerto
-•	Agregar SSL/HTTPS con Let's Encrypt (certbot)
-•	Mover credenciales a archivo .env seguro (no commitear en GitHub)
-•	Revocar y regenerar clave privada de Firebase expuesta
-•	Agregar .gitignore correcto para .env en ambos repos
-•	Agregar monitoreo de contenedores (uptime, alertas)
-•	Configurar backups automáticos de MySQL y MongoDB
-•	Cambiar contraseña root de la VPS
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+```
 
-8. URLs de Acceso Actual
-•	Frontend: http://72.249.60.141:3000
-•	Backend API: http://72.249.60.141:3001
-•	(Próximamente): http://ozcabinspeccion.com
+**Nota**: No redirigir `/api` al backend — el frontend Next.js maneja sus propias rutas `/api` internamente.
+
+Recargar Nginx tras cambios:
+```bash
+nginx -t && systemctl reload nginx
+```
+
+---
+
+## 9. URLs de Acceso
+
+- **App (directo)**: http://72.249.60.141:3000
+- **App (dominio)**: http://ozcabinspeccion.com
+- **Backend API**: http://72.249.60.141:3001
+
+---
+
+## 10. Pendientes
+
+- [ ] Configurar HTTPS con Let's Encrypt (certbot)
+- [ ] Backups automáticos de MySQL y MongoDB
+- [ ] Monitoreo de contenedores (uptime, alertas)

@@ -96,6 +96,34 @@ services:
       # MongoDB para media storage (GridFS)
       MONGO_URI: mongodb://argos_user:argos_pass@mongo:27017
 
+  # ── Backup (MySQL + MongoDB → Google Drive) ──────────────────
+  backup:
+    build:
+      context: ./argos-backup
+      dockerfile: Dockerfile
+    container_name: argos_backup
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    volumes:
+      - backup_data:/backups
+      - ./argos-backup/rclone.conf:/config/rclone/rclone.conf:ro
+    environment:
+      # MySQL
+      MYSQL_HOST: mysql
+      MYSQL_USER: argos_user
+      MYSQL_PASS: argos_pass
+      MYSQL_DB: argos_db
+      # MongoDB
+      MONGO_URI: mongodb://argos_user:argos_pass@mongo:27017
+      # Google Drive
+      GDRIVE_FOLDER: ArgosBackups
+      RETENTION_DAYS: "7"
+
 volumes:
   mysql_data:
   mongo_data:
+  backup_data:

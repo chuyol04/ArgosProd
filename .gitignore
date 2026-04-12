@@ -14,6 +14,9 @@
 **/logs/
 **/*.log
 
+# Backup — rclone config contiene tokens OAuth, no commitear
+argos-backup/rclone.conf
+
 # OS
 .DS_Store
 Thumbs.db
