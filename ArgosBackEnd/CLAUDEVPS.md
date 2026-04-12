@@ -27,14 +27,15 @@ Monorepo unificado con frontend (Next.js) + backend (Express) + bases de datos.
 
 ## 3. Arquitectura de Contenedores
 
-4 contenedores orquestados con un único `docker-compose.yml` en `/opt/argos`:
+5 contenedores orquestados con un único `docker-compose.yml` en `/opt/argos`:
 
-| Contenedor      | Imagen         | Puerto  |
-|-----------------|----------------|---------|
-| argos_frontend  | Next.js        | 3000    |
-| argos_backend   | Express.js     | 3001    |
-| argos_mysql     | mysql:8.0      | 3307→3306 |
-| argos_mongo     | mongo:7.0      | 27017   |
+| Contenedor      | Imagen         | Puerto      |
+|-----------------|----------------|-------------|
+| argos_frontend  | Next.js        | 3000        |
+| argos_backend   | Express.js     | 3001        |
+| argos_mysql     | mysql:8.0      | 3307→3306   |
+| argos_mongo     | mongo:7.0      | 27017       |
+| argos_backup    | debian:bookworm| (sin puerto)|
 
 Todos tienen `restart: unless-stopped`. El servicio systemd `argos.service` los levanta al reiniciar la VPS.
 
@@ -45,6 +46,13 @@ Todos tienen `restart: unless-stopped`. El servicio systemd `argos.service` los 
 ### `/opt/argos/ArgosBackEnd/.env`
 Contiene todas las variables de entorno sensibles (Firebase, DB, etc.).
 **No está en git** — debe configurarse manualmente en la VPS.
+
+### `/opt/argos/argos-backup/rclone.conf`
+Credenciales OAuth de rclone para Google Drive.
+**No está en git** — se copia manualmente desde la PC local con:
+```powershell
+scp C:\Users\chuy_\AppData\Roaming\rclone\rclone.conf root@72.249.60.141:/opt/argos/argos-backup/rclone.conf
+```
 
 ### `/etc/systemd/system/argos.service`
 Servicio systemd que levanta Docker Compose automáticamente al arrancar la VPS.
@@ -86,6 +94,12 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 docker logs argos_frontend --tail 50
 docker logs argos_backend --tail 50
 docker logs argos_mysql --tail 50
+docker logs argos_backup --tail 50
+```
+
+### Ver log de backups
+```bash
+docker exec argos_backup cat /var/log/backup.log
 ```
 
 ### Reiniciar un contenedor
@@ -170,8 +184,37 @@ nginx -t && systemctl reload nginx
 
 ---
 
-## 10. Pendientes
+## 10. Sistema de Backups
+
+Contenedor `argos_backup` corre cron jobs cada 12 horas (00:00 y 12:00).
+
+**Archivos generados:**
+- `mysql_YYYYMMDD_HHMMSS.sql.gz` — dump completo de `argos_db`
+- `mongo_YYYYMMDD_HHMMSS.gz` — dump completo de MongoDB
+
+**Destino:** Google Drive, carpeta `ArgosBackups`
+**Retención:** 7 días (local y en Drive)
+**Cuenta Drive configurada:** cuenta Gmail del administrador
+
+**Probar backup manualmente:**
+```bash
+docker exec argos_backup /backup.sh
+```
+
+**Ver último log:**
+```bash
+docker exec argos_backup cat /var/log/backup.log
+```
+
+**Configuración rclone:**
+- Herramienta: `rclone` v1.73.4
+- Remote name: `gdrive`
+- Config: `/opt/argos/argos-backup/rclone.conf` (NO en git)
+- Para regenerar config: instalar rclone en PC local, correr `rclone config`, copiar con `scp`
+
+---
+
+## 11. Pendientes
 
 - [ ] Configurar HTTPS con Let's Encrypt (certbot)
-- [ ] Backups automáticos de MySQL y MongoDB
 - [ ] Monitoreo de contenedores (uptime, alertas)
