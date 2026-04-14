@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQueryState } from "nuqs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -22,9 +23,11 @@ import {
     limitParser,
     pageParser,
 } from "@/app/(protected)/users/utils/parsers.client";
-import { IUsersResponse, IUserRow } from "@/app/(protected)/users/types/users.types";
+import { IUsersResponse } from "@/app/(protected)/users/types/users.types";
 import UserDetailsModal from "./UserDetailsModal";
 import UserEditModal from "./UserEditModal";
+import UserCreateModal from "./UserCreateModal";
+import PasswordResetDialog from "./PasswordResetDialog";
 import {
     Search,
     ChevronLeft,
@@ -32,7 +35,9 @@ import {
     MoreHorizontal,
     Eye,
     Pencil,
+    KeyRound,
     Users,
+    Plus,
 } from "lucide-react";
 
 interface UsersTableProps {
@@ -48,6 +53,8 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
     const [searchInput, setSearchInput] = useState(qSearch ?? "");
     const [detailsUserId, setDetailsUserId] = useState<number | null>(null);
     const [editUserId, setEditUserId] = useState<number | null>(null);
+    const [createOpen, setCreateOpen] = useState(false);
+    const [resetTarget, setResetTarget] = useState<{ id: number; name: string } | null>(null);
 
     const users = initialData.users;
     const total = initialData.total;
@@ -75,6 +82,10 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                         </p>
                     </div>
                 </div>
+                <Button size="sm" onClick={() => setCreateOpen(true)}>
+                    <Plus className="mr-1.5 h-4 w-4" />
+                    Crear Usuario
+                </Button>
             </div>
 
             {error && (
@@ -181,6 +192,11 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                                                         <Pencil className="mr-2 h-4 w-4" />
                                                         Editar
                                                     </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem onClick={() => setResetTarget({ id: user.id, name: user.name })}>
+                                                        <KeyRound className="mr-2 h-4 w-4" />
+                                                        Cambiar contraseña
+                                                    </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </td>
@@ -199,38 +215,25 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                         Página {currentPage} de {totalPages}
                     </p>
                     <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            disabled={currentPage <= 1}
-                            onClick={() => setQPage(currentPage - 1)}
-                        >
+                        <Button variant="outline" size="icon" disabled={currentPage <= 1} onClick={() => setQPage(currentPage - 1)}>
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <Button
-                            variant="outline"
-                            size="icon"
-                            disabled={currentPage >= totalPages}
-                            onClick={() => setQPage(currentPage + 1)}
-                        >
+                        <Button variant="outline" size="icon" disabled={currentPage >= totalPages} onClick={() => setQPage(currentPage + 1)}>
                             <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
                 </div>
             )}
 
-            {/* Details Modal */}
-            <UserDetailsModal
-                userId={detailsUserId}
-                open={!!detailsUserId}
-                onOpenChange={(open) => !open && setDetailsUserId(null)}
-            />
-
-            {/* Edit Modal */}
-            <UserEditModal
-                userId={editUserId}
-                open={!!editUserId}
-                onOpenChange={(open) => !open && setEditUserId(null)}
+            {/* Modals */}
+            <UserCreateModal open={createOpen} onOpenChange={setCreateOpen} />
+            <UserDetailsModal userId={detailsUserId} open={!!detailsUserId} onOpenChange={(open) => !open && setDetailsUserId(null)} />
+            <UserEditModal userId={editUserId} open={!!editUserId} onOpenChange={(open) => !open && setEditUserId(null)} />
+            <PasswordResetDialog
+                userId={resetTarget?.id ?? null}
+                userName={resetTarget?.name ?? ""}
+                open={!!resetTarget}
+                onOpenChange={(open) => !open && setResetTarget(null)}
             />
         </div>
     );

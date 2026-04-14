@@ -40,6 +40,24 @@ router.post('/create', async (req, res) => {
     }
 });
 
+router.post('/change-password', async (req, res) => {
+    try {
+        await userHandlers.changePassword(req, res);
+    } catch (error) {
+        console.error('Change password route error:', error);
+        return res.status(500).json({ success: false, motive: 'Server Error' });
+    }
+});
+
+router.post('/:id/reset-password', async (req, res) => {
+    try {
+        await userHandlers.resetUserPassword(req, res);
+    } catch (error) {
+        console.error('Reset password route error:', error);
+        return res.status(500).json({ success: false, motive: 'Server Error' });
+    }
+});
+
 router.post('/details', async (req, res) => { // Changed from /user-details
     try {
         await userHandlers.getUserDetails(req, res);

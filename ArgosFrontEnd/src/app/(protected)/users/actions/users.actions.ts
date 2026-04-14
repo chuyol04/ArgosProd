@@ -62,6 +62,75 @@ export async function updateUser(
     }
 }
 
+export async function createUser(data: {
+    name: string;
+    email: string;
+    phone_number: string;
+    role_id: number | null;
+}): Promise<{ success: boolean; id?: number; temp_password?: string; error?: string }> {
+    try {
+        const session = await getSession();
+        const res = await fetch(`${EXPRESS_BASE_URL}/users/create`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Cookie: `session=${session}`,
+            },
+            body: JSON.stringify(data),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+            return { success: false, error: json.motive || res.statusText };
+        }
+        revalidatePath("/users");
+        return { success: true, id: json.id, temp_password: json.temp_password };
+    } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : "Error" };
+    }
+}
+
+export async function resetUserPassword(
+    userId: number
+): Promise<{ success: boolean; new_password?: string; error?: string }> {
+    try {
+        const session = await getSession();
+        const res = await fetch(`${EXPRESS_BASE_URL}/users/${userId}/reset-password`, {
+            method: "POST",
+            headers: { Cookie: `session=${session}` },
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+            return { success: false, error: json.motive || res.statusText };
+        }
+        return { success: true, new_password: json.new_password };
+    } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : "Error" };
+    }
+}
+
+export async function changePassword(
+    newPassword: string
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        const session = await getSession();
+        const res = await fetch(`${EXPRESS_BASE_URL}/users/change-password`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Cookie: `session=${session}`,
+            },
+            body: JSON.stringify({ new_password: newPassword }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+            return { success: false, error: json.motive || res.statusText };
+        }
+        return { success: true };
+    } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : "Error" };
+    }
+}
+
 export async function fetchRoles(): Promise<IRole[]> {
     try {
         const session = await getSession();

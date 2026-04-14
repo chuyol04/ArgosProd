@@ -1,7 +1,13 @@
 // controllers/userController.js  (ESM)
 import 'dotenv/config';
+import crypto from 'crypto';
 import MysqlClient from '../connections/mysqldb.js';
 import userHelper from '../lib/helpers/userHelpers.js';
+import admin from '../lib/helpers/firebaseAdmin.js';
+
+function generateTempPassword() {
+    return crypto.randomBytes(6).toString('base64url'); // 8 chars, URL-safe
+}
  
 export async function userLogin(req, res) {
     const { email, password } = req.body;
@@ -20,26 +26,103 @@ export async function userLogin(req, res) {
     }
 }
  
+// POST /users/create — admin creates user (Firebase + MySQL + role)
 export async function createUser(req, res) {
-    const { firebase_uid, name, email, phone_number } = req.body;
+    const { name, email, phone_number, role_id } = req.body;
+    if (!name || !email) {
+        return res.status(400).json({ success: false, motive: 'Name and email are required' });
+    }
+
     try {
-        const [rows] = await MysqlClient.execute(
-            'SELECT 1 FROM users WHERE email = ? OR firebase_uid = ? LIMIT 1',
-            [email, firebase_uid]
+        // Check email not already in MySQL
+        const [existing] = await MysqlClient.execute(
+            'SELECT 1 FROM users WHERE email = ? LIMIT 1', [email]
         );
-        if (rows.length > 0) {
-            return res.status(409).json({ success: false, motive: 'Email or Firebase UID already exists' });
-        } else {
-            const result = await MysqlClient.execute(
-                `INSERT INTO users (name, phone_number, email, is_active, firebase_uid) VALUES (?, ?, ?, ?, ?) `,
-                [name, phone_number, email, true, firebase_uid]
-            );
-            if (result[0].affectedRows > 0)
-                return res.status(201).json({ success: true, motive: 'User created successfully' });
-            return res.status(500).json({ success: false, motive: 'No user was created' });
+        if (existing.length > 0) {
+            return res.status(409).json({ success: false, motive: 'Email already exists' });
         }
+
+        // Create Firebase Auth user with temp password
+        const tempPassword = generateTempPassword();
+        const firebaseUser = await admin.auth().createUser({
+            email,
+            password: tempPassword,
+            displayName: name,
+        });
+
+        // Insert into MySQL
+        const [result] = await MysqlClient.execute(
+            'INSERT INTO users (name, phone_number, email, is_active, firebase_uid) VALUES (?, ?, ?, ?, ?)',
+            [name, phone_number || null, email, true, firebaseUser.uid]
+        );
+        const userId = result.insertId;
+
+        // Assign role if provided
+        if (role_id) {
+            await MysqlClient.execute(
+                'INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)',
+                [userId, role_id]
+            );
+        }
+
+        return res.status(201).json({
+            success: true,
+            id: userId,
+            temp_password: tempPassword,
+            motive: 'User created successfully',
+        });
     } catch (error) {
         console.error('Creating user error:', error);
+        // If Firebase user was created but MySQL failed, try to clean up
+        if (error.code !== 'auth/email-already-exists') {
+            // Don't clean up if Firebase itself failed
+        }
+        const motive = error.code === 'auth/email-already-exists'
+            ? 'Email already exists in Firebase'
+            : 'Server Error';
+        return res.status(500).json({ success: false, motive });
+    }
+}
+
+// POST /users/:id/reset-password — admin resets user password
+export async function resetUserPassword(req, res) {
+    const { id } = req.params;
+    try {
+        const [users] = await MysqlClient.execute(
+            'SELECT firebase_uid FROM users WHERE id = ? LIMIT 1', [id]
+        );
+        if (users.length === 0 || !users[0].firebase_uid) {
+            return res.status(404).json({ success: false, motive: 'User not found' });
+        }
+
+        const newPassword = generateTempPassword();
+        await admin.auth().updateUser(users[0].firebase_uid, { password: newPassword });
+
+        return res.status(200).json({
+            success: true,
+            new_password: newPassword,
+            motive: 'Password reset successfully',
+        });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        return res.status(500).json({ success: false, motive: 'Server Error' });
+    }
+}
+
+// POST /users/change-password — authenticated user changes own password
+export async function changePassword(req, res) {
+    const { uid } = res.locals.firebase_uid;
+    const { new_password } = req.body;
+
+    if (!new_password || new_password.length < 6) {
+        return res.status(400).json({ success: false, motive: 'Password must be at least 6 characters' });
+    }
+
+    try {
+        await admin.auth().updateUser(uid, { password: new_password });
+        return res.status(200).json({ success: true, motive: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Change password error:', error);
         return res.status(500).json({ success: false, motive: 'Server Error' });
     }
 }
