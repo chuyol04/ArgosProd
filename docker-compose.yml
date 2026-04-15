@@ -88,6 +88,7 @@ services:
       - ./ArgosBackEnd/.env        # reutiliza FIREBASE_* del backend
     environment:
       NODE_ENV: production
+      HOSTNAME: "0.0.0.0"
       PORT: 3000
       COOKIE_SECURE: "false"
       # Dentro de Docker, frontend habla con backend por nombre de servicio
