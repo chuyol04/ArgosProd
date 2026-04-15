@@ -73,8 +73,8 @@ secure: process.env.NODE_ENV === "production"  // siempre true en Docker
 El `docker-compose.yml` tiene `COOKIE_SECURE: "false"` en el frontend.
 
 ### Error `returnNaN is not defined`
-Causado por `@types/react: ^18` con React 19 instalado + `ignoreBuildErrors: true`.
-**Fix**: Actualizado `@types/react` y `@types/react-dom` a `^19.0.0` y removido `ignoreBuildErrors` de `next.config.ts`.
+Causado por un bug de bundling de Next.js con `nuqs`: el bundler incluye la llamada a `returnNaN()` pero pierde la definición de la función. El error anterior de `@types/react: ^18` ya fue corregido (tipos actualizados a `^19.0.0`), pero el error de `returnNaN` persistía por este problema de bundling.
+**Fix**: Agregar `transpilePackages: ['nuqs']` en `ArgosFrontEnd/next.config.ts`. Esto fuerza a Next.js a transpilar `nuqs` directamente en lugar de tratarlo como módulo externo, asegurando que todas sus funciones internas queden correctamente incluidas en el bundle.
 
 ### Build lento por contexto grande
 `node_modules` se incluía en el contexto de Docker.
