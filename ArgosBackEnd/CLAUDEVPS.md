@@ -80,6 +80,15 @@ Causado por `@types/react: ^18` con React 19 instalado + `ignoreBuildErrors: tru
 `node_modules` se incluía en el contexto de Docker.
 **Fix**: Creado `.dockerignore` en `ArgosFrontEnd/` con `node_modules`, `.next`, `.git`.
 
+### Pantalla blanca en login (VPS)
+Las variables `NEXT_PUBLIC_FIREBASE_*` son necesarias en **tiempo de build** (`npm run build`), no en runtime. Next.js las incrusta dentro del bundle JS. Si el build se hace sin ellas quedan `undefined` y la app crashea en el cliente mostrando pantalla blanca.
+**Fix**: Agregados `ARG`/`ENV` en `ArgosFrontEnd/Dockerfile` y `build.args` en `docker-compose.yml`. Los valores deben estar en `/opt/argos/.env` antes de hacer el build:
+```
+NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyDvVj7N94j5971XaIfEH6JlsSh_X_ozl6Q
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=inspeccion-cfdf1.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=inspeccion-cfdf1
+```
+
 ---
 
 ## 6. Comandos de Referencia
