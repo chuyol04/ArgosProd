@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  transpilePackages: ['nuqs'],
+  serverExternalPackages: ['nuqs'],
   eslint: {
     ignoreDuringBuilds: true,
   },
