@@ -73,8 +73,30 @@ secure: process.env.NODE_ENV === "production"  // siempre true en Docker
 El `docker-compose.yml` tiene `COOKIE_SECURE: "false"` en el frontend.
 
 ### Error `returnNaN is not defined`
-Causado por un bug de bundling de Next.js con `nuqs`: el bundler incluye la llamada a `returnNaN()` pero pierde la definición de la función. El error anterior de `@types/react: ^18` ya fue corregido (tipos actualizados a `^19.0.0`), pero el error de `returnNaN` persistía por este problema de bundling.
-**Fix**: Agregar `transpilePackages: ['nuqs']` en `ArgosFrontEnd/next.config.ts`. Esto fuerza a Next.js a transpilar `nuqs` directamente en lugar de tratarlo como módulo externo, asegurando que todas sus funciones internas queden correctamente incluidas en el bundle.
+Causado por un bug de bundling de Next.js con `nuqs`: el bundler incluye la llamada a `returnNaN()` (función interna de `parseAsInteger`) pero pierde su definición al crear los chunks del servidor.
+
+**Intentos fallidos:**
+- `transpilePackages: ['nuqs']` → no resolvió el problema en el bundle de servidor
+- `serverExternalPackages: ['nuqs']` → rompió el build (`/_not-found` falló por no poder serializar `useAdapter` de NuqsAdapter)
+
+**Fix final**: Reemplazar `parseAsInteger` de nuqs con un parser custom en todos los archivos de parsers. Se crearon dos archivos compartidos:
+- `ArgosFrontEnd/src/lib/parsers.server.ts` — usa `createParser` de `nuqs/server`
+- `ArgosFrontEnd/src/lib/parsers.client.ts` — usa `createParser` de `nuqs`
+
+Todos los `parsers.server.ts` y `parsers.client.ts` de cada feature ahora importan `parseAsInteger` desde estos archivos en lugar de directamente de `nuqs`. El parser custom usa `parseInt` y verifica `isNaN` sin llamar `returnNaN` internamente.
+
+**Archivos actualizados:**
+- `src/app/(protected)/clients/utils/parsers.server.ts`
+- `src/app/(protected)/clients/utils/parsers.client.ts`
+- `src/app/(protected)/media/utils/parsers.server.ts`
+- `src/app/(protected)/media/utils/parsers.client.ts`
+- `src/app/(protected)/users/utils/parsers.server.ts`
+- `src/app/(protected)/users/utils/parsers.client.ts`
+- `src/app/(protected)/instrucciones-trabajo/utils/parsers.client.ts`
+- `src/app/(protected)/services/utils/parsers.client.ts`
+- `src/app/(protected)/reportes-inspeccion/utils/parsers.client.ts`
+
+**Nota**: Si se agregan nuevas features con `parseAsInteger`, importar siempre de `@/lib/parsers.server` o `@/lib/parsers.client`, nunca directamente de `nuqs`.
 
 ### Build lento por contexto grande
 `node_modules` se incluía en el contexto de Docker.
