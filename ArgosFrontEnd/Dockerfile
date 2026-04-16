@@ -8,6 +8,8 @@ RUN npm install
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+# Bust build cache without reinstalling deps (increment BUILD_ID when code changes aren't picked up)
+ARG BUILD_ID=1
 COPY . .
 
 # Firebase client-side config (baked into the bundle at build time)
