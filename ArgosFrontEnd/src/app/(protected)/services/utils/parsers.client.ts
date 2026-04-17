@@ -1,4 +1,5 @@
-import { parseAsInteger, parseAsString } from "nuqs";
+import { parseAsString } from "nuqs";
+import { parseAsInteger } from "@/lib/parsers.client";
 
 const withNav = { shallow: false, history: "replace" as const };
 
