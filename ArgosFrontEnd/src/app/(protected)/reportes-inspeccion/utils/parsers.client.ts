@@ -1,7 +1,6 @@
 "use client";
 
-import { parseAsString } from "nuqs";
-import { parseAsInteger } from "@/lib/parsers.client";
+import { parseAsInteger, parseAsString } from "nuqs";
 
 export const searchParser = parseAsString.withDefault("").withOptions({
   shallow: false,
