@@ -73,30 +73,41 @@ secure: process.env.NODE_ENV === "production"  // siempre true en Docker
 El `docker-compose.yml` tiene `COOKIE_SECURE: "false"` en el frontend.
 
 ### Error `returnNaN is not defined`
-Causado por un bug de bundling de Next.js con `nuqs`: el bundler incluye la llamada a `returnNaN()` (función interna de `parseAsInteger`) pero pierde su definición al crear los chunks del servidor.
+Causado por un bug de bundling de Next.js 15 con `nuqs` v2.x: el bundler del servidor divide los módulos en chunks y pierde la función interna `returnNaN` que `parseAsInteger` de nuqs usa internamente. Afecta todas las versiones de nuqs v2.x probadas (2.3.0, 2.8.6).
 
 **Intentos fallidos:**
+- Downgrade nuqs a 2.3.0 → `package-lock.json` seguía instalando 2.8.6 (lock file no fue actualizado)
 - `transpilePackages: ['nuqs']` → no resolvió el problema en el bundle de servidor
-- `serverExternalPackages: ['nuqs']` → rompió el build (`/_not-found` falló por no poder serializar `useAdapter` de NuqsAdapter)
+- `serverExternalPackages: ['nuqs']` → rompió el build (`/_not-found` falló por no poder serializar `useAdapter`)
+- Custom parsers con `createParser` → nuqs aún se incluía en el bundle del servidor como dependencia transitiva de `createLoader`
 
-**Fix final**: Reemplazar `parseAsInteger` de nuqs con un parser custom en todos los archivos de parsers. Se crearon dos archivos compartidos:
-- `ArgosFrontEnd/src/lib/parsers.server.ts` — usa `createParser` de `nuqs/server`
-- `ArgosFrontEnd/src/lib/parsers.client.ts` — usa `createParser` de `nuqs`
+**Fix final — nuqs eliminado completamente del servidor:**
 
-Todos los `parsers.server.ts` y `parsers.client.ts` de cada feature ahora importan `parseAsInteger` desde estos archivos en lugar de directamente de `nuqs`. El parser custom usa `parseInt` y verifica `isNaN` sin llamar `returnNaN` internamente.
+`nuqs` ahora solo se usa en el cliente (browser), donde el chunk splitting no causa el error.
 
-**Archivos actualizados:**
-- `src/app/(protected)/clients/utils/parsers.server.ts`
-- `src/app/(protected)/clients/utils/parsers.client.ts`
-- `src/app/(protected)/media/utils/parsers.server.ts`
-- `src/app/(protected)/media/utils/parsers.client.ts`
-- `src/app/(protected)/users/utils/parsers.server.ts`
-- `src/app/(protected)/users/utils/parsers.client.ts`
-- `src/app/(protected)/instrucciones-trabajo/utils/parsers.client.ts`
-- `src/app/(protected)/services/utils/parsers.client.ts`
-- `src/app/(protected)/reportes-inspeccion/utils/parsers.client.ts`
+Cambios aplicados (commits `c0cb9b0`, `3618b69`, `309e0f6`):
 
-**Nota**: Si se agregan nuevas features con `parseAsInteger`, importar siempre de `@/lib/parsers.server` o `@/lib/parsers.client`, nunca directamente de `nuqs`.
+1. **`clients/page.tsx`** — Reemplazado `createLoader`/`loadSearchParams` con parsing vanilla (igual que las demás pages):
+```ts
+const params = await searchParams;
+const search = typeof params.search === "string" ? params.search || null : null;
+const limit = typeof params.limit === "string" ? parseInt(params.limit, 10) || 10 : 10;
+const page = typeof params.page === "string" ? parseInt(params.page, 10) || 1 : 1;
+```
+
+2. **`clients/utils/search-params.ts`** — Eliminado (era el único archivo que usaba `createLoader` de `nuqs/server`)
+
+3. **`package.json`** — nuqs fijado en `"2.3.0"` (sin caret)
+
+4. **`package-lock.json`** — Regenerado para resolver nuqs a `2.3.0` (el lock file anterior seguía en 2.8.6)
+
+5. **`src/lib/parsers.server.ts` y `parsers.client.ts`** — Existen como dead code (no importados), creados durante intentos anteriores con `createParser`
+
+**Estado actual del servidor:** ningún archivo de página o componente importa de `nuqs/server`. Los `parsers.server.ts` de cada feature son dead code y webpack no los incluye en el bundle.
+
+**Regla para nuevas features:**
+- Servidor (`page.tsx`): usar `parseInt` vanilla para parsear query params, como los demás pages
+- Cliente (componentes con `useQueryState`): importar `parseAsInteger` de `@/lib/parsers.client`, nunca directamente de `nuqs`
 
 ### Build lento por contexto grande
 `node_modules` se incluía en el contexto de Docker.
@@ -166,10 +177,14 @@ git push
 ```bash
 cd /opt/argos
 git pull
-docker compose up --build -d frontend   # solo frontend
-# o ambos:
-docker compose up --build -d
+# Si cambió package.json o package-lock.json, usar --no-cache obligatoriamente:
+docker compose build --no-cache frontend
+docker compose up -d frontend
+# Si no cambió ninguna dependencia (solo código):
+# docker compose up --build -d frontend
 ```
+
+> **Importante**: Si se cambia `package.json` o `package-lock.json`, siempre usar `--no-cache`. Sin él, Docker reutiliza el layer de `npm install` y la nueva versión de un paquete no se instala.
 
 ### Paso 3 — Verificar
 ```bash
@@ -245,7 +260,44 @@ docker exec argos_backup cat /var/log/backup.log
 
 ---
 
-## 11. Pendientes
+## 11. Seguridad
+
+### fail2ban (instalado 2026-04-17)
+Protege contra brute force SSH. Se instala con:
+```bash
+apt-get -o Acquire::ForceIPv4=true install -y fail2ban --fix-missing
+systemctl enable fail2ban && systemctl start fail2ban
+```
+> La VPS no tiene IPv6 — siempre usar `-o Acquire::ForceIPv4=true` con apt.
+
+Ver IPs baneadas:
+```bash
+fail2ban-client status sshd
+```
+
+### UFW Firewall (configurado 2026-04-17)
+Puertos abiertos: 22 (SSH), 80 (HTTP), 443 (HTTPS).
+Los puertos 3000 y 3001 de Docker **no deben estar abiertos** al exterior — solo Nginx los expone internamente.
+
+```bash
+ufw status
+ufw delete allow 3000    # si aparecen en el status, eliminarlos
+ufw delete allow 3001
+```
+
+### Intento de command injection detectado
+Se detectó en logs: `echo <base64> | base64 -d | bash` apuntando a `78.153.140.16/re.sh`.
+El comando falló (error registrado). El código frontend no tiene `exec/spawn/child_process`.
+
+### Actualizaciones de seguridad pendientes
+```bash
+apt-get -o Acquire::ForceIPv4=true update
+apt-get -o Acquire::ForceIPv4=true upgrade -y
+```
+
+---
+
+## 12. Pendientes
 
 - [ ] Configurar HTTPS con Let's Encrypt (certbot)
 - [ ] Monitoreo de contenedores (uptime, alertas)
