@@ -1,20 +1,15 @@
 import ClientsTable from "@/app/(protected)/clients/_components/ClientsTable";
 import { fetchClients } from "@/app/(protected)/clients/data/clients.data";
-import { loadSearchParams } from "@/app/(protected)/clients/utils/search-params";
-import { SearchParams } from "nuqs/server";
 
 export const dynamic = "force-dynamic";
 
-type PageProps = { searchParams: Promise<SearchParams> };
+type PageProps = { searchParams: Promise<{ [key: string]: string | string[] | undefined }> };
 
 export default async function ClientsPage({ searchParams }: PageProps) {
-  const {
-    search: searchRaw,
-    limit,
-    page,
-  } = await loadSearchParams(searchParams);
-
-  const search = searchRaw || null;
+  const params = await searchParams;
+  const search = typeof params.search === "string" ? params.search || null : null;
+  const limit = typeof params.limit === "string" ? parseInt(params.limit, 10) || 10 : 10;
+  const page = typeof params.page === "string" ? parseInt(params.page, 10) || 1 : 1;
   const offset = (page - 1) * limit;
 
   const result = await fetchClients(search, limit, offset);
