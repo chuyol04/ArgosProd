@@ -174,22 +174,30 @@ git push
 ```
 
 ### Paso 2 — VPS: pull y rebuild
+
+**Caso A — Solo cambios de código (sin tocar dependencias):**
 ```bash
 cd /opt/argos
 git pull
-# Si cambió package.json o package-lock.json, usar --no-cache obligatoriamente:
+docker compose up --build -d frontend
+```
+
+**Caso B — Cambió `package.json` o `package-lock.json`:**
+```bash
+cd /opt/argos
+git pull
 docker compose build --no-cache frontend
 docker compose up -d frontend
-# Si no cambió ninguna dependencia (solo código):
-# docker compose up --build -d frontend
 ```
 
 > **Importante**: Si se cambia `package.json` o `package-lock.json`, siempre usar `--no-cache`. Sin él, Docker reutiliza el layer de `npm install` y la nueva versión de un paquete no se instala.
 
+> **Nunca hacer `docker system prune -af` en producción** — borra todas las imágenes y volúmenes del sistema. Solo hacerlo como último recurso en casos extremos de cache corrupta.
+
 ### Paso 3 — Verificar
 ```bash
-docker logs argos_frontend --tail 20
-curl -I http://localhost:3000
+docker compose logs frontend --tail 20 --timestamps
+docker compose logs frontend --since=10m | grep -i "error\|⨯\|warn"
 ```
 
 ---
