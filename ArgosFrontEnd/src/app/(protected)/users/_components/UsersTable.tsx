@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQueryState } from "nuqs";
+import { useUrlInt, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,11 +18,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-    searchParser,
-    limitParser,
-    pageParser,
-} from "@/app/(protected)/users/utils/parsers.client";
 import { IUsersResponse } from "@/app/(protected)/users/types/users.types";
 import UserDetailsModal from "./UserDetailsModal";
 import UserEditModal from "./UserEditModal";
@@ -46,11 +41,11 @@ interface UsersTableProps {
 }
 
 export default function UsersTable({ initialData, error }: UsersTableProps) {
-    const [qSearch, setQSearch] = useQueryState("search", searchParser);
-    const [qLimit, setQLimit] = useQueryState("limit", limitParser);
-    const [qPage, setQPage] = useQueryState("page", pageParser);
+    const [qSearch, setQSearch] = useUrlString("search");
+    const [qLimit, setQLimit] = useUrlInt("limit", 10);
+    const [qPage, setQPage] = useUrlInt("page", 1);
 
-    const [searchInput, setSearchInput] = useState(qSearch ?? "");
+    const [searchInput, setSearchInput] = useState(qSearch);
     const [detailsUserId, setDetailsUserId] = useState<number | null>(null);
     const [editUserId, setEditUserId] = useState<number | null>(null);
     const [createOpen, setCreateOpen] = useState(false);
@@ -58,8 +53,8 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
 
     const users = initialData.users;
     const total = initialData.total;
-    const rowsPerPage = qLimit ?? 10;
-    const currentPage = qPage ?? 1;
+    const rowsPerPage = qLimit;
+    const currentPage = qPage;
     const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
 
     const handleSearch = () => {

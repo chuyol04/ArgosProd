@@ -6,12 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
-import { useQueryState } from "nuqs";
-import {
-  limitParser,
-  pageParser,
-  searchParser,
-} from "@/app/(protected)/clients/utils/parsers.client";
+import { useUrlInt, useUrlString } from "@/lib/useUrlState";
 import {
   Select,
   SelectContent,
@@ -59,10 +54,9 @@ export default function ClientsTable({ initialData }: Props) {
     setModalOpen(true);
   };
 
-  // nuqs: URL state management
-  const [qSearch, setQSearch] = useQueryState("search", searchParser);
-  const [qLimit, setQLimit] = useQueryState("limit", limitParser);
-  const [qPage, setQPage] = useQueryState("page", pageParser);
+  const [qSearch, setQSearch] = useUrlString("search");
+  const [qLimit, setQLimit] = useUrlInt("limit", 10);
+  const [qPage, setQPage] = useUrlInt("page", 1);
 
   // Map clients to table rows
   const tableRows = useMemo(
@@ -78,14 +72,14 @@ export default function ClientsTable({ initialData }: Props) {
   );
 
   // Pagination
-  const rowsPerPage = qLimit ?? 10;
-  const currentPage = qPage ?? 1;
+  const rowsPerPage = qLimit;
+  const currentPage = qPage;
   const hasMore = (initialData.clients?.length ?? 0) === rowsPerPage;
 
   // Handlers
   const goToPage = (page: number) => {
     const target = Math.max(page, 1);
-    if (target === (qPage ?? 1)) return;
+    if (target === qPage) return;
     setQPage(target);
   };
 
@@ -138,7 +132,7 @@ export default function ClientsTable({ initialData }: Props) {
               id="search"
               placeholder="Buscar por nombre o correo..."
               className="min-w-0 flex-1"
-              value={qSearch ?? ""}
+              value={qSearch}
               onChange={(e) => onSearch(e.target.value)}
             />
           </div>

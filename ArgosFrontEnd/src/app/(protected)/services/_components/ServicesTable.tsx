@@ -6,12 +6,7 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useQueryState } from "nuqs";
-import {
-  limitParser,
-  pageParser,
-  searchParser,
-} from "@/app/(protected)/services/utils/parsers.client";
+import { useUrlInt, useUrlString } from "@/lib/useUrlState";
 import {
   Select,
   SelectContent,
@@ -82,10 +77,9 @@ export default function ServicesTable({ initialData, clients }: Props) {
     setModalOpen(true);
   };
 
-  // nuqs: URL state management
-  const [qSearch, setQSearch] = useQueryState("search", searchParser);
-  const [qLimit, setQLimit] = useQueryState("limit", limitParser);
-  const [qPage, setQPage] = useQueryState("page", pageParser);
+  const [qSearch, setQSearch] = useUrlString("search");
+  const [qLimit, setQLimit] = useUrlInt("limit", 10);
+  const [qPage, setQPage] = useUrlInt("page", 1);
 
   // Map services to table rows
   const tableRows = useMemo(
@@ -102,14 +96,14 @@ export default function ServicesTable({ initialData, clients }: Props) {
   );
 
   // Pagination
-  const rowsPerPage = qLimit ?? 10;
-  const currentPage = qPage ?? 1;
+  const rowsPerPage = qLimit;
+  const currentPage = qPage;
   const hasMore = (initialData.services?.length ?? 0) === rowsPerPage;
 
   // Handlers
   const goToPage = (page: number) => {
     const target = Math.max(page, 1);
-    if (target === (qPage ?? 1)) return;
+    if (target === qPage) return;
     setQPage(target);
   };
 
@@ -163,7 +157,7 @@ export default function ServicesTable({ initialData, clients }: Props) {
               id="search"
               placeholder="Buscar por descripción o cliente..."
               className="min-w-0 flex-1"
-              value={qSearch ?? ""}
+              value={qSearch}
               onChange={(e) => onSearch(e.target.value)}
             />
           </div>

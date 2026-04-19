@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { UserProvider } from "@/contexts/users/userContext";
-import { NuqsAdapter } from "nuqs/adapters/next/app";
 
 export const metadata: Metadata = {
     title: "Create Next App",
@@ -16,11 +15,9 @@ export default function RootLayout({
     return (
         <html lang="en">
             <body>
-                <NuqsAdapter>
-                    <UserProvider>
-                        {children}
-                    </UserProvider>
-                </NuqsAdapter>
+                <UserProvider>
+                    {children}
+                </UserProvider>
             </body>
         </html>
     );

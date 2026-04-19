@@ -5,12 +5,7 @@ import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { useQueryState } from "nuqs";
-import {
-  limitParser,
-  pageParser,
-  searchParser,
-} from "@/app/(protected)/instrucciones-trabajo/utils/parsers.client";
+import { useUrlInt, useUrlString } from "@/lib/useUrlState";
 import {
   Select,
   SelectContent,
@@ -50,10 +45,9 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  // nuqs: URL state management
-  const [qSearch, setQSearch] = useQueryState("search", searchParser);
-  const [qLimit, setQLimit] = useQueryState("limit", limitParser);
-  const [qPage, setQPage] = useQueryState("page", pageParser);
+  const [qSearch, setQSearch] = useUrlString("search");
+  const [qLimit, setQLimit] = useUrlInt("limit", 10);
+  const [qPage, setQPage] = useUrlInt("page", 1);
 
   // Map work instructions to table rows
   const tableRows = useMemo(
@@ -70,14 +64,14 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
   );
 
   // Pagination
-  const rowsPerPage = qLimit ?? 10;
-  const currentPage = qPage ?? 1;
+  const rowsPerPage = qLimit;
+  const currentPage = qPage;
   const hasMore = (initialData.workInstructions?.length ?? 0) === rowsPerPage;
 
   // Handlers
   const goToPage = (page: number) => {
     const target = Math.max(page, 1);
-    if (target === (qPage ?? 1)) return;
+    if (target === qPage) return;
     setQPage(target);
   };
 
@@ -137,7 +131,7 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
               id="search"
               placeholder="Buscar por pieza, servicio o cliente..."
               className="min-w-0 flex-1"
-              value={qSearch ?? ""}
+              value={qSearch}
               onChange={(e) => onSearch(e.target.value)}
             />
           </div>

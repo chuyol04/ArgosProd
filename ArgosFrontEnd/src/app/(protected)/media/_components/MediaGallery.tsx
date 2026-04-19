@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQueryState } from "nuqs";
+import { useUrlInt, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,11 +19,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  searchParser,
-  limitParser,
-  pageParser,
-} from "@/app/(protected)/media/utils/parsers.client";
 import { deleteMediaFiles } from "@/app/(protected)/media/actions/media.actions";
 import { formatFileSize, mediaViewUrl, mediaDownloadUrl } from "@/lib/storage/fileUpload";
 import { IMediaListResponse, IMediaFile } from "@/app/(protected)/media/types/media.types";
@@ -73,20 +68,20 @@ function formatDate(dateStr: string): string {
 }
 
 export function MediaGallery({ initialData, error }: MediaGalleryProps) {
-  const [qSearch, setQSearch] = useQueryState("search", searchParser);
-  const [qLimit, setQLimit] = useQueryState("limit", limitParser);
-  const [qPage, setQPage] = useQueryState("page", pageParser);
+  const [qSearch, setQSearch] = useUrlString("search");
+  const [qLimit, setQLimit] = useUrlInt("limit", 20);
+  const [qPage, setQPage] = useUrlInt("page", 1);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [previewFile, setPreviewFile] = useState<IMediaFile | null>(null);
-  const [searchInput, setSearchInput] = useState(qSearch ?? "");
+  const [searchInput, setSearchInput] = useState(qSearch);
 
   const files = initialData.files;
   const total = initialData.total;
-  const currentPage = qPage ?? 1;
-  const rowsPerPage = qLimit ?? 20;
+  const currentPage = qPage;
+  const rowsPerPage = qLimit;
   const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
 
   const isImage = (contentType: string, filename?: string) => {
