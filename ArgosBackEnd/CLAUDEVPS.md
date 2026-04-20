@@ -72,42 +72,43 @@ secure: process.env.NODE_ENV === "production"  // siempre true en Docker
 **Fix**: Cambiado a `secure: process.env.COOKIE_SECURE !== "false"`.
 El `docker-compose.yml` tiene `COOKIE_SECURE: "false"` en el frontend.
 
-### Error `returnNaN is not defined`
-Causado por un bug de bundling de Next.js 15 con `nuqs` v2.x: el bundler del servidor divide los módulos en chunks y pierde la función interna `returnNaN` que `parseAsInteger` de nuqs usa internamente. Afecta todas las versiones de nuqs v2.x probadas (2.3.0, 2.8.6).
+### Error `returnNaN is not defined` — causa real: ataque de bots
 
-**Intentos fallidos:**
-- Downgrade nuqs a 2.3.0 → `package-lock.json` seguía instalando 2.8.6 (lock file no fue actualizado)
-- `transpilePackages: ['nuqs']` → no resolvió el problema en el bundle de servidor
-- `serverExternalPackages: ['nuqs']` → rompió el build (`/_not-found` falló por no poder serializar `useAdapter`)
-- Custom parsers con `createParser` → nuqs aún se incluía en el bundle del servidor como dependencia transitiva de `createLoader`
+**Causa raíz:** bots atacando el puerto 3000 directamente (sin pasar por Nginx). Docker expone el puerto 3000 a la IP pública del servidor ignorando las reglas de UFW — UFW **no protege puertos de Docker**. Los bots generaban cientos de requests por minuto que saturaban el backlog de conexiones del socket, dejando el servidor inaccesible. El error `returnNaN is not defined` es un error interno de Next.js que se dispara bajo esas condiciones de carga.
 
-**Fix final — nuqs eliminado completamente del servidor:**
+**Lo que NO era la causa:** no era un bug de bundling de nuqs. Se investigaron múltiples hipótesis (chunk splitting, transpilePackages, serverExternalPackages) y se hicieron varios intentos fallidos antes de identificar el problema real.
 
-`nuqs` ahora solo se usa en el cliente (browser), donde el chunk splitting no causa el error.
+**Acciones tomadas (commit `ab2aaae`):**
+- `nuqs` eliminado completamente del proyecto y reemplazado con hooks nativos de Next.js (`useSearchParams`, `useRouter`, `usePathname`) en `src/lib/useUrlState.ts`
+- Todos los `parsers.client.ts` y `parsers.server.ts` de cada feature eliminados
+- Esto fue una mejora secundaria correcta, pero no resolvió los errores por sí sola
 
-Cambios aplicados (commits `c0cb9b0`, `3618b69`, `309e0f6`):
-
-1. **`clients/page.tsx`** — Reemplazado `createLoader`/`loadSearchParams` con parsing vanilla (igual que las demás pages):
-```ts
-const params = await searchParams;
-const search = typeof params.search === "string" ? params.search || null : null;
-const limit = typeof params.limit === "string" ? parseInt(params.limit, 10) || 10 : 10;
-const page = typeof params.page === "string" ? parseInt(params.page, 10) || 1 : 1;
+**Fix de seguridad real (commit `fix: bind frontend port to 127.0.0.1`):**
+En `docker-compose.yml`, el puerto del frontend cambió de:
+```yaml
+ports:
+  - "3000:3000"      # docker-proxy escucha en 0.0.0.0:3000 — expuesto al exterior
+```
+a:
+```yaml
+ports:
+  - "127.0.0.1:3000:3000"  # docker-proxy escucha solo en localhost — bots bloqueados
 ```
 
-2. **`clients/utils/search-params.ts`** — Eliminado (era el único archivo que usaba `createLoader` de `nuqs/server`)
+Con este cambio, los bots no pueden conectarse directamente a puerto 3000 desde internet. Nginx (que corre en el host) sigue pudiendo conectarse a `127.0.0.1:3000` sin problema.
 
-3. **`package.json`** — nuqs fijado en `"2.3.0"` (sin caret)
+**Regla crítica — Docker y UFW:**
+- UFW **no bloquea puertos de Docker**. Docker inyecta reglas en iptables directamente, bypaseando UFW.
+- Para proteger un puerto de Docker, **no usar UFW** — cambiar el binding en `docker-compose.yml` a `127.0.0.1:PUERTO:PUERTO`.
+- Nunca exponer directamente los puertos 3000 o 3001 a la IP pública.
 
-4. **`package-lock.json`** — Regenerado para resolver nuqs a `2.3.0` (el lock file anterior seguía en 2.8.6)
-
-5. **`src/lib/parsers.server.ts` y `parsers.client.ts`** — Existen como dead code (no importados), creados durante intentos anteriores con `createParser`
-
-**Estado actual del servidor:** ningún archivo de página o componente importa de `nuqs/server`. Los `parsers.server.ts` de cada feature son dead code y webpack no los incluye en el bundle.
-
-**Regla para nuevas features:**
-- Servidor (`page.tsx`): usar `parseInt` vanilla para parsear query params, como los demás pages
-- Cliente (componentes con `useQueryState`): importar `parseAsInteger` de `@/lib/parsers.client`, nunca directamente de `nuqs`
+**Regla para nuevas features (URL state en cliente):**
+```typescript
+import { useUrlString, useUrlInt } from "@/lib/useUrlState";
+const [qSearch, setQSearch] = useUrlString("search");
+const [qLimit, setQLimit] = useUrlInt("limit", 10);
+const [qPage, setQPage] = useUrlInt("page", 1);
+```
 
 ### Build lento por contexto grande
 `node_modules` se incluía en el contexto de Docker.
@@ -232,9 +233,10 @@ nginx -t && systemctl reload nginx
 
 ## 9. URLs de Acceso
 
-- **App (directo)**: http://72.249.60.141:3000
-- **App (dominio)**: http://ozcabinspeccion.com
+- **App**: http://ozcabinspeccion.com (usar siempre el dominio, nunca IP:puerto directo)
 - **Backend API**: http://72.249.60.141:3001
+
+> **Importante**: No acceder a `http://72.249.60.141:3000` directamente. El puerto 3000 está enlazado a `127.0.0.1` y no es accesible desde el exterior. Toda la app se accede vía Nginx en puerto 80.
 
 ---
 
@@ -285,13 +287,16 @@ fail2ban-client status sshd
 
 ### UFW Firewall (configurado 2026-04-17)
 Puertos abiertos: 22 (SSH), 80 (HTTP), 443 (HTTPS).
-Los puertos 3000 y 3001 de Docker **no deben estar abiertos** al exterior — solo Nginx los expone internamente.
 
-```bash
-ufw status
-ufw delete allow 3000    # si aparecen en el status, eliminarlos
-ufw delete allow 3001
+> **Advertencia crítica:** UFW **no protege puertos de Docker**. Docker modifica iptables directamente y bypasea UFW. Agregar `ufw deny 3000` no tiene efecto sobre Docker.
+
+La protección correcta es el binding en `docker-compose.yml`:
+```yaml
+ports:
+  - "127.0.0.1:3000:3000"   # solo localhost puede conectarse
 ```
+
+No usar `ufw allow 3000` ni `ufw deny 3000` para puertos de Docker — no funciona.
 
 ### Intento de command injection detectado
 Se detectó en logs: `echo <base64> | base64 -d | bash` apuntando a `78.153.140.16/re.sh`.

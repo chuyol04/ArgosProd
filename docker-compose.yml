@@ -87,7 +87,7 @@ services:
       mongo:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     env_file:
       - ./ArgosBackEnd/.env        # reutiliza FIREBASE_* del backend
     environment:
