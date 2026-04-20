@@ -57,8 +57,12 @@ scp C:\Users\chuy_\AppData\Roaming\rclone\rclone.conf root@72.249.60.141:/opt/ar
 ### `/etc/systemd/system/argos.service`
 Servicio systemd que levanta Docker Compose automáticamente al arrancar la VPS.
 
-### `/etc/nginx/sites-available/default`
-Proxy inverso Nginx apuntando al frontend en puerto 3000.
+### `/etc/nginx/sites-available/argos`
+Proxy inverso Nginx activo apuntando al frontend en `127.0.0.1:3000`.
+Está habilitado con symlink:
+```bash
+/etc/nginx/sites-enabled/argos -> /etc/nginx/sites-available/argos
+```
 
 ---
 
@@ -122,6 +126,120 @@ NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyDvVj7N94j5971XaIfEH6JlsSh_X_ozl6Q
 NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=inspeccion-cfdf1.firebaseapp.com
 NEXT_PUBLIC_FIREBASE_PROJECT_ID=inspeccion-cfdf1
 ```
+
+### Logs repetidos `Response { status: 200 }` en `argos_frontend` (2026-04-20)
+
+**Síntoma observado en VPS:**
+```bash
+docker logs argos_frontend --since=10m 2>&1 | tail -30
+```
+mostraba repetidamente objetos `Response` completos para:
+```text
+url: 'http://backend:3001/users/details'
+status: 200
+statusText: 'OK'
+```
+
+El backend confirmaba que no era error:
+```bash
+docker logs argos_backend --since=10m 2>&1 | grep -i "details\|error\|401\|500" | tail -20
+```
+solo mostraba `POST /users/details` con respuesta exitosa.
+
+**Causa:** un `console.log(expressResp)` en la ruta BFF del frontend:
+```text
+ArgosFrontEnd/src/app/api/auth/getCurrentUser/route.ts
+```
+
+**Fix aplicado:** se eliminó el log del objeto `Response` y se reemplazó por logging compacto solo cuando `/users/details` falla (`status` + `motive/message`). También se eliminó la variable `firebase_uid` sin usar después de verificar la cookie de sesión.
+
+**Verificación local:** `npm run lint` en `ArgosFrontEnd` terminó correctamente. Quedan warnings existentes en otros archivos, pero `getCurrentUser/route.ts` ya no aparece con warning.
+
+**Verificación en VPS tras deploy:**
+```bash
+docker logs argos_frontend --since=10m 2>&1 | grep "Response {" | tail
+```
+no devuelve nada.
+
+### `/api/auth/getCurrentUser` devolvía 404 al entrar por IP (2026-04-20)
+
+**Síntoma:** después de iniciar sesión por `http://72.249.60.141`, el navegador llegaba a `/home` pero mostraba:
+```text
+Error al cargar usuario
+Failed to fetch user data
+```
+y en consola:
+```text
+Failed to load resource: 404 (Not Found)
+/api/auth/getCurrentUser
+```
+
+**Diagnóstico:**
+```bash
+curl -i http://127.0.0.1:3000/api/auth/getCurrentUser
+```
+respondía correctamente:
+```text
+HTTP/1.1 401 Unauthorized
+{"message":"No session"}
+```
+pero:
+```bash
+curl -i http://72.249.60.141/api/auth/getCurrentUser
+```
+respondía `404` con headers de Express. Eso confirmó que Nginx estaba mandando `/api` al backend Express en vez de dejar que Next.js manejara sus propias rutas API.
+
+**Causa:** el archivo activo `/etc/nginx/sites-available/argos` tenía este bloque incorrecto:
+```nginx
+location /api {
+    proxy_pass http://127.0.0.1:3001;
+}
+```
+
+**Fix aplicado en VPS:** se eliminó por completo el bloque `location /api`. La regla `location /` queda como único proxy y manda todo a Next.js (`127.0.0.1:3000`). Las llamadas del frontend al backend se hacen desde código Next usando `EXPRESS_BASE_URL=http://backend:3001`, no por Nginx público.
+
+**Verificación final:**
+```bash
+nginx -t
+systemctl reload nginx
+curl -i http://72.249.60.141/api/auth/getCurrentUser
+```
+resultado correcto:
+```text
+HTTP/1.1 401 Unauthorized
+{"message":"No session"}
+```
+
+Después de esto el sitio cargó correctamente al entrar por:
+```text
+http://72.249.60.141
+```
+
+### Validación de bloqueo del puerto 3000 público (2026-04-20)
+
+Después del deploy y reload de Nginx se validó:
+```bash
+docker ps --format "table {{.Names}}\t{{.Ports}}"
+```
+resultado importante:
+```text
+argos_frontend   127.0.0.1:3000->3000/tcp
+```
+
+También se validó que desde la IP pública el puerto 3000 ya no conecta:
+```bash
+curl -I http://72.249.60.141:3000
+```
+resultado:
+```text
+curl: (7) Failed to connect to 72.249.60.141 port 3000
+```
+
+Y no hay señales recientes del error anterior:
+```bash
+docker logs argos_frontend --since=30m 2>&1 | grep -i "returnNaN\|error\|failed\|uncaught" | tail -30
+```
+sin salida.
 
 ---
 
@@ -205,7 +323,7 @@ docker compose logs frontend --since=10m | grep -i "error\|⨯\|warn"
 
 ## 8. Nginx
 
-Configuración en `/etc/nginx/sites-available/default`:
+Configuración activa en `/etc/nginx/sites-available/argos`:
 ```nginx
 server {
     listen 80;
@@ -222,7 +340,7 @@ server {
 }
 ```
 
-**Nota**: No redirigir `/api` al backend — el frontend Next.js maneja sus propias rutas `/api` internamente.
+**Nota crítica**: No redirigir `/api` al backend. El frontend Next.js maneja sus propias rutas `/api` internamente, por ejemplo `/api/auth/getCurrentUser`. Si Nginx manda `/api` a Express, el login llega a `/home` pero falla la carga de usuario con `404`.
 
 Recargar Nginx tras cambios:
 ```bash
@@ -233,10 +351,11 @@ nginx -t && systemctl reload nginx
 
 ## 9. URLs de Acceso
 
-- **App**: http://ozcabinspeccion.com (usar siempre el dominio, nunca IP:puerto directo)
+- **App por dominio**: http://ozcabinspeccion.com
+- **App por IP**: http://72.249.60.141
 - **Backend API**: http://72.249.60.141:3001
 
-> **Importante**: No acceder a `http://72.249.60.141:3000` directamente. El puerto 3000 está enlazado a `127.0.0.1` y no es accesible desde el exterior. Toda la app se accede vía Nginx en puerto 80.
+> **Importante**: No acceder a `http://72.249.60.141:3000` directamente. El puerto 3000 está enlazado a `127.0.0.1` y no es accesible desde el exterior. Toda la app se accede vía Nginx en puerto 80, ya sea con dominio o con IP sin puerto.
 
 ---
 
