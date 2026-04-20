@@ -22,8 +22,7 @@ export async function GET(req:NextRequest) {
     const session = req.cookies.get('session')?.value
     if (!session) return NextResponse.json({ message: 'No session' }, { status: 401 })
     try {
-        const decoded = await admin.auth().verifySessionCookie(session, true)
-        const firebase_uid = decoded.uid
+        await admin.auth().verifySessionCookie(session, true)
 
         // Forward the session cookie to the backend
         const expressResp = await fetch(EXPRESS_BASE_URL + "/users/details", {
@@ -34,10 +33,16 @@ export async function GET(req:NextRequest) {
             },
             cache: 'no-store',
         });
-        console.log(expressResp)
-        if(!expressResp.ok) throw new Error();
+        if(!expressResp.ok) {
+            const errorPayload = await expressResp.json().catch(() => ({}));
+            console.error("Failed to fetch current user details:", {
+                status: expressResp.status,
+                motive: errorPayload?.motive || errorPayload?.message,
+            });
+            throw new Error("Failed to fetch current user details");
+        }
         const {success, user: value} = await expressResp.json();
-        if(!success) throw new Error();
+        if(!success) throw new Error("Backend did not return current user details");
 
         const user: IUser = {
                 id: value.id ?? 0,
