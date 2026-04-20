@@ -241,6 +241,123 @@ docker logs argos_frontend --since=30m 2>&1 | grep -i "returnNaN\|error\|failed\
 ```
 sin salida.
 
+### Incidente RCE en `argos_frontend` por Next.js 15.4.4 vulnerable (2026-04-20)
+
+**Síntoma:** después de la limpieza inicial se observaron logs graves en `argos_frontend`:
+```text
+NEXT_REDIRECT digest: 'xmrig-6.21.0/xmrig'
+NEXT_REDIRECT digest: './scanner_linux -t 1000'
+Command failed: ps aux | grep xmrig | grep -v grep
+```
+
+**Confirmación de compromiso:**
+```bash
+docker top argos_frontend
+```
+mostró un proceso malicioso dentro del contenedor:
+```text
+./scanner_linux -t 1000
+```
+
+El host no mostró el proceso fuera del contenedor:
+```bash
+ps aux | grep -E "scanner_linux|xmrig" | grep -v grep
+```
+sin salida.
+
+Otros contenedores (`argos_backend`, `argos_mongo`, `argos_mysql`) solo mostraron sus procesos esperados.
+
+**Archivos agregados al contenedor infectado:**
+```bash
+docker diff argos_frontend | grep -Ei "scanner|xmrig|tmp|tar|wget|curl|sh|bash|node_modules|app"
+```
+mostró:
+```text
+A /app/data.log
+A /app/monitor.log
+A /app/scanner_deployed.log
+A /app/scanner_linux
+A /app/xmrig-6.21.0
+A /app/xmrig-6.21.0/config.json
+A /app/xmrig-6.21.0/xmrig
+A /app/xmrig.tar.gz
+A /app/exploited.log
+A /app/failed.log
+```
+
+**Contención aplicada en VPS:**
+```bash
+docker stop argos_frontend
+mkdir -p /opt/argos/incident-2026-04-20
+docker cp argos_frontend:/app/exploited.log /opt/argos/incident-2026-04-20/exploited.log 2>/dev/null || true
+docker cp argos_frontend:/app/scanner_deployed.log /opt/argos/incident-2026-04-20/scanner_deployed.log 2>/dev/null || true
+docker cp argos_frontend:/app/monitor.log /opt/argos/incident-2026-04-20/monitor.log 2>/dev/null || true
+docker cp argos_frontend:/app/failed.log /opt/argos/incident-2026-04-20/failed.log 2>/dev/null || true
+docker rm argos_frontend
+```
+
+**Causa probable:** explotación remota de Next.js/React Server Components en Next `15.4.4`. Next publicó un advisory crítico para CVE-2025-66478 / React2Shell, indicando RCE en entornos sin parche y recomendando actualizar de inmediato. Para la rama `15.4.x`, los parches oficiales relevantes son `15.4.8` para RCE y `15.4.10` para fixes posteriores de RSC.
+
+Referencias oficiales:
+- https://nextjs.org/blog/CVE-2025-66478
+- https://nextjs.org/blog/security-update-2025-12-11
+
+**Fix aplicado en git (commit `6f79e46`):**
+```text
+Upgrade Next.js for RSC security fix
+```
+
+Cambios:
+```text
+next: 15.4.4 -> 15.4.10
+eslint-config-next: 15.4.4 -> 15.4.10
+```
+
+Verificación local:
+```bash
+npm ls next eslint-config-next
+```
+resultado:
+```text
+next@15.4.10
+eslint-config-next@15.4.10
+```
+
+```bash
+npm run lint
+npm audit --omit=dev
+```
+`npm run lint` pasó con warnings existentes. `npm audit --omit=dev` reportó `found 0 vulnerabilities`.
+
+**Redeploy seguro requerido en VPS:** no volver a levantar la imagen vieja. Hacer pull del commit y reconstruir sin cache:
+```bash
+cd /opt/argos
+git pull
+docker compose build --no-cache frontend
+docker compose up -d frontend
+```
+
+**Verificación post-redeploy:**
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+docker exec argos_frontend node -e "console.log(require('next/package.json').version)"
+docker top argos_frontend
+docker logs argos_frontend --since=5m 2>&1 | tail -80
+curl -I http://72.249.60.141
+curl -I http://72.249.60.141:3000
+```
+
+Resultado esperado:
+```text
+Next.js: 15.4.10
+argos_frontend: 127.0.0.1:3000->3000/tcp
+docker top: solo next-server / node esperado; nunca scanner_linux ni xmrig
+http://72.249.60.141: responde 307 /login o 200
+http://72.249.60.141:3000: Failed to connect
+```
+
+**Acción pendiente importante:** rotar secretos después de estabilizar el redeploy. Next recomienda rotar secretos de aplicaciones que estuvieron online sin parche. Prioridad: Firebase service account JSON, credenciales MySQL, credenciales MongoDB, secretos de cookies/sesión si existen, y cualquier token OAuth/rclone que pueda haber estado disponible para el contenedor.
+
 ---
 
 ## 6. Comandos de Referencia
@@ -433,3 +550,5 @@ apt-get -o Acquire::ForceIPv4=true upgrade -y
 
 - [ ] Configurar HTTPS con Let's Encrypt (certbot)
 - [ ] Monitoreo de contenedores (uptime, alertas)
+- [ ] Rotar secretos tras incidente RCE: Firebase service account, MySQL, MongoDB, secretos de sesión/cookies y tokens auxiliares
+- [ ] Cerrar exposición pública innecesaria de backend `3001`, MySQL `3307` y MongoDB `27017` si no se requieren desde internet
