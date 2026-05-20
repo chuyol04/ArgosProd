@@ -15,7 +15,7 @@ export default function ProtectedLayoutWrapper({
         <div className="min-h-screen flex flex-col">
             <Header onMenuClick={() => setSidebarOpen(true)} />
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <main className="flex-1 ">
+            <main className="flex-1">
                 {children}
             </main>
         </div>

@@ -34,11 +34,9 @@ export default function Login() {
 
       {/* Hero Banner */}
       <div
-        className="h-50 w-full bg-cover bg-center flex justify-center items-center"
-        style={{ backgroundImage: "url('/herobanner.png')" }}
-      >
-        <span className="text-3xl text-white">Login</span>
-      </div>
+        className="h-48 w-full bg-cover bg-center"
+        style={{ backgroundImage: "url('/bannernuevo1.webp')" }}
+      ></div>
 
       {/* Login Form */}
       <div className="flex w-full mt-12 justify-center items-center">

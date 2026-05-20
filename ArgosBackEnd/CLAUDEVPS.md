@@ -546,6 +546,57 @@ apt-get -o Acquire::ForceIPv4=true upgrade -y
 
 ---
 
+### Incidente CSF Firewall por renovación de VPS (2026-05-20)
+
+**Causa:** Al renovar el VPS con Neubox, el proveedor instaló automáticamente **CSF (ConfigServer Security & Firewall) v14.20** con una configuración por defecto que bloqueaba:
+1. Puerto 80 en INPUT → browser veía `ERR_CONNECTION_TIMED_OUT`
+2. Tráfico OUTPUT del host hacia el bridge de Docker (`br-95e7441a32ad:3000`) → `curl 127.0.0.1:3000` daba `Connection reset by peer`
+3. DNS desde contenedores → `EAI_AGAIN` (Firebase Admin SDK timeout de 25s)
+
+**Diagnóstico clave:**
+- `nft list table ip filter` reveló cadena FORWARD con `policy drop` y OUTPUT bloqueando nuevas conexiones a puertos no listados
+- Container-to-container funcionaba; host→contenedor fallaba
+- `iptables --version` mostró `nf_tables` backend — conflicto con reglas Docker
+
+**Solución aplicada:**
+```bash
+# 1. Abrir puerto 80 en TCP_IN
+sed -i 's/^TCP_IN = "22,3306"/TCP_IN = "22,80,3306"/' /etc/csf/csf.conf
+
+# 2. Habilitar soporte Docker con red correcta
+sed -i 's/^DOCKER = "0"/DOCKER = "1"/' /etc/csf/csf.conf
+sed -i 's|^DOCKER_NETWORK4 = "172.17.0.0/16"|DOCKER_NETWORK4 = "172.18.0.0/16"|' /etc/csf/csf.conf
+
+# 3. Regla persistente OUTPUT al bridge (DOCKER_DEVICE="docker0" no coincide con br-95e7441a32ad)
+echo '/sbin/iptables -I OUTPUT -d 172.18.0.0/16 -j ACCEPT' >> /etc/csf/csfpost.sh
+chmod +x /etc/csf/csfpost.sh
+csf -r
+```
+
+**Problema persistente de DNS:** tras `csf -r`, Docker perdía sus reglas NAT y los contenedores no podían resolver DNS (`EAI_AGAIN`). Fix:
+```bash
+systemctl restart docker
+cd /opt/argos
+docker compose up -d
+```
+
+**Solución definitiva — deshabilitar CSF y usar UFW:**
+CSF causaba demasiados conflictos con Docker. Se optó por desinstalarlo y volver a UFW (que no interfiere con Docker):
+```bash
+csf -x   # deshabilita CSF y limpia sus reglas
+apt-get install -y ufw
+ufw allow 22
+ufw allow 80
+ufw allow 443
+ufw enable
+systemctl restart docker
+docker compose up -d
+```
+
+**Regla crítica:** Si el VPS se renueva nuevamente y Neubox reinstala CSF, repetir el proceso de deshabilitar CSF e instalar UFW. UFW no afecta las reglas iptables de Docker.
+
+---
+
 ## 12. Pendientes
 
 - [ ] Configurar HTTPS con Let's Encrypt (certbot)
