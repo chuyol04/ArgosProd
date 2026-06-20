@@ -26,6 +26,7 @@ import {
   getServiceById,
 } from "@/app/(protected)/services/actions/services.actions";
 import { IClient } from "@/app/(protected)/clients/types/clients.types";
+import { toDateInputValue, emptyToUndefined } from "@/lib/dateTimeUtils";
 
 type ModalMode = "create" | "edit";
 
@@ -35,13 +36,6 @@ interface ServiceModalProps {
   onOpenChange: (open: boolean) => void;
   mode: ModalMode;
   clients: IClient[];
-}
-
-function formatDateForInput(dateStr: string | null): string {
-  if (!dateStr) return "";
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return "";
-  return date.toISOString().split("T")[0];
 }
 
 export default function ServiceModal({
@@ -88,8 +82,8 @@ export default function ServiceModal({
             setFormData({
               client_id: String(result.data.client_id),
               name: result.data.name || "",
-              start_date: formatDateForInput(result.data.start_date),
-              end_date: formatDateForInput(result.data.end_date),
+              start_date: toDateInputValue(result.data.start_date),
+              end_date: toDateInputValue(result.data.end_date),
             });
           } else {
             setError(result.error || "Error al cargar servicio");
@@ -123,14 +117,14 @@ export default function ServiceModal({
         result = await updateService(serviceId, {
           client_id: formData.client_id ? parseInt(formData.client_id, 10) : undefined,
           name: formData.name || undefined,
-          start_date: formData.start_date || undefined,
-          end_date: formData.end_date || undefined,
+          start_date: emptyToUndefined(formData.start_date),
+          end_date: emptyToUndefined(formData.end_date),
         });
       } else {
         result = await createService({
           client_id: parseInt(formData.client_id, 10),
           start_date: formData.start_date,
-          end_date: formData.end_date || undefined,
+          end_date: emptyToUndefined(formData.end_date),
           name: formData.name || undefined,
         });
       }

@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Pencil, Save, X, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Trash2, AlertTriangle } from "lucide-react";
 import { useUser } from "@/contexts/users/userContext";
 import {
   IInspectionDetailExtended,
@@ -28,6 +28,16 @@ import {
   fetchInspectorsForSelect,
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
 import { DefectsSection } from "./DefectsSection";
+import {
+  toDateInputValue,
+  toTimeInputValue,
+  formatDateDisplay,
+  formatTimeDisplay,
+  isPastLocalDate,
+  emptyToUndefined,
+  calculateWorkedHours,
+  isInvalidTimeRange,
+} from "@/lib/dateTimeUtils";
 
 type Mode = "view" | "edit" | "create";
 
@@ -69,34 +79,9 @@ function FormField({
   );
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-MX", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
-  }
-}
-
-function formatTime(timeStr: string | null): string {
-  if (!timeStr) return "-";
-  return timeStr;
-}
-
-function toInputDate(dateStr: string | null): string {
-  if (!dateStr) return "";
-  try {
-    const date = new Date(dateStr);
-    return date.toISOString().split("T")[0];
-  } catch {
-    return "";
-  }
-}
+const formatDate = formatDateDisplay;
+const formatTime = formatTimeDisplay;
+const toInputDate = toDateInputValue;
 
 export default function InspectionDetailForm({
   detail,
@@ -118,10 +103,7 @@ export default function InspectionDetailForm({
 
   // Check if inspection is from a past date
   const isPastInspection = useMemo(() => {
-    if (!detail?.inspection_date) return false;
-    const today = new Date().toISOString().split("T")[0];
-    const inspDate = new Date(detail.inspection_date).toISOString().split("T")[0];
-    return inspDate < today;
+    return isPastLocalDate(detail?.inspection_date);
   }, [detail?.inspection_date]);
 
   // Can edit: M+A always, Inspectors only same-day
@@ -143,8 +125,8 @@ export default function InspectionDetailForm({
     accepted_pieces: detail?.accepted_pieces ?? undefined,
     rejected_pieces: detail?.rejected_pieces ?? undefined,
     reworked_pieces: detail?.reworked_pieces ?? undefined,
-    start_time: detail?.start_time ?? "",
-    end_time: detail?.end_time ?? "",
+    start_time: toTimeInputValue(detail?.start_time ?? null),
+    end_time: toTimeInputValue(detail?.end_time ?? null),
     shift: detail?.shift != null ? String(detail.shift) : "",
   });
 
@@ -191,22 +173,89 @@ export default function InspectionDetailForm({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Accepted/rejected/reworked are the only manually-captured piece counts -
+  // never let them go negative.
+  const handlePieceCountChange = (
+    field: "accepted_pieces" | "rejected_pieces" | "reworked_pieces",
+    rawValue: string
+  ) => {
+    handleInputChange(field, rawValue ? Math.max(0, Number(rawValue)) : undefined);
+  };
+
+  // Worked hours = end_time - start_time for THIS inspector's own entry only
+  // (never summed across inspectors, never multiplied by headcount). Always
+  // derived while editing/creating - the field itself stays read-only.
+  const computedHours = useMemo(
+    () => calculateWorkedHours(formData.start_time, formData.end_time),
+    [formData.start_time, formData.end_time]
+  );
+  const timeRangeInvalid = useMemo(
+    () => isInvalidTimeRange(formData.start_time, formData.end_time),
+    [formData.start_time, formData.end_time]
+  );
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    setFormData((prev) => ({ ...prev, hours: computedHours ?? undefined }));
+  }, [computedHours, isReadOnly]);
+
+  // Inspected pieces = accepted + rejected + reworked, for THIS box only
+  // (never summed across boxes). The field itself stays read-only/computed.
+  const computedInspectedPieces = useMemo(
+    () =>
+      (formData.accepted_pieces || 0) +
+      (formData.rejected_pieces || 0) +
+      (formData.reworked_pieces || 0),
+    [formData.accepted_pieces, formData.rejected_pieces, formData.reworked_pieces]
+  );
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    setFormData((prev) => ({ ...prev, inspected_pieces: computedInspectedPieces }));
+  }, [computedInspectedPieces, isReadOnly]);
+
+  // "Problema / Condición Revisada": inherited from the parent report - what
+  // is being inspected/looked for (e.g. "Golpe / Falta de ranura"). For an
+  // existing detail it comes from the join (report_problem); while creating,
+  // it's looked up from the currently-selected report in the dropdown.
+  const reportProblem = useMemo(() => {
+    if (detail) return detail.report_problem;
+    return reports.find((r) => r.id === formData.inspection_report_id)?.problem ?? null;
+  }, [detail, reports, formData.inspection_report_id]);
+
+  // Sum of defect quantities reported by DefectsSection, compared against
+  // rejected pieces - shown as a non-blocking visual warning when they differ.
+  const [defectsTotalQuantity, setDefectsTotalQuantity] = useState(0);
+  const rejectedPieces = formData.rejected_pieces || 0;
+  const defectsMismatch =
+    (rejectedPieces > 0 || defectsTotalQuantity > 0) && defectsTotalQuantity !== rejectedPieces;
+
   const handleSave = () => {
     setError(null);
+    // Empty date/time inputs must be sent as `undefined` (omit field on update,
+    // null on create), never as "" - the DATE/TIME columns reject empty strings.
+    const payload: IInspectionDetailFormData = {
+      ...formData,
+      inspection_date: emptyToUndefined(formData.inspection_date),
+      manufacture_date: emptyToUndefined(formData.manufacture_date),
+      start_time: emptyToUndefined(formData.start_time),
+      end_time: emptyToUndefined(formData.end_time),
+    };
+
     startTransition(async () => {
       if (isCreate) {
-        if (!formData.inspection_report_id) {
+        if (!payload.inspection_report_id) {
           setError("Debe seleccionar un reporte de inspección");
           return;
         }
-        const result = await createInspectionDetail(formData);
+        const result = await createInspectionDetail(payload);
         if (result.success && result.id) {
           router.push(`/detalles-inspeccion/${result.id}`);
         } else {
           setError(result.error || "Error al crear detalle");
         }
       } else if (detail) {
-        const result = await updateInspectionDetail(detail.id, formData);
+        const result = await updateInspectionDetail(detail.id, payload);
         if (result.success) {
           setMode("view");
           router.refresh();
@@ -250,8 +299,8 @@ export default function InspectionDetailForm({
         accepted_pieces: detail?.accepted_pieces ?? undefined,
         rejected_pieces: detail?.rejected_pieces ?? undefined,
         reworked_pieces: detail?.reworked_pieces ?? undefined,
-        start_time: detail?.start_time ?? "",
-        end_time: detail?.end_time ?? "",
+        start_time: toTimeInputValue(detail?.start_time ?? null),
+        end_time: toTimeInputValue(detail?.end_time ?? null),
         shift: detail?.shift != null ? String(detail.shift) : "",
       });
     }
@@ -377,6 +426,22 @@ export default function InspectionDetailForm({
         </Card>
       )}
 
+      {/* Problema / Condición Revisada - what's being inspected/looked for in
+          this box, inherited read-only from the parent report. Not the same
+          as a "Defecto" (what was actually found), captured further below. */}
+      {reportProblem && (
+        <Card className="border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20">
+          <CardContent className="py-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-300">
+              Problema / Condición Revisada
+            </p>
+            <p className="mt-1 text-sm font-medium whitespace-pre-wrap text-amber-900 dark:text-amber-100">
+              {reportProblem}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Identification Section */}
       <Card>
         <CardHeader className="pb-3">
@@ -489,24 +554,7 @@ export default function InspectionDetailForm({
             />
           </FormField>
 
-          <FormField label="Horas Trabajadas" value={detail?.hours} isReadOnly={isReadOnly}>
-            <Input
-              type="number"
-              step="0.5"
-              min="0"
-              value={formData.hours ?? ""}
-              onChange={(e) =>
-                handleInputChange("hours", e.target.value ? Number(e.target.value) : undefined)
-              }
-              placeholder="Ej: 8"
-            />
-          </FormField>
-
-          <FormField
-            label="Hora de Inicio"
-            value={formatTime(detail?.start_time || null)}
-            isReadOnly={isReadOnly}
-          >
+          <FormField label="Hora de Inicio" value={formatTime(detail?.start_time || null)} isReadOnly={isReadOnly}>
             <Input
               type="time"
               value={formData.start_time || ""}
@@ -524,6 +572,24 @@ export default function InspectionDetailForm({
               value={formData.end_time || ""}
               onChange={(e) => handleInputChange("end_time", e.target.value)}
             />
+            {timeRangeInvalid && (
+              <p className="mt-1 text-xs text-destructive">
+                La hora de fin no puede ser anterior a la hora de inicio.
+              </p>
+            )}
+          </FormField>
+
+          {/* Horas Trabajadas: siempre de solo lectura, calculada automáticamente
+              como hora_fin - hora_inicio para este inspector (no se suma ni se
+              multiplica por colaboradores). */}
+          <FormField label="Horas Trabajadas" value={detail?.hours} isReadOnly={isReadOnly}>
+            <Input
+              type="text"
+              value={computedHours ?? ""}
+              readOnly
+              disabled
+              placeholder="Se calcula con hora inicio/fin"
+            />
           </FormField>
         </CardContent>
       </Card>
@@ -535,26 +601,6 @@ export default function InspectionDetailForm({
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           <FormField
-            label="Inspeccionadas"
-            value={detail?.inspected_pieces}
-            isReadOnly={isReadOnly}
-            valueClassName="text-base"
-          >
-            <Input
-              type="number"
-              min="0"
-              value={formData.inspected_pieces ?? ""}
-              onChange={(e) =>
-                handleInputChange(
-                  "inspected_pieces",
-                  e.target.value ? Number(e.target.value) : undefined
-                )
-              }
-              placeholder="0"
-            />
-          </FormField>
-
-          <FormField
             label="Aceptadas"
             value={detail?.accepted_pieces}
             isReadOnly={isReadOnly}
@@ -564,12 +610,7 @@ export default function InspectionDetailForm({
               type="number"
               min="0"
               value={formData.accepted_pieces ?? ""}
-              onChange={(e) =>
-                handleInputChange(
-                  "accepted_pieces",
-                  e.target.value ? Number(e.target.value) : undefined
-                )
-              }
+              onChange={(e) => handlePieceCountChange("accepted_pieces", e.target.value)}
               placeholder="0"
             />
           </FormField>
@@ -584,12 +625,7 @@ export default function InspectionDetailForm({
               type="number"
               min="0"
               value={formData.rejected_pieces ?? ""}
-              onChange={(e) =>
-                handleInputChange(
-                  "rejected_pieces",
-                  e.target.value ? Number(e.target.value) : undefined
-                )
-              }
+              onChange={(e) => handlePieceCountChange("rejected_pieces", e.target.value)}
               placeholder="0"
             />
           </FormField>
@@ -605,12 +641,24 @@ export default function InspectionDetailForm({
               min="0"
               value={formData.reworked_pieces ?? ""}
               onChange={(e) =>
-                handleInputChange(
-                  "reworked_pieces",
-                  e.target.value ? Number(e.target.value) : undefined
-                )
+                handlePieceCountChange("reworked_pieces", e.target.value)
               }
               placeholder="0"
+            />
+          </FormField>
+
+          <FormField
+            label="Inspeccionadas"
+            value={detail?.inspected_pieces}
+            isReadOnly={isReadOnly}
+            valueClassName="text-base"
+          >
+            <Input
+              type="text"
+              value={computedInspectedPieces}
+              readOnly
+              disabled
+              placeholder="Acept. + Rech. + Retrab."
             />
           </FormField>
         </CardContent>
@@ -642,10 +690,20 @@ export default function InspectionDetailForm({
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">Defectos</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {defectsMismatch && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                La suma de los defectos ({defectsTotalQuantity}) no coincide con las piezas
+                rechazadas ({rejectedPieces}). Revisa las cantidades.
+              </p>
+            </div>
+          )}
           <DefectsSection
             inspectionDetailId={detail?.id ?? null}
             disabled={isReadOnly || !canEdit}
+            onTotalQuantityChange={setDefectsTotalQuantity}
           />
         </CardContent>
       </Card>

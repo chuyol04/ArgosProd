@@ -20,18 +20,16 @@ The backend interacts with the `ozcab_db` database. The schema has been refactor
 *   **`clients`**: Stores information about client companies.
 *   **`services`**: Represents contracts or projects for clients.
 *   **`parts`**: Details about manufactured pieces to be inspected.
-*   **`defects`**: A catalog of known defects.
+*   **`defects`**: A catalog of known defects (optional - incidents can also use free-text `defect_label` instead).
 *   **`work_instructions`**: Defines how an inspection should be done for a specific part.
-*   **`users`**: Stores user accounts, linked with Firebase UIDs.
+*   **`users`**: Stores user accounts, linked with Firebase UIDs. `client_id` (nullable) scopes a `Cliente`-role user to a single client for the read-only portal.
 *   **`inspection_reports`**: Summaries of inspections for a batch of parts.
-*   **`inspection_details`**: Detailed records of individual inspections within a report.
-*   **`incidents`**: Records specific defects found during an inspection.
-*   **`roles`**: Defines user roles (e.g., Inspector, Manager, Admin).
+*   **`inspection_details`**: Detailed records of individual inspections within a report (a "box").
+*   **`incidents`**: Records specific defects found during an inspection. `defect_id` is optional (nullable); `defect_label` holds the defect name when it wasn't picked from the `defects` catalog.
+*   **`roles`**: Defines user roles: `Inspector`, `Manager`, `Admin`, `Cliente`. There are **no** `permissions`/`role_permissions` tables - access control is hardcoded by role name (see `lib/constants/roles.js` and `middleware/clientGuard.js`).
 *   **`user_roles`**: Junction table assigning roles to users.
-*   **`permissions`**: Defines abstract permissions (e.g., `clients.create`).
-*   **`role_permissions`**: Junction table assigning permissions to roles.
 *   **`favorite_routes`**: Stores user-specific favorite UI routes.
-*   **`work_instruction_evidence`**: Stores evidence (e.g., photos) related to work instructions.
+*   **`work_instruction_evidence`**: Stores files attached to work instructions. `is_main_it` (0/1) marks the single signed IT file; everything else is an optional complementary document.
 
 ## 3. API Endpoints
 
@@ -124,31 +122,42 @@ The API is structured around resources, typically following RESTful conventions.
 
 #### 3.1.3 Create User
 
-*   **Route:** `/users/create` (Not explicitly mounted in `app.js` yet, assumes this is handled by `userRoutes.js` and `usersHandler.createUser`)
+*   **Route:** `/users/create`
 *   **Method:** `POST`
-*   **Handler:** `userRoutes.js` -> `usersHandler.createUser`
-*   **Description:** Creates a new user record in the database.
+*   **Handler:** `userRoutes.js` -> `userHandler.createUser`
+*   **Description:** Creates a Firebase Auth user (with a generated temporary password) and the corresponding MySQL row, optionally assigning a role and, for role `Cliente`, the client it's scoped to.
 *   **Request Body:**
     ```json
     {
-      "firebase_uid": "someFirebaseUID",
       "name": "New User",
       "email": "new.user@example.com",
-      "phone_number": "987-654-3210"
+      "phone_number": "987-654-3210",
+      "role_id": 4,
+      "client_id": 12
     }
     ```
+*   **Required Parameters:** `name`, `email`. `client_id` is required (validated client-side) when `role_id` corresponds to the `Cliente` role - it scopes the user to that single client for the read-only portal.
 *   **Response (Success - 201 Created):**
     ```json
     {
       "success": true,
+      "id": 17,
+      "temp_password": "aZ3kP9qT",
       "motive": "User created successfully"
+    }
+    ```
+*   **Response (Error - 404 Not Found):**
+    ```json
+    {
+      "success": false,
+      "motive": "Client not found"
     }
     ```
 *   **Response (Error - 409 Conflict):**
     ```json
     {
       "success": false,
-      "motive": "Email or Firebase UID already exists"
+      "motive": "Email already exists"
     }
     ```
 *   **Response (Error - 500 Server Error):**
@@ -761,17 +770,17 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/work-instructions/create`
 *   **Method:** `POST`
 *   **Handler:** `instruccionTrabajoHandler.js` -> `createInstruccionTrabajo`
-*   **Description:** Creates a new work instruction record.
+*   **Description:** Creates a new work instruction record. The "Pieza" field is free text now - send `part_name` and the backend finds an existing catalog row by name (case-insensitive) or creates one on the fly via `findOrCreatePartByName`. `part_id` is still accepted directly for backward compatibility (e.g. a pre-existing catalog pick), but `part_name` takes priority when both are present.
 *   **Request Body:**
     ```json
     {
       "service_id": 1,
-      "part_id": 1,
+      "part_name": "Cover Plate RH",
       "description": "Detailed inspection steps for Part A1",
       "inspection_rate_per_hour": 10
     }
     ```
-*   **Required Parameters:** `inspection_rate_per_hour`, `service_id`, `part_id`
+*   **Required Parameters:** `inspection_rate_per_hour`, `service_id`, and one of `part_name` / `part_id`.
 *   **Response (Success - 201 Created):**
     ```json
     {
@@ -855,13 +864,14 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/work-instructions/:id`
 *   **Method:** `PUT`
 *   **Handler:** `instruccionTrabajoHandler.js` -> `updateInstruccionTrabajo`
-*   **Description:** Updates an existing work instruction record. Allows partial updates.
+*   **Description:** Updates an existing work instruction record. Allows partial updates. `part_name` (free text) is also accepted here, same find-or-create behavior as create.
 *   **Path Parameters:**
     *   `id`: `INT` - The ID of the work instruction to update.
 *   **Request Body:**
     ```json
     {
       "description": "Revised inspection steps for Part A1",
+      "part_name": "Cover Plate RH",
       "inspection_rate_per_hour": 12
     }
     ```
@@ -909,6 +919,35 @@ The API is structured around resources, typically following RESTful conventions.
       "motive": "Work instruction not found"
     }
     ```
+
+#### 3.6.6 Work Instruction Files (Evidence) - Main IT vs. Complementary Documents
+
+Files attached to a work instruction live in `work_instruction_evidence`. Each row has `is_main_it` (0/1): **at most one** row per work instruction can have `is_main_it = 1` (the signed IT itself); everything else is an optional complementary document (safety sheets, supporting files, etc.).
+
+*   **Add Evidence**
+    *   **Route:** `/work-instructions/:id/evidence`
+    *   **Method:** `POST`
+    *   **Handler:** `instruccionTrabajoHandler.js` -> `addEvidence`
+    *   **Description:** Attaches a file (already uploaded to GridFS - `file_url` is the `media_id`). If `is_main_it: true`, any previously-main evidence for this work instruction is demoted first, so there's never more than one main file.
+    *   **Request Body:**
+        ```json
+        { "file_url": "<gridfs_media_id>", "comment": "optional label", "is_main_it": true }
+        ```
+    *   **Response (Success - 201 Created):** `{ "success": true, "id": 5, "motive": "Evidence added successfully" }`
+*   **Set Main Evidence**
+    *   **Route:** `/work-instructions/:id/evidence/:evidenceId/main`
+    *   **Method:** `PUT`
+    *   **Handler:** `instruccionTrabajoHandler.js` -> `setMainEvidence`
+    *   **Description:** Reclassifies an already-uploaded file as the main signed IT (demoting whichever was main before), without re-uploading or deleting anything. Used to fix the classification of files uploaded before this distinction existed.
+    *   **Response (Success - 200 OK):** `{ "success": true, "motive": "Evidence set as main IT" }`
+*   **Delete Evidence**
+    *   **Route:** `/work-instructions/:id/evidence/:evidenceId`
+    *   **Method:** `DELETE`
+    *   **Handler:** `instruccionTrabajoHandler.js` -> `deleteEvidence`
+    *   **Response (Success - 200 OK):** `{ "success": true, "deleted_url": "<gridfs_media_id>", "motive": "Evidence deleted successfully" }`
+
+`GET /work-instructions/:id` returns `evidences: [{ id, photo_url, comment, is_main_it }]`, ordered main-first.
+
 ---
 
 ### 3.7 Reports Resource (`/reports`) - Fully Refactored
@@ -962,7 +1001,8 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/reports`
 *   **Method:** `GET`
 *   **Handler:** `reporteHandler.js` -> `getReportes`
-*   **Description:** Retrieves a list of all inspection report records, including associated work instruction details.
+*   **Description:** Retrieves a list of all inspection report records, including associated work instruction details, plus per-report aggregates across all of its inspection details (boxes): distinct inspector names and total inspected/accepted/rejected pieces.
+*   **Access control:** if the requester's role is `Cliente`, results are always filtered to their own `client_id` (any `client_id`-like query param would be ignored - this is enforced server-side, not by the frontend).
 *   **Response (Success - 200 OK):**
     ```json
     {
@@ -977,7 +1017,11 @@ The API is structured around resources, typically following RESTful conventions.
           "description": "First batch inspection of Widget A1",
           "problem": null,
           "photo_url": null,
-          "work_instruction_description": "Detailed inspection for Widget A1"
+          "work_instruction_description": "Detailed inspection for Widget A1",
+          "inspector_names": "Jane Inspector, John Inspector",
+          "total_inspected_pieces": 150,
+          "total_accepted_pieces": 130,
+          "total_rejected_pieces": 20
         }
       ]
     }
@@ -988,9 +1032,10 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/reports/:id`
 *   **Method:** `GET`
 *   **Handler:** `reporteHandler.js` -> `getReporteById`
-*   **Description:** Retrieves a single inspection report record by its ID, including associated work instruction details.
+*   **Description:** Retrieves a single inspection report record by its ID, including associated work instruction details and the full list of `inspections` (boxes), each with `manufacture_date` and `reworked_pieces` (in addition to serial/lot/dates/pieces/inspector).
 *   **Path Parameters:**
     *   `id`: `INT` - The ID of the report.
+*   **Access control:** if the requester's role is `Cliente` and the report belongs to a different client, returns **404** (not 403) regardless of how the ID was obtained, including by typing it directly in a URL.
 *   **Response (Success - 200 OK):**
     ```json
     {
@@ -1074,6 +1119,14 @@ The API is structured around resources, typically following RESTful conventions.
       "motive": "Report not found"
     }
     ```
+
+#### 3.7.6 Export Report to Excel
+
+*   **Route:** `/reports/:id/export`
+*   **Method:** `GET`
+*   **Handler:** `reporteHandler.js` -> `exportReporteToExcel`
+*   **Description:** Generates an `.xlsx` workbook with a summary sheet and a "Detalles de Inspección" sheet with **one row per defect per box** (a box with no defects still gets exactly one row, so none are ever dropped). Columns, in order: Cliente, Servicio, Inspector, Fecha Inspección, Hora Inicio, Hora Fin, Horas Trabajadas, Pieza, # Serie, # Lote, Fecha Manufactura, Caja, Piezas Inspeccionadas/Aceptadas/Rechazadas/Retrabajadas, **Problema / Condición Revisada**, Defecto, Cantidad del Defecto, Evidencia. Access control is the same as Get Report by ID (404 if the report isn't the requester's own client).
+
 ---
 
 ### 3.8 Inspection Details Resource (`/inspection-details`) - Fully Refactored
@@ -1137,7 +1190,7 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/inspection-details`
 *   **Method:** `GET`
 *   **Handler:** `detalleInspeccionRoutes.js` -> `getDetallesInspeccion`
-*   **Description:** Retrieves a list of all detailed inspection records, including associated part, report, and inspector details.
+*   **Description:** Retrieves a list of all detailed inspection records, including associated part, report, and inspector details. `report_problem` is the parent report's "Problema / Condición Revisada" (what the inspector is supposed to be looking for) - not to be confused with `incidents`/defects, which are what was actually found.
 *   **Response (Success - 200 OK):**
     ```json
     {
@@ -1165,6 +1218,7 @@ The API is structured around resources, typically following RESTful conventions.
           "part_description": "Small metallic widget",
           "report_po_number": "PO-ACME-001",
           "report_start_date": "2023-01-10",
+          "report_problem": "Golpe / Falta de ranura",
           "inspector_name": "Inspector Jane"
         }
       ]
@@ -1205,6 +1259,7 @@ The API is structured around resources, typically following RESTful conventions.
         "part_description": "Small metallic widget",
         "report_po_number": "PO-ACME-001",
         "report_start_date": "2023-01-10",
+        "report_problem": "Golpe / Falta de ranura",
         "inspector_name": "Inspector Jane"
       }
     }
@@ -1287,17 +1342,18 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/incidents/create`
 *   **Method:** `POST`
 *   **Handler:** `incidenciaHandler.js` -> `createIncidencia`
-*   **Description:** Creates a new incident record associated with a detailed inspection.
+*   **Description:** Creates a new defect/incident associated with a detailed inspection (a "box"). The defect **does not require the catalog** - it can be captured as free text via `defect_label`. At least one of `defect_id` (catalog) or `defect_label` (free text) is required; `defect_id` is purely an optional shortcut that pre-fills the label on the frontend.
 *   **Request Body:**
     ```json
     {
       "defect_id": 1,
+      "defect_label": "Golpe",
       "inspection_detail_id": 1,
       "quantity": 2,
-      "evidence_url": "http://example.com/incident_photo.jpg"
+      "evidence_url": "<gridfs_media_id>"
     }
     ```
-*   **Required Parameters:** `defect_id`, `inspection_detail_id`
+*   **Required Parameters:** `inspection_detail_id`, and at least one of `defect_id` / `defect_label`.
 *   **Response (Success - 201 Created):**
     ```json
     {
@@ -1310,7 +1366,7 @@ The API is structured around resources, typically following RESTful conventions.
     ```json
     {
       "success": false,
-      "motive": "defect_id and inspection_detail_id are required"
+      "motive": "defect_id or defect_label (free text) is required"
     }
     ```
 *   **Response (Error - 404 Not Found):**
@@ -1326,7 +1382,8 @@ The API is structured around resources, typically following RESTful conventions.
 *   **Route:** `/incidents`
 *   **Method:** `GET`
 *   **Handler:** `incidenciaHandler.js` -> `getIncidencias`
-*   **Description:** Retrieves a list of all incident records, including associated defect and inspection details.
+*   **Description:** Retrieves a list of all incident records, including associated defect and inspection details. `defect_name` is `COALESCE(catalog name, defect_label)` - it always resolves to something display-ready regardless of whether the defect came from the catalog or free text.
+*   **Access control:** if the requester's role is `Cliente`, results are filtered to incidents on boxes belonging to their own client.
 *   **Response (Success - 200 OK):**
     ```json
     {
@@ -1335,10 +1392,12 @@ The API is structured around resources, typically following RESTful conventions.
         {
           "id": 1,
           "inspection_detail_id": 1,
-          "defect_id": 1,
+          "defect_id": null,
+          "defect_label": "Golpe",
           "quantity": 5,
-          "evidence_url": "http://example.com/incident_scratch.jpg",
-          "defect_name": "Scratch",
+          "evidence_url": "<gridfs_media_id>",
+          "defect_name": "Golpe",
+          "defect_description": null,
           "inspection_serial_number": "SN001",
           "inspection_lot_number": "LOT001"
         }
@@ -1747,7 +1806,29 @@ The API is structured around resources, typically following RESTful conventions.
 
 The following endpoints are identified but have not yet been refactored to the new schema and naming conventions. They currently use the old Spanish names and might have outdated logic.
 
-*   `/inspection`: `inspectionRouter`
-*   `/services`: `servicioRouter`
+*   `/inspection`: `inspectionRouter` (legacy prototype, not mounted/used by the current frontend)
 
-**Note:** The `/users` endpoint currently maps `userRouter` which uses `userRoutes.js`. This also needs full refactoring to align with the new `users` table and `IUser` interface. Additionally, a new endpoint for managing `permissions` and `role_permissions` will need to be created.
+**Note:** The `/users` endpoint currently maps `userRouter` which uses `userRoutes.js`. This also needs full refactoring to align with the new `users` table and `IUser` interface.
+
+---
+
+### 3.13 Access Control & Client Portal
+
+Access control is hardcoded by role name (no `permissions`/`role_permissions` tables - that approach was dropped in favor of simple role checks). Four roles exist: `Inspector`, `Manager`, `Admin`, `Cliente`.
+
+`middleware/clientGuard.js` (applied per-router in `app.js`, right after `verifySession`) enforces the `Cliente` role's read-only client portal:
+
+| Middleware | Applied to | Effect for role `Cliente` |
+|---|---|---|
+| `blockClientsEntirely` | `/users`, `/clients`, `/roles`, `/parts`, `/defects`, `/work-instructions`, `/user-roles`, `/favorite-routes`, `/services`, `/media` | 403 on every method |
+| `blockClientWrites` | `/reports`, `/inspection-details`, `/incidents` | 403 on `POST`/`PUT`/`DELETE`; `GET` allowed |
+
+Both middlewares populate `res.locals.requester` (`{ id, roles, client_id, ... }`) so handlers don't re-query the DB. On the GET endpoints a `Cliente` user can reach, the handlers themselves additionally scope every query to `requester.client_id`:
+
+*   `GET /reports`, `GET /reports/:id`, `GET /reports/:id/export` - filtered/404'd by the report's client.
+*   `GET /inspection-details`, `GET /inspection-details/:id` - filtered/404'd by the box's client.
+*   `GET /incidents`, `GET /incidents/:id` - filtered/404'd by the underlying box's client.
+
+This means a `Cliente` user can never see another client's data, **even by guessing/typing an ID directly in a URL** - the restriction lives in the SQL, not just in what the frontend chooses to render or link to.
+
+A user gets the `Cliente` role like any other role (via `/roles` + `POST /users/create` or `PUT /users/:id` with `role_id`), plus `client_id` set to the client they should be scoped to.

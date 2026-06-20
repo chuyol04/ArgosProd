@@ -7,6 +7,13 @@ export const config = {
 
 const ADMIN_ONLY_PATHS = ['/media', '/users', '/roles'];
 
+// Client-portal users (role 'Cliente') may only reach these paths - this is
+// a UX nicety on top of the real enforcement, which happens in the backend
+// (it ignores/overrides any client_id a request tries to pass and scopes
+// every query to the requester's own client).
+const CLIENT_PORTAL_ALLOWED_PATHS = ['/mis-reportes', '/cambiar-contrasena', '/forbidden'];
+const CLIENT_PORTAL_HOME = '/mis-reportes';
+
 export async function middleware(req: NextRequest) {
     const { pathname } = req.nextUrl;
     const session = req.cookies.get('session')?.value;
@@ -58,33 +65,39 @@ export async function middleware(req: NextRequest) {
             console.warn('Auth check failed with status:', userRes.status, '- letting request through');
         }
 
-        // Parse user data for role checks
-        const isAdminRoute = ADMIN_ONLY_PATHS.some((p) => pathname.startsWith(p));
-        if (isAdminRoute && userRes.ok) {
+        // Parse user data once for all role checks below
+        let roles: string[] = [];
+        let parsedOk = false;
+        if (userRes.ok) {
             try {
                 const userData = await userRes.json();
-                const roles: string[] = userData.roles ?? [];
-                if (!roles.includes('Admin')) {
-                    const url = req.nextUrl.clone();
-                    url.pathname = '/forbidden';
-                    return NextResponse.redirect(url);
-                }
+                roles = userData.roles ?? [];
+                parsedOk = true;
             } catch {
-                const url = req.nextUrl.clone();
-                url.pathname = '/forbidden';
-                return NextResponse.redirect(url);
+                parsedOk = false;
             }
-        } else if (isAdminRoute && !userRes.ok) {
-            // Can't verify role, deny access to admin routes
+        }
+
+        const isAdminRoute = ADMIN_ONLY_PATHS.some((p) => pathname.startsWith(p));
+        if (isAdminRoute && (!parsedOk || !roles.includes('Admin'))) {
             const url = req.nextUrl.clone();
             url.pathname = '/forbidden';
+            return NextResponse.redirect(url);
+        }
+
+        // Client-portal users are confined to their own read-only section,
+        // regardless of what the sidebar/links show.
+        const isClientOnly = parsedOk && roles.includes('Cliente');
+        if (isClientOnly && !CLIENT_PORTAL_ALLOWED_PATHS.some((p) => pathname.startsWith(p))) {
+            const url = req.nextUrl.clone();
+            url.pathname = CLIENT_PORTAL_HOME;
             return NextResponse.redirect(url);
         }
 
         // Redirect from root to home for authenticated users
         if (pathname === '/') {
             const url = req.nextUrl.clone();
-            url.pathname = '/home';
+            url.pathname = isClientOnly ? CLIENT_PORTAL_HOME : '/home';
             return NextResponse.redirect(url);
         }
 

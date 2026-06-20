@@ -34,6 +34,11 @@ import ServiceModal from "./ServiceModal";
 import ServiceDetailsModal from "./ServiceDetailsModal";
 import { deleteService } from "@/app/(protected)/services/actions/services.actions";
 import PageContainer from "@/components/layout/PageContainer";
+import {
+  formatDateDisplay,
+  todayLocalDateString,
+  toDateInputValue,
+} from "@/lib/dateTimeUtils";
 
 type ModalMode = "create" | "edit";
 
@@ -42,27 +47,19 @@ type Props = {
   clients: IClient[];
 };
 
+// Plain 'YYYY-MM-DD' string comparison - avoids Date/UTC timezone shifting.
 function isEnCurso(startDate: string, endDate: string | null): boolean {
-  const now = new Date();
-  const start = new Date(startDate);
+  const today = todayLocalDateString();
+  const start = toDateInputValue(startDate);
 
-  if (now < start) return false;
-
+  if (today < start) return false;
   if (!endDate) return true;
 
-  const end = new Date(endDate);
-  return now <= end;
+  const end = toDateInputValue(endDate);
+  return today <= end;
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("es-MX", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+const formatDate = formatDateDisplay;
 
 export default function ServicesTable({ initialData, clients }: Props) {
   // Modal state

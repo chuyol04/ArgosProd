@@ -28,7 +28,7 @@ export async function userLogin(req, res) {
  
 // POST /users/create — admin creates user (Firebase + MySQL + role)
 export async function createUser(req, res) {
-    const { name, email, phone_number, role_id } = req.body;
+    const { name, email, phone_number, role_id, client_id } = req.body;
     if (!name || !email) {
         return res.status(400).json({ success: false, motive: 'Name and email are required' });
     }
@@ -42,6 +42,13 @@ export async function createUser(req, res) {
             return res.status(409).json({ success: false, motive: 'Email already exists' });
         }
 
+        if (client_id) {
+            const [client] = await MysqlClient.execute('SELECT id FROM clients WHERE id = ? LIMIT 1', [client_id]);
+            if (client.length === 0) {
+                return res.status(404).json({ success: false, motive: 'Client not found' });
+            }
+        }
+
         // Create Firebase Auth user with temp password
         const tempPassword = generateTempPassword();
         const firebaseUser = await admin.auth().createUser({
@@ -52,8 +59,8 @@ export async function createUser(req, res) {
 
         // Insert into MySQL
         const [result] = await MysqlClient.execute(
-            'INSERT INTO users (name, phone_number, email, is_active, firebase_uid) VALUES (?, ?, ?, ?, ?)',
-            [name, phone_number || null, email, true, firebaseUser.uid]
+            'INSERT INTO users (name, phone_number, email, is_active, firebase_uid, client_id) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, phone_number || null, email, true, firebaseUser.uid, client_id || null]
         );
         const userId = result.insertId;
 
@@ -144,11 +151,12 @@ export async function getUsers(req, res) {
         }
 
         const query = `
-            SELECT u.id, u.name, u.email, u.phone_number, u.is_active,
-                   GROUP_CONCAT(r.name ORDER BY r.name SEPARATOR ', ') AS roles
+            SELECT u.id, u.name, u.email, u.phone_number, u.is_active, u.client_id, c.name AS client_name,
+                   GROUP_CONCAT(DISTINCT r.name ORDER BY r.name SEPARATOR ', ') AS roles
             FROM users u
             LEFT JOIN user_roles ur ON ur.user_id = u.id
             LEFT JOIN roles r ON r.id = ur.role_id
+            LEFT JOIN clients c ON c.id = u.client_id
             ${baseWhere}
             GROUP BY u.id
             ORDER BY u.id DESC
@@ -174,7 +182,10 @@ export async function getUserById(req, res) {
     const { id } = req.params;
     try {
         const [users] = await MysqlClient.execute(
-            'SELECT id, name, email, phone_number, is_active FROM users WHERE id = ?',
+            `SELECT u.id, u.name, u.email, u.phone_number, u.is_active, u.client_id, c.name AS client_name
+             FROM users u
+             LEFT JOIN clients c ON c.id = u.client_id
+             WHERE u.id = ?`,
             [id]
         );
         if (users.length === 0) {
@@ -217,16 +228,23 @@ export async function getUserById(req, res) {
 // PUT /users/:id — update user info + role
 export async function updateUser(req, res) {
     const { id } = req.params;
-    const { name, email, phone_number, is_active, role_id } = req.body;
+    const { name, email, phone_number, is_active, role_id, client_id } = req.body;
     try {
         const [existing] = await MysqlClient.execute('SELECT id FROM users WHERE id = ?', [id]);
         if (existing.length === 0) {
             return res.status(404).json({ success: false, motive: 'User not found' });
         }
 
+        if (client_id) {
+            const [client] = await MysqlClient.execute('SELECT id FROM clients WHERE id = ? LIMIT 1', [client_id]);
+            if (client.length === 0) {
+                return res.status(404).json({ success: false, motive: 'Client not found' });
+            }
+        }
+
         await MysqlClient.execute(
-            'UPDATE users SET name = ?, email = ?, phone_number = ?, is_active = ? WHERE id = ?',
-            [name, email, phone_number, is_active ?? true, id]
+            'UPDATE users SET name = ?, email = ?, phone_number = ?, is_active = ?, client_id = ? WHERE id = ?',
+            [name, email, phone_number, is_active ?? true, client_id || null, id]
         );
 
         // Update role if provided

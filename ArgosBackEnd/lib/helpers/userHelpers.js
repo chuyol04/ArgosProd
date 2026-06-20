@@ -51,7 +51,7 @@ export async function getValidUser(email) {
 export async function getUserDetails(firebase_uid) {
     try {
         const [userRows] = await MysqlClient.execute(
-            `SELECT u.id, u.name, u.phone_number, u.email
+            `SELECT u.id, u.name, u.phone_number, u.email, u.client_id
              FROM users u
              WHERE u.firebase_uid = ? LIMIT 1`,
             [firebase_uid]

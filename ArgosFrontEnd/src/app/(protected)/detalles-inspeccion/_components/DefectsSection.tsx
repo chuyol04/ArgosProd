@@ -24,6 +24,7 @@ import {
   fetchIncidentsByDetail,
   createIncident,
   deleteIncident,
+  removeIncidentEvidence,
   IDefect,
   IIncident,
 } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
@@ -43,11 +44,15 @@ import {
 interface DefectsSectionProps {
   inspectionDetailId: number | null;
   disabled?: boolean;
+  /** Reports the sum of all defect quantities for this box, so the parent
+   * form can warn when it doesn't match the rejected pieces count. */
+  onTotalQuantityChange?: (total: number) => void;
 }
 
 export function DefectsSection({
   inspectionDetailId,
   disabled = false,
+  onTotalQuantityChange,
 }: DefectsSectionProps) {
   const [defects, setDefects] = useState<IDefect[]>([]);
   const [incidents, setIncidents] = useState<IIncident[]>([]);
@@ -55,13 +60,18 @@ export function DefectsSection({
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Modal form state
+  // The catalog is just a convenience shortcut: selecting an entry fills the
+  // free-text field below, but the free-text field is what actually gets
+  // saved and is never required to come from the catalog.
   const [selectedDefectId, setSelectedDefectId] = useState<string>("");
+  const [defectLabel, setDefectLabel] = useState("");
   const [quantity, setQuantity] = useState("");
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [removingEvidenceId, setRemovingEvidenceId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load defects catalog and incidents
@@ -86,13 +96,34 @@ export function DefectsSection({
     loadData();
   }, [inspectionDetailId]);
 
+  // Keep the parent form informed of the total defect quantity for this box.
+  useEffect(() => {
+    const total = incidents.reduce((sum, i) => sum + (i.quantity || 0), 0);
+    onTotalQuantityChange?.(total);
+  }, [incidents, onTotalQuantityChange]);
+
   const resetModal = useCallback(() => {
     setSelectedDefectId("");
+    setDefectLabel("");
     setQuantity("");
     setEvidenceFile(null);
     setEvidencePreview(null);
     setUploadProgress(0);
   }, []);
+
+  // Picking from the catalog just pre-fills the free-text label.
+  const handleSelectCatalogDefect = (value: string) => {
+    setSelectedDefectId(value);
+    const catalogDefect = defects.find((d) => String(d.id) === value);
+    if (catalogDefect) setDefectLabel(catalogDefect.name);
+  };
+
+  // Editing the text manually detaches it from the catalog entry (if any),
+  // since the label no longer necessarily matches the catalog name.
+  const handleDefectLabelChange = (value: string) => {
+    setDefectLabel(value);
+    setSelectedDefectId("");
+  };
 
   const handleOpenModal = () => {
     if (!inspectionDetailId) {
@@ -133,8 +164,9 @@ export function DefectsSection({
   };
 
   const handleSubmit = async () => {
-    if (!selectedDefectId || !inspectionDetailId) {
-      alert("Selecciona un tipo de defecto");
+    const trimmedLabel = defectLabel.trim();
+    if (!trimmedLabel || !inspectionDetailId) {
+      alert("Escribe una descripción del defecto");
       return;
     }
 
@@ -155,9 +187,10 @@ export function DefectsSection({
         );
       }
 
-      // Create incident
+      // Create incident - defect_id (catalog) is optional, defect_label (free text) is what's required
       const result = await createIncident({
-        defect_id: Number(selectedDefectId),
+        defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
+        defect_label: trimmedLabel,
         inspection_detail_id: inspectionDetailId,
         quantity: quantity ? Number(quantity) : undefined,
         evidence_url: evidenceUrl,
@@ -196,6 +229,30 @@ export function DefectsSection({
       alert("Error al eliminar defecto");
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  // Removes only the evidence file from an already-saved defect (e.g. it was
+  // uploaded by mistake), keeping the defect entry itself intact.
+  const handleRemoveEvidence = async (incident: IIncident) => {
+    if (!incident.evidence_url) return;
+    if (!confirm("¿Eliminar la evidencia de este defecto?")) return;
+
+    setRemovingEvidenceId(incident.id);
+    try {
+      const result = await removeIncidentEvidence(incident.id, incident.evidence_url);
+      if (result.success) {
+        setIncidents((prev) =>
+          prev.map((i) => (i.id === incident.id ? { ...i, evidence_url: null } : i))
+        );
+      } else {
+        alert(result.error || "Error al eliminar evidencia");
+      }
+    } catch (error) {
+      console.error("Error removing evidence:", error);
+      alert("Error al eliminar evidencia");
+    } finally {
+      setRemovingEvidenceId(null);
     }
   };
 
@@ -241,13 +298,30 @@ export function DefectsSection({
               key={incident.id}
               className="flex items-center gap-3 p-3 border rounded-lg bg-card"
             >
-              {/* Evidence thumbnail */}
+              {/* Evidence thumbnail - optional, one image represents the whole defect/quantity */}
               {incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) ? (
-                <div className="flex-shrink-0">
+                <div className="relative flex-shrink-0">
                   <MediaItem
                     mediaId={incident.evidence_url}
                     size="sm"
                   />
+                  {!disabled && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -right-2 -top-2 h-5 w-5 rounded-full"
+                      onClick={() => handleRemoveEvidence(incident)}
+                      disabled={removingEvidenceId === incident.id}
+                      title="Eliminar evidencia"
+                    >
+                      {removingEvidenceId === incident.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <X className="h-3 w-3" />
+                      )}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
@@ -297,25 +371,39 @@ export function DefectsSection({
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            {/* Defect Type */}
+            {/* Catalog shortcut - optional, only pre-fills the free-text field below */}
+            {defects.length > 0 && (
+              <div className="space-y-2">
+                <Label htmlFor="defect-catalog">Seleccionar de catálogo (opcional)</Label>
+                <Select
+                  value={selectedDefectId}
+                  onValueChange={handleSelectCatalogDefect}
+                  disabled={isSubmitting}
+                >
+                  <SelectTrigger id="defect-catalog">
+                    <SelectValue placeholder="Selecciona un defecto del catálogo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {defects.map((defect) => (
+                      <SelectItem key={defect.id} value={String(defect.id)}>
+                        {defect.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Defect description - free text, always required regardless of catalog */}
             <div className="space-y-2">
-              <Label htmlFor="defect">Tipo de Defecto *</Label>
-              <Select
-                value={selectedDefectId}
-                onValueChange={setSelectedDefectId}
+              <Label htmlFor="defect-label">Descripción del Defecto *</Label>
+              <Input
+                id="defect-label"
+                placeholder="Ej: Golpe, Rebaba, Rayón..."
+                value={defectLabel}
+                onChange={(e) => handleDefectLabelChange(e.target.value)}
                 disabled={isSubmitting}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecciona un defecto..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {defects.map((defect) => (
-                    <SelectItem key={defect.id} value={String(defect.id)}>
-                      {defect.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
             </div>
 
             {/* Quantity */}
@@ -404,7 +492,7 @@ export function DefectsSection({
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={isSubmitting || !selectedDefectId}
+              disabled={isSubmitting || !defectLabel.trim()}
             >
               {isSubmitting ? (
                 <>

@@ -14,6 +14,7 @@ export const ROLES = {
     INSPECTOR: 'Inspector',
     MANAGER: 'Manager',
     ADMIN: 'Admin',
+    CLIENTE: 'Cliente',
 } as const;
 
 export type Role = typeof ROLES[keyof typeof ROLES];
@@ -44,4 +45,11 @@ export function isAdmin(userRoles: string[]): boolean {
  */
 export function isManagerOrAbove(userRoles: string[]): boolean {
     return hasAnyRole(userRoles, [ROLES.MANAGER, ROLES.ADMIN]);
+}
+
+/**
+ * Check if user has the read-only client-portal role
+ */
+export function isClientOnly(userRoles: string[]): boolean {
+    return hasRole(userRoles, ROLES.CLIENTE);
 }

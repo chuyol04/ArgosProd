@@ -1,12 +1,34 @@
 import MysqlClient from '../connections/mysqldb.js';
 
+// "Pieza" is captured as free text now - the parts catalog (table `parts`)
+// is kept for backward compatibility and reporting, but is no longer a
+// mandatory pick list. Reuses an existing part by name (case-insensitive)
+// or creates a new catalog row on the fly, so work_instructions.part_id
+// stays a valid FK without forcing the user through a dropdown.
+async function findOrCreatePartByName(rawName) {
+  const name = String(rawName || '').trim();
+  if (!name) return null;
+
+  const [existing] = await MysqlClient.execute(
+    'SELECT id FROM parts WHERE LOWER(name) = LOWER(?) LIMIT 1',
+    [name]
+  );
+  if (existing.length > 0) return existing[0].id;
+
+  const [result] = await MysqlClient.execute(
+    'INSERT INTO parts (name) VALUES (?)',
+    [name]
+  );
+  return result.insertId;
+}
+
 // CREATE
 export async function createInstruccionTrabajo(req, res) {
   try {
-    const { inspection_rate_per_hour, description, service_id, part_id } = req.body || {};
+    const { inspection_rate_per_hour, description, service_id, part_id, part_name } = req.body || {};
 
-    if (!inspection_rate_per_hour || !service_id || !part_id) {
-      return res.status(400).json({ success: false, motive: 'inspection_rate_per_hour, service_id, and part_id are required' });
+    if (!inspection_rate_per_hour || !service_id || (!part_id && !part_name)) {
+      return res.status(400).json({ success: false, motive: 'inspection_rate_per_hour, service_id, and part_id/part_name are required' });
     }
 
     // Validate if the service exists
@@ -15,15 +37,21 @@ export async function createInstruccionTrabajo(req, res) {
       return res.status(404).json({ success: false, motive: 'Service not found' });
     }
 
-    // Validate if the part exists
-    const [part] = await MysqlClient.execute('SELECT id FROM parts WHERE id = ? LIMIT 1', [part_id]);
-    if (part.length === 0) {
-      return res.status(404).json({ success: false, motive: 'Part not found' });
+    // Free-text part_name takes priority; falls back to a direct part_id (legacy/catalog pick).
+    let resolvedPartId = part_name ? await findOrCreatePartByName(part_name) : part_id;
+    if (!resolvedPartId) {
+      return res.status(400).json({ success: false, motive: 'part_id/part_name are required' });
+    }
+    if (!part_name) {
+      const [part] = await MysqlClient.execute('SELECT id FROM parts WHERE id = ? LIMIT 1', [resolvedPartId]);
+      if (part.length === 0) {
+        return res.status(404).json({ success: false, motive: 'Part not found' });
+      }
     }
 
     const [result] = await MysqlClient.execute(
       'INSERT INTO work_instructions (inspection_rate_per_hour, description, service_id, part_id) VALUES (?, ?, ?, ?)',
-      [inspection_rate_per_hour, description || null, service_id, part_id]
+      [inspection_rate_per_hour, description || null, service_id, resolvedPartId]
     );
 
     return res.status(201).json({
@@ -145,9 +173,9 @@ export async function getInstruccionTrabajoById(req, res) {
 
     const itData = rows[0];
 
-    // Associated evidence
+    // Associated evidence (main signed IT file vs. complementary documents)
     const [evidences] = await MysqlClient.execute(
-      'SELECT id, photo_url, comment FROM work_instruction_evidence WHERE work_instruction_id = ?',
+      'SELECT id, photo_url, comment, is_main_it FROM work_instruction_evidence WHERE work_instruction_id = ? ORDER BY is_main_it DESC, id ASC',
       [id]
     );
 
@@ -186,7 +214,7 @@ export async function getInstruccionTrabajoById(req, res) {
 export async function updateInstruccionTrabajo(req, res) {
   try {
     const { id } = req.params;
-    const { inspection_rate_per_hour, description, service_id, part_id } = req.body || {};
+    const { inspection_rate_per_hour, description, service_id, part_id, part_name } = req.body || {};
 
     const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
     if (exists.length === 0) {
@@ -200,11 +228,16 @@ export async function updateInstruccionTrabajo(req, res) {
       }
     }
 
-    if (part_id) {
+    // Free-text part_name takes priority; falls back to a direct part_id (legacy/catalog pick).
+    let resolvedPartId;
+    if (part_name) {
+      resolvedPartId = await findOrCreatePartByName(part_name);
+    } else if (part_id) {
       const [part] = await MysqlClient.execute('SELECT id FROM parts WHERE id = ? LIMIT 1', [part_id]);
       if (part.length === 0) {
         return res.status(404).json({ success: false, motive: 'Part not found' });
       }
+      resolvedPartId = part_id;
     }
 
     // Build dynamic update
@@ -223,9 +256,9 @@ export async function updateInstruccionTrabajo(req, res) {
       fields.push('service_id = ?');
       params.push(service_id);
     }
-    if (part_id !== undefined) {
+    if (resolvedPartId !== undefined) {
       fields.push('part_id = ?');
-      params.push(part_id);
+      params.push(resolvedPartId);
     }
 
     if (fields.length === 0) {
@@ -267,11 +300,18 @@ export async function updateInstruccionTrabajoDetalle(req, res) {
     );
 
     for (const ev of evidences) {
-      const { photo_url, comment } = ev;
+      const { photo_url, comment, is_main_it } = ev;
       if (photo_url) {
+        const makeMain = is_main_it === true || is_main_it === 'true';
+        if (makeMain) {
+          await MysqlClient.execute(
+            'UPDATE work_instruction_evidence SET is_main_it = 0 WHERE work_instruction_id = ?',
+            [id]
+          );
+        }
         await MysqlClient.execute(
-          'INSERT INTO work_instruction_evidence (work_instruction_id, photo_url, comment) VALUES (?, ?, ?)',
-          [id, photo_url, comment || null]
+          'INSERT INTO work_instruction_evidence (work_instruction_id, photo_url, comment, is_main_it) VALUES (?, ?, ?, ?)',
+          [id, photo_url, comment || null, makeMain ? 1 : 0]
         );
       }
     }
@@ -339,11 +379,13 @@ export async function updateWorkInstructionCollaborators(req, res) {
   }
 }
 
-// ADD EVIDENCE - Add a single evidence file to a work instruction
+// ADD EVIDENCE - Add a single evidence file to a work instruction.
+// is_main_it marks it as THE signed IT file - only one is allowed per work
+// instruction, so any previous main is demoted to a complementary document.
 export async function addEvidence(req, res) {
   try {
     const { id } = req.params;
-    const { file_url, file_name, file_type, comment } = req.body || {};
+    const { file_url, comment, is_main_it } = req.body || {};
 
     if (!file_url) {
       return res.status(400).json({ success: false, motive: 'file_url is required' });
@@ -355,9 +397,17 @@ export async function addEvidence(req, res) {
       return res.status(404).json({ success: false, motive: 'Work instruction not found' });
     }
 
+    const makeMain = is_main_it === true || is_main_it === 'true';
+    if (makeMain) {
+      await MysqlClient.execute(
+        'UPDATE work_instruction_evidence SET is_main_it = 0 WHERE work_instruction_id = ?',
+        [id]
+      );
+    }
+
     const [result] = await MysqlClient.execute(
-      'INSERT INTO work_instruction_evidence (work_instruction_id, photo_url, comment) VALUES (?, ?, ?)',
-      [id, file_url, comment || null]
+      'INSERT INTO work_instruction_evidence (work_instruction_id, photo_url, comment, is_main_it) VALUES (?, ?, ?, ?)',
+      [id, file_url, comment || null, makeMain ? 1 : 0]
     );
 
     return res.status(201).json({
@@ -367,6 +417,43 @@ export async function addEvidence(req, res) {
     });
   } catch (error) {
     console.error('Error adding evidence:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// SET MAIN EVIDENCE - Reclassify an existing evidence file as THE signed IT
+// (demotes whichever evidence was previously main, if any). Lets users fix
+// the classification of files uploaded before this distinction existed,
+// without re-uploading or deleting anything.
+export async function setMainEvidence(req, res) {
+  try {
+    const { id, evidenceId } = req.params;
+
+    const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Work instruction not found' });
+    }
+
+    const [evidence] = await MysqlClient.execute(
+      'SELECT id FROM work_instruction_evidence WHERE id = ? AND work_instruction_id = ? LIMIT 1',
+      [evidenceId, id]
+    );
+    if (evidence.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Evidence not found' });
+    }
+
+    await MysqlClient.execute(
+      'UPDATE work_instruction_evidence SET is_main_it = 0 WHERE work_instruction_id = ?',
+      [id]
+    );
+    await MysqlClient.execute(
+      'UPDATE work_instruction_evidence SET is_main_it = 1 WHERE id = ?',
+      [evidenceId]
+    );
+
+    return res.status(200).json({ success: true, motive: 'Evidence set as main IT' });
+  } catch (error) {
+    console.error('Error setting main evidence:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
   }
 }

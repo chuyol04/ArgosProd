@@ -14,19 +14,32 @@ export interface IDefect {
 
 export interface IIncident {
   id: number;
-  defect_id: number;
+  defect_id: number | null;
+  defect_label: string | null;
   inspection_detail_id: number;
   quantity: number | null;
   evidence_url: string | null;
+  /** Catalog name when defect_id is set, otherwise the free-text defect_label. */
   defect_name: string;
   defect_description: string | null;
 }
 
 export interface CreateIncidentData {
-  defect_id: number;
+  /** Optional catalog reference - a defect can be free text instead. */
+  defect_id?: number;
+  /** Free-text defect description. Required when defect_id is not provided. */
+  defect_label?: string;
   inspection_detail_id: number;
   quantity?: number;
   evidence_url?: string;
+}
+
+export interface UpdateIncidentData {
+  defect_id?: number | null;
+  defect_label?: string | null;
+  inspection_detail_id?: number;
+  quantity?: number | null;
+  evidence_url?: string | null;
 }
 
 export async function fetchDefects(): Promise<IDefect[]> {
@@ -145,7 +158,7 @@ export async function createIncident(
 
 export async function updateIncident(
   id: number,
-  data: Partial<CreateIncidentData>
+  data: UpdateIncidentData
 ): Promise<{ success: boolean; error?: string }> {
   try {
     if (!EXPRESS_BASE_URL) {
@@ -225,4 +238,20 @@ export async function deleteIncident(
       error: err instanceof Error ? err.message : "Unknown error",
     };
   }
+}
+
+/**
+ * Removes only the evidence file from an existing defect/incident (keeps the
+ * defect itself), so a wrongly-uploaded image can be cleared without
+ * deleting the whole defect entry.
+ */
+export async function removeIncidentEvidence(
+  id: number,
+  previousEvidenceUrl: string | null
+): Promise<{ success: boolean; error?: string }> {
+  const result = await updateIncident(id, { evidence_url: null });
+  if (result.success) {
+    await deleteMediaIfExists(previousEvidenceUrl);
+  }
+  return result;
 }

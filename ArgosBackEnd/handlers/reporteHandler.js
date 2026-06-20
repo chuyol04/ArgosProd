@@ -1,5 +1,20 @@
 import MysqlClient from '../connections/mysqldb.js';
 import ExcelJS from 'exceljs';
+import { sanitizeDateField, formatDateOnlyEs, formatTimeOnly } from '../lib/helpers/dateTimeHelpers.js';
+import { isClientRole } from '../lib/constants/roles.js';
+
+// po_hours: optional integer between 1 and 9999.
+// Returns { valid: true, value } or { valid: false } when present but out of range/non-integer.
+function validatePoHours(value) {
+  if (value === undefined || value === null || value === '') {
+    return { valid: true, value: null };
+  }
+  const num = Number(value);
+  if (!Number.isInteger(num) || num < 1 || num > 9999) {
+    return { valid: false };
+  }
+  return { valid: true, value: num };
+}
 
 // CREATE
 export async function createReporte(req, res) {
@@ -14,8 +29,14 @@ export async function createReporte(req, res) {
       po_number
     } = req.body || {};
 
-    if (!work_instruction_id || !start_date) {
+    const safeStartDate = sanitizeDateField(start_date);
+    if (!work_instruction_id || !safeStartDate) {
       return res.status(400).json({ success: false, motive: 'work_instruction_id and start_date are required' });
+    }
+
+    const poHoursCheck = validatePoHours(po_hours);
+    if (!poHoursCheck.valid) {
+      return res.status(400).json({ success: false, motive: 'po_hours must be an integer between 1 and 9999' });
     }
 
     // Validate IT (Work Instruction) exists
@@ -26,7 +47,7 @@ export async function createReporte(req, res) {
 
     const [result] = await MysqlClient.execute(
       `INSERT INTO inspection_reports (work_instruction_id, start_date, po_hours, description, problem, photo_url, po_number) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [work_instruction_id, start_date, po_hours || null, description || null, problem || null, photo_url || null, po_number || null]
+      [work_instruction_id, safeStartDate, poHoursCheck.value, description || null, problem || null, photo_url || null, po_number || null]
     );
 
     return res.status(201).json({ success: true, id: result.insertId, motive: 'Report created successfully' });
@@ -37,11 +58,20 @@ export async function createReporte(req, res) {
 }
 
 // READ ALL - Reports with Work Instruction + Service + Client + Part (with pagination and search)
+// Aggregates per-box inspector names and piece totals for list views (e.g. the client portal).
 export async function getReportes(req, res) {
   try {
     const { search, work_instruction_id } = req.query;
     const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
     const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    // Client-portal users only ever see their own client's reports - this is
+    // enforced here in the query itself, never just by hiding UI elements.
+    const requester = res.locals.requester;
+    const isClient = requester && isClientRole(requester.roles);
+    if (isClient && !requester.client_id) {
+      return res.status(200).json({ success: true, data: [], total: 0 });
+    }
 
     let query = `
       SELECT
@@ -49,12 +79,19 @@ export async function getReportes(req, res) {
         wi.id AS work_instruction_id, wi.description AS work_instruction_description,
         wi.part_id, p.name AS part_name,
         s.id AS service_id, s.name AS service_name,
-        c.id AS client_id, c.name AS client_name, c.email AS client_email
+        c.id AS client_id, c.name AS client_name, c.email AS client_email,
+        GROUP_CONCAT(DISTINCT u.name ORDER BY u.name SEPARATOR ', ') AS inspector_names,
+        COALESCE(SUM(idt.inspected_pieces), 0) AS total_inspected_pieces,
+        COALESCE(SUM(idt.accepted_pieces), 0) AS total_accepted_pieces,
+        COALESCE(SUM(idt.rejected_pieces), 0) AS total_rejected_pieces,
+        COALESCE(SUM(idt.reworked_pieces), 0) AS total_reworked_pieces
       FROM inspection_reports ir
       INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
       INNER JOIN parts p ON p.id = wi.part_id
       INNER JOIN services s ON s.id = wi.service_id
       INNER JOIN clients c ON c.id = s.client_id
+      LEFT JOIN inspection_details idt ON idt.inspection_report_id = ir.id
+      LEFT JOIN users u ON u.id = idt.inspector_id
     `;
 
     const params = [];
@@ -71,15 +108,20 @@ export async function getReportes(req, res) {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
+    if (isClient) {
+      conditions.push('c.id = ?');
+      params.push(requester.client_id);
+    }
+
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    query += ` ORDER BY ir.id DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
+    query += ` GROUP BY ir.id ORDER BY ir.id DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
 
     const [rows] = await MysqlClient.execute(query, params);
 
-    // Count query for total
+    // Count query for total (no need for the inspection_details join here)
     let countQuery = `
       SELECT COUNT(*) AS total
       FROM inspection_reports ir
@@ -98,6 +140,7 @@ export async function getReportes(req, res) {
       const searchPattern = `%${search}%`;
       countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
+    if (isClient) countParams.push(requester.client_id);
 
     const [countResult] = await MysqlClient.execute(countQuery, countParams);
 
@@ -138,13 +181,20 @@ export async function getReporteById(req, res) {
     }
     const report = reportRows[0];
 
+    // Client-portal users may only see their own client's report - even when
+    // they guess/type an ID directly in the URL.
+    const requester = res.locals.requester;
+    if (requester && isClientRole(requester.roles) && report.client_id !== requester.client_id) {
+      return res.status(404).json({ success: false, motive: 'Report not found' });
+    }
+
     // Get associated inspections (part info comes from work_instruction)
     const [inspections] = await MysqlClient.execute(`
       SELECT
         idt.id,
         idt.serial_number, idt.lot_number, idt.inspector_id, u.name as inspector_name,
-        idt.inspection_date, idt.shift, idt.hours,
-        idt.inspected_pieces, idt.accepted_pieces, idt.rejected_pieces
+        idt.inspection_date, idt.manufacture_date, idt.shift, idt.hours,
+        idt.inspected_pieces, idt.accepted_pieces, idt.rejected_pieces, idt.reworked_pieces
       FROM inspection_details idt
       LEFT JOIN users u ON u.id = idt.inspector_id
       WHERE idt.inspection_report_id = ?
@@ -176,13 +226,24 @@ export async function updateReporte(req, res) {
       }
     }
 
+    let poHoursCheck;
+    if (payload.po_hours !== undefined) {
+      poHoursCheck = validatePoHours(payload.po_hours);
+      if (!poHoursCheck.valid) {
+        return res.status(400).json({ success: false, motive: 'po_hours must be an integer between 1 and 9999' });
+      }
+    }
+
     const fields = ['work_instruction_id', 'start_date', 'po_hours', 'description', 'problem', 'photo_url', 'po_number'];
     const sets = [];
     const params = [];
     for (const f of fields) {
       if (Object.prototype.hasOwnProperty.call(payload, f)) {
+        let value = payload[f];
+        if (f === 'start_date') value = sanitizeDateField(value);
+        else if (f === 'po_hours') value = poHoursCheck.value;
         sets.push(`${f} = ?`);
-        params.push(payload[f]);
+        params.push(value);
       }
     }
     if (sets.length === 0) {
@@ -248,6 +309,11 @@ export async function exportReporteToExcel(req, res) {
     }
     const report = reportRows[0];
 
+    const requester = res.locals.requester;
+    if (requester && isClientRole(requester.roles) && report.client_id !== requester.client_id) {
+      return res.status(404).json({ success: false, motive: 'Report not found' });
+    }
+
     // Get associated inspections with inspector names
     const [inspections] = await MysqlClient.execute(`
       SELECT
@@ -258,6 +324,29 @@ export async function exportReporteToExcel(req, res) {
       WHERE idt.inspection_report_id = ?
       ORDER BY idt.inspection_date ASC, idt.id ASC
     `, [id]);
+
+    // Get defects (incidents) for every box/detail above, grouped by detail.
+    // Free-text defects (no catalog entry) are covered by COALESCE(d.name, i.defect_label).
+    const incidentsByDetail = new Map();
+    if (inspections.length > 0) {
+      const detailIds = inspections.map((d) => d.id);
+      const placeholders = detailIds.map(() => '?').join(',');
+      const [incidentRows] = await MysqlClient.execute(`
+        SELECT i.inspection_detail_id, i.quantity, i.evidence_url,
+               COALESCE(d.name, i.defect_label) AS defect_name
+        FROM incidents i
+        LEFT JOIN defects d ON d.id = i.defect_id
+        WHERE i.inspection_detail_id IN (${placeholders})
+        ORDER BY i.inspection_detail_id ASC, i.id ASC
+      `, detailIds);
+
+      for (const incident of incidentRows) {
+        if (!incidentsByDetail.has(incident.inspection_detail_id)) {
+          incidentsByDetail.set(incident.inspection_detail_id, []);
+        }
+        incidentsByDetail.get(incident.inspection_detail_id).push(incident);
+      }
+    }
 
     // Create workbook
     const workbook = new ExcelJS.Workbook();
@@ -287,7 +376,7 @@ export async function exportReporteToExcel(req, res) {
       ['Servicio', report.service_name],
       ['Pieza', report.part_name],
       ['Número de PO', report.po_number || '-'],
-      ['Fecha de Inicio', report.start_date ? new Date(report.start_date).toLocaleDateString('es-MX') : '-'],
+      ['Fecha de Inicio', formatDateOnlyEs(report.start_date)],
       ['Horas de PO', report.po_hours || '-'],
       ['Tasa de Inspección/Hora', report.inspection_rate_per_hour || '-'],
       ['Descripción', report.description || '-'],
@@ -304,15 +393,18 @@ export async function exportReporteToExcel(req, res) {
     summarySheet.getColumn(1).width = 25;
     summarySheet.getColumn(2).width = 50;
 
-    // Sheet 2: Inspection Details
+    // Sheet 2: Inspection Details - one row per defect, repeating the box's
+    // own data. Boxes without defects still get exactly one row (defect
+    // columns blank) so the export never fails or drops a box.
     const detailsSheet = workbook.addWorksheet('Detalles de Inspección');
 
     // Headers
     const headers = [
-      'ID', 'Fecha Inspección', 'Inspector', 'Turno', 'Semana',
-      '# Serie', '# Lote', 'Horas', 'Hora Inicio', 'Hora Fin',
+      'Cliente', 'Servicio', 'Inspector', 'Fecha Inspección', 'Hora Inicio', 'Hora Fin', 'Horas Trabajadas',
+      'Pieza', '# Serie', '# Lote', 'Fecha Manufactura', 'Caja',
       'Piezas Inspeccionadas', 'Piezas Aceptadas', 'Piezas Rechazadas', 'Piezas Retrabajadas',
-      'Comentarios'
+      'Problema / Condición Revisada',
+      'Defecto', 'Cantidad del Defecto', 'Evidencia'
     ];
 
     const headerRow = detailsSheet.addRow(headers);
@@ -328,43 +420,57 @@ export async function exportReporteToExcel(req, res) {
       };
     });
 
-    // Add data rows
-    inspections.forEach((detail) => {
-      const row = detailsSheet.addRow([
-        detail.id,
-        detail.inspection_date ? new Date(detail.inspection_date).toLocaleDateString('es-MX') : '-',
-        detail.inspector_name || '-',
-        detail.shift || '-',
-        detail.week || '-',
-        detail.serial_number || '-',
-        detail.lot_number || '-',
-        detail.hours || '-',
-        detail.start_time || '-',
-        detail.end_time || '-',
-        detail.inspected_pieces ?? '-',
-        detail.accepted_pieces ?? '-',
-        detail.rejected_pieces ?? '-',
-        detail.reworked_pieces ?? '-',
-        detail.comments || '-'
-      ]);
+    // Add data rows: each box (inspection detail) contributes one row per
+    // defect it has, or a single row with empty defect columns if it has none.
+    inspections.forEach((detail, index) => {
+      const boxLabel = `Caja ${index + 1}`;
+      const defectsForBox = incidentsByDetail.get(detail.id) || [];
+      const defectRows = defectsForBox.length > 0 ? defectsForBox : [null];
 
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
-        };
+      defectRows.forEach((incident) => {
+        const row = detailsSheet.addRow([
+          report.client_name,
+          report.service_name,
+          detail.inspector_name || '-',
+          formatDateOnlyEs(detail.inspection_date),
+          formatTimeOnly(detail.start_time),
+          formatTimeOnly(detail.end_time),
+          detail.hours ?? '-',
+          report.part_name,
+          detail.serial_number || '-',
+          detail.lot_number || '-',
+          formatDateOnlyEs(detail.manufacture_date),
+          boxLabel,
+          detail.inspected_pieces ?? '-',
+          detail.accepted_pieces ?? '-',
+          detail.rejected_pieces ?? '-',
+          detail.reworked_pieces ?? '-',
+          report.problem || '-',
+          incident ? incident.defect_name : '-',
+          incident ? (incident.quantity ?? '-') : '-',
+          incident && incident.evidence_url ? 'Sí' : '-'
+        ]);
+
+        row.eachCell((cell) => {
+          cell.border = {
+            top: { style: 'thin' },
+            left: { style: 'thin' },
+            bottom: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+        });
       });
     });
 
     // Set column widths
-    const columnWidths = [8, 15, 20, 10, 10, 15, 15, 10, 12, 12, 18, 15, 15, 18, 40];
+    const columnWidths = [20, 18, 20, 15, 12, 12, 14, 18, 15, 15, 16, 10, 18, 15, 15, 18, 28, 20, 16, 12];
     columnWidths.forEach((width, index) => {
       detailsSheet.getColumn(index + 1).width = width;
     });
 
-    // Add totals row if there are inspections
+    // Add totals row if there are inspections. Piece/hour totals are summed
+    // once per box (not once per defect row) to avoid double-counting boxes
+    // that have multiple defects; defect quantity is summed separately.
     if (inspections.length > 0) {
       detailsSheet.addRow([]);
       const totals = inspections.reduce((acc, d) => ({
@@ -375,12 +481,18 @@ export async function exportReporteToExcel(req, res) {
         hours: acc.hours + (d.hours || 0)
       }), { inspected: 0, accepted: 0, rejected: 0, reworked: 0, hours: 0 });
 
+      const totalDefectQuantity = Array.from(incidentsByDetail.values())
+        .flat()
+        .reduce((sum, incident) => sum + (incident.quantity || 0), 0);
+
       const totalsRow = detailsSheet.addRow([
-        '', '', '', '', '', '', 'TOTALES:', totals.hours, '', '',
-        totals.inspected, totals.accepted, totals.rejected, totals.reworked, ''
+        '', '', '', '', '', '', totals.hours,
+        '', '', '', '', 'TOTALES:',
+        totals.inspected, totals.accepted, totals.rejected, totals.reworked,
+        '', '', totalDefectQuantity, ''
       ]);
       totalsRow.font = { bold: true };
-      totalsRow.getCell(7).alignment = { horizontal: 'right' };
+      totalsRow.getCell(12).alignment = { horizontal: 'right' };
     }
 
     // Generate buffer

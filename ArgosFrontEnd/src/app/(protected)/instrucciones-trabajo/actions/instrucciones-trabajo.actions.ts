@@ -317,9 +317,16 @@ export async function getWorkInstructionDetails(
             throw new Error("Work instruction data not found");
         }
 
+        const data = json.data as IWorkInstructionDetails;
+        // MySQL returns TINYINT(1) as 0/1, not a real boolean - normalize it.
+        data.evidences = (data.evidences || []).map((ev) => ({
+            ...ev,
+            is_main_it: Boolean(ev.is_main_it),
+        }));
+
         return {
             success: true,
-            data: json.data as IWorkInstructionDetails,
+            data,
         };
     } catch (err) {
         console.error("Get work instruction details error:", err);
@@ -414,7 +421,8 @@ export async function updateWorkInstructionCollaborators(
 export async function addWorkInstructionEvidence(
     workInstructionId: number,
     fileUrl: string,
-    comment?: string
+    comment?: string,
+    isMainIt?: boolean
 ): Promise<{ success: boolean; id?: number; error?: string }> {
     try {
         if (!EXPRESS_BASE_URL) {
@@ -434,7 +442,7 @@ export async function addWorkInstructionEvidence(
                 'Content-Type': 'application/json',
                 'Cookie': `session=${session}`,
             },
-            body: JSON.stringify({ file_url: fileUrl, comment }),
+            body: JSON.stringify({ file_url: fileUrl, comment, is_main_it: isMainIt ?? false }),
         });
 
         const json = await res.json();
@@ -447,6 +455,49 @@ export async function addWorkInstructionEvidence(
         return { success: true, id: json.id };
     } catch (err) {
         console.error("Add evidence error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function setMainWorkInstructionEvidence(
+    workInstructionId: number,
+    evidenceId: number
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(
+            `${EXPRESS_BASE_URL}/work-instructions/${workInstructionId}/evidence/${evidenceId}/main`,
+            {
+                method: 'PUT',
+                headers: {
+                    'Cookie': `session=${session}`,
+                },
+            }
+        );
+
+        const json = await res.json();
+
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to set main evidence");
+        }
+
+        revalidatePath('/instrucciones-trabajo');
+        return { success: true };
+    } catch (err) {
+        console.error("Set main evidence error:", err);
         return {
             success: false,
             error: err instanceof Error ? err.message : "Unknown error"

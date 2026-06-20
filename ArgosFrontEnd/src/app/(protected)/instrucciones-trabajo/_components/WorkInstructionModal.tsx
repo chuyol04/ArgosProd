@@ -30,12 +30,14 @@ import {
   fetchPartsForSelect,
   fetchUsersForSelect,
   updateWorkInstructionCollaborators,
+  addWorkInstructionEvidence,
   IServiceOption,
   IPartOption,
   IUserOption,
 } from "@/app/(protected)/instrucciones-trabajo/actions/instrucciones-trabajo.actions";
 import { IEvidence } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
 import { WorkInstructionFiles } from "./WorkInstructionFiles";
+import { uploadFile } from "@/lib/storage/fileUpload";
 
 interface WorkInstructionModalProps {
   workInstructionId?: number | null; // null/undefined = create mode, number = edit mode
@@ -61,13 +63,16 @@ export default function WorkInstructionModal({
   const [selectedCollaborators, setSelectedCollaborators] = useState<number[]>([]);
   const [formData, setFormData] = useState({
     service_id: "",
-    part_id: "",
+    part_name: "",
     inspection_rate_per_hour: "",
     description: "",
   });
 
   // Files/evidence state
   const [existingFiles, setExistingFiles] = useState<IEvidence[]>([]);
+  // Create mode only: files attached before the work instruction exists yet.
+  const [queuedMainFile, setQueuedMainFile] = useState<File | null>(null);
+  const [queuedComplementaryFiles, setQueuedComplementaryFiles] = useState<File[]>([]);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -75,12 +80,14 @@ export default function WorkInstructionModal({
       setError(null);
       setFormData({
         service_id: defaultServiceId ? String(defaultServiceId) : "",
-        part_id: "",
+        part_name: "",
         inspection_rate_per_hour: "",
         description: "",
       });
       setSelectedCollaborators([]);
       setExistingFiles([]);
+      setQueuedMainFile(null);
+      setQueuedComplementaryFiles([]);
     }
   }, [open, defaultServiceId]);
 
@@ -106,7 +113,7 @@ export default function WorkInstructionModal({
               const instruction = wiResult.data.instruction;
               setFormData({
                 service_id: String(instruction.service_id),
-                part_id: String(instruction.part_id),
+                part_name: instruction.part_name || "",
                 inspection_rate_per_hour: String(instruction.inspection_rate_per_hour),
                 description: instruction.description || "",
               });
@@ -164,7 +171,7 @@ export default function WorkInstructionModal({
     e.preventDefault();
     setError(null);
 
-    if (!formData.service_id || !formData.part_id || !formData.inspection_rate_per_hour) {
+    if (!formData.service_id || !formData.part_name.trim() || !formData.inspection_rate_per_hour) {
       setError("Por favor complete todos los campos requeridos");
       return;
     }
@@ -174,7 +181,7 @@ export default function WorkInstructionModal({
         // Update existing work instruction
         const result = await updateWorkInstruction(workInstructionId, {
           service_id: Number(formData.service_id),
-          part_id: Number(formData.part_id),
+          part_name: formData.part_name.trim(),
           inspection_rate_per_hour: Number(formData.inspection_rate_per_hour),
           description: formData.description || undefined,
         });
@@ -199,7 +206,7 @@ export default function WorkInstructionModal({
         // Create new work instruction
         const result = await createWorkInstruction({
           service_id: Number(formData.service_id),
-          part_id: Number(formData.part_id),
+          part_name: formData.part_name.trim(),
           inspection_rate_per_hour: Number(formData.inspection_rate_per_hour),
           description: formData.description || undefined,
         });
@@ -213,7 +220,39 @@ export default function WorkInstructionModal({
         if (selectedCollaborators.length > 0 && result.id) {
           await updateWorkInstructionCollaborators(result.id, selectedCollaborators);
         }
-        // Files can be added after creating, in edit mode
+
+        // Upload + link any files attached during creation. The IT already
+        // exists at this point, so a failed upload never leaves an orphaned
+        // file or an incomplete record - it's just reported to the user.
+        // Main IT goes first (and is flagged is_main_it), then complements.
+        if ((queuedMainFile || queuedComplementaryFiles.length > 0) && result.id) {
+          const failedFiles: string[] = [];
+          const uploadsToProcess: { file: File; isMain: boolean }[] = [
+            ...(queuedMainFile ? [{ file: queuedMainFile, isMain: true }] : []),
+            ...queuedComplementaryFiles.map((file) => ({ file, isMain: false })),
+          ];
+
+          for (const { file, isMain } of uploadsToProcess) {
+            try {
+              const mediaId = await uploadFile(file, `work-instructions/${result.id}`);
+              const evidenceResult = await addWorkInstructionEvidence(
+                result.id,
+                mediaId,
+                undefined,
+                isMain
+              );
+              if (!evidenceResult.success) failedFiles.push(file.name);
+            } catch {
+              failedFiles.push(file.name);
+            }
+          }
+          if (failedFiles.length > 0) {
+            setError(
+              `La instrucción de trabajo se creó, pero no se pudieron adjuntar: ${failedFiles.join(", ")}. Puedes intentarlo de nuevo desde "Editar".`
+            );
+            return;
+          }
+        }
       }
 
       onOpenChange(false);
@@ -288,23 +327,21 @@ export default function WorkInstructionModal({
                   </div>
 
                   <div className="grid gap-2">
-                    <Label htmlFor="part_id">Pieza *</Label>
-                    <Select
-                      value={formData.part_id}
-                      onValueChange={(value) => handleChange("part_id", value)}
+                    <Label htmlFor="part_name">Pieza *</Label>
+                    <Input
+                      id="part_name"
+                      list="parts-suggestions"
+                      value={formData.part_name}
+                      onChange={(e) => handleChange("part_name", e.target.value)}
+                      placeholder="Escriba el nombre, número de parte o descripción"
                       disabled={isPending}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccione una pieza" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {parts.map((part) => (
-                          <SelectItem key={part.id} value={String(part.id)}>
-                            {part.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      autoComplete="off"
+                    />
+                    <datalist id="parts-suggestions">
+                      {parts.map((part) => (
+                        <option key={part.id} value={part.name} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div className="grid gap-2">
@@ -366,13 +403,21 @@ export default function WorkInstructionModal({
                 {/* Files Section */}
                 <div className="space-y-2">
                   <Label className="text-sm font-medium text-muted-foreground">
-                    Archivos ({existingFiles.length})
+                    Archivos (
+                    {existingFiles.length +
+                      (queuedMainFile ? 1 : 0) +
+                      queuedComplementaryFiles.length}
+                    )
                   </Label>
                   <WorkInstructionFiles
                     workInstructionId={workInstructionId ?? null}
                     existingFiles={existingFiles}
                     onFilesChange={setExistingFiles}
                     disabled={isPending}
+                    queuedMainFile={queuedMainFile}
+                    onQueuedMainFileChange={setQueuedMainFile}
+                    queuedComplementaryFiles={queuedComplementaryFiles}
+                    onQueuedComplementaryFilesChange={setQueuedComplementaryFiles}
                   />
                 </div>
 

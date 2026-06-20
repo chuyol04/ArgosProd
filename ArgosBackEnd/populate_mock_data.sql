@@ -70,7 +70,8 @@ INSERT INTO users (id, firebase_uid, name, email, phone_number, is_active) VALUE
 INSERT INTO roles (id, name, description) VALUES
 (1, 'Inspector', 'Performs inspections and creates reports'),
 (2, 'Manager',   'Manages inspections, services, and users'),
-(3, 'Admin',     'Full administrative access');
+(3, 'Admin',     'Full administrative access'),
+(4, 'Cliente',   'Read-only access to their own client''s inspection reports');
 
 -- 8. user_roles
 INSERT INTO user_roles (user_id, role_id) VALUES

@@ -1,6 +1,7 @@
 import MysqlClient from '../connections/mysqldb.js';
-import { isManagerOrAbove } from '../lib/constants/roles.js';
+import { isManagerOrAbove, isClientRole } from '../lib/constants/roles.js';
 import userHelper from '../lib/helpers/userHelpers.js';
+import { sanitizeDateField, sanitizeTimeField, todayLocalDateString } from '../lib/helpers/dateTimeHelpers.js';
 
 // CREATE
 export async function createDetalleInspeccion(req, res) {
@@ -38,6 +39,12 @@ export async function createDetalleInspeccion(req, res) {
         if (user.length === 0) return res.status(404).json({ success: false, motive: 'Inspector (User) not found' });
     }
 
+    // Sanitize date/time fields: empty string -> null, never write '0000-00-00'/'00:00:00'
+    const safeInspectionDate = sanitizeDateField(inspection_date) ?? null;
+    const safeManufactureDate = sanitizeDateField(manufacture_date) ?? null;
+    const safeStartTime = sanitizeTimeField(start_time) ?? null;
+    const safeEndTime = sanitizeTimeField(end_time) ?? null;
+
     const [result] = await MysqlClient.execute(
       `INSERT INTO inspection_details (
         inspection_report_id, serial_number, lot_number, inspector_id, hours, week,
@@ -47,9 +54,9 @@ export async function createDetalleInspeccion(req, res) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         inspection_report_id, serial_number || null, lot_number || null, inspector_id || null, hours || null, week || null,
-        inspection_date || null, manufacture_date || null, comments || null, inspected_pieces || null,
+        safeInspectionDate, safeManufactureDate, comments || null, inspected_pieces || null,
         accepted_pieces || null, rejected_pieces || null, reworked_pieces || null,
-        start_time || null, end_time || null, shift || null
+        safeStartTime, safeEndTime, shift || null
       ]
     );
 
@@ -65,14 +72,21 @@ export async function getDetallesInspeccion(req, res) {
   try {
     const { report_id } = req.query;
 
+    // Client-portal users only ever see boxes belonging to their own client.
+    const requester = res.locals.requester;
+    const isClient = requester && isClientRole(requester.roles);
+    if (isClient && !requester.client_id) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
     let query = `
       SELECT
         idt.*,
         p.name AS part_name, p.description AS part_description,
-        ir.po_number, ir.start_date AS report_start_date,
+        ir.po_number, ir.start_date AS report_start_date, ir.problem AS report_problem,
         wi.description AS work_instruction_description,
         s.name AS service_name,
-        c.name AS client_name,
+        c.id AS client_id, c.name AS client_name,
         u.name AS inspector_name
       FROM inspection_details idt
       INNER JOIN inspection_reports ir ON ir.id = idt.inspection_report_id
@@ -84,9 +98,17 @@ export async function getDetallesInspeccion(req, res) {
     `;
 
     const params = [];
+    const conditions = [];
     if (report_id) {
-      query += ' WHERE ir.id = ?';
+      conditions.push('ir.id = ?');
       params.push(report_id);
+    }
+    if (isClient) {
+      conditions.push('c.id = ?');
+      params.push(requester.client_id);
+    }
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     query += ' ORDER BY idt.inspection_date DESC';
@@ -107,10 +129,10 @@ export async function getDetalleInspeccionById(req, res) {
       SELECT
         idt.*,
         p.name AS part_name, p.description AS part_description,
-        ir.po_number, ir.start_date AS report_start_date,
+        ir.po_number, ir.start_date AS report_start_date, ir.problem AS report_problem,
         wi.description AS work_instruction_description,
         s.name AS service_name,
-        c.name AS client_name,
+        c.id AS client_id, c.name AS client_name,
         u.name AS inspector_name
       FROM inspection_details idt
       INNER JOIN inspection_reports ir ON ir.id = idt.inspection_report_id
@@ -125,6 +147,14 @@ export async function getDetalleInspeccionById(req, res) {
     if (rows.length === 0) {
       return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
     }
+
+    // Client-portal users may only see boxes belonging to their own client,
+    // even when they guess/type an ID directly in the URL.
+    const requester = res.locals.requester;
+    if (requester && isClientRole(requester.roles) && rows[0].client_id !== requester.client_id) {
+      return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
+    }
+
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
     console.error('Error getting inspection detail by ID:', error);
@@ -148,10 +178,12 @@ export async function updateDetalleInspeccion(req, res) {
     }
 
     // Check if editing past inspection - only Manager/Admin allowed
+    // inspectionDate is already a plain 'YYYY-MM-DD' string (dateStrings: true),
+    // so compare it directly against today's LOCAL date - no UTC/Date conversion.
     const inspectionDate = exist[0].inspection_date;
     if (inspectionDate) {
-      const today = new Date().toISOString().split('T')[0];
-      const inspDateStr = new Date(inspectionDate).toISOString().split('T')[0];
+      const today = todayLocalDateString();
+      const inspDateStr = String(inspectionDate).slice(0, 10);
 
       if (inspDateStr < today) {
         // Past inspection - check user role
@@ -183,12 +215,17 @@ export async function updateDetalleInspeccion(req, res) {
       'accepted_pieces','rejected_pieces','reworked_pieces',
       'start_time','end_time','shift'
     ];
+    const dateFields = new Set(['inspection_date', 'manufacture_date']);
+    const timeFields = new Set(['start_time', 'end_time']);
     const sets = [];
     const params = [];
     for (const f of fields) {
       if (Object.prototype.hasOwnProperty.call(payload, f)) {
+        let value = payload[f];
+        if (dateFields.has(f)) value = sanitizeDateField(value);
+        else if (timeFields.has(f)) value = sanitizeTimeField(value);
         sets.push(`${f} = ?`);
-        params.push(payload[f]);
+        params.push(value);
       }
     }
     if (sets.length === 0) {

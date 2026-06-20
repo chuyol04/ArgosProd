@@ -13,6 +13,7 @@ export const ROLES = {
     INSPECTOR: 'Inspector',
     MANAGER: 'Manager',
     ADMIN: 'Admin',
+    CLIENTE: 'Cliente',
 };
 
 /**
@@ -53,10 +54,20 @@ export function isManagerOrAbove(userRoles) {
     return hasAnyRole(userRoles, [ROLES.MANAGER, ROLES.ADMIN]);
 }
 
+/**
+ * Check if user has the read-only client-portal role.
+ * @param {string[]} userRoles - Array of user's roles
+ * @returns {boolean}
+ */
+export function isClientRole(userRoles) {
+    return hasRole(userRoles, ROLES.CLIENTE);
+}
+
 export default {
     ROLES,
     hasRole,
     hasAnyRole,
     isAdmin,
     isManagerOrAbove,
+    isClientRole,
 };

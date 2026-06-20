@@ -13,6 +13,8 @@ export interface IUserRow {
     phone_number: string | null;
     is_active: boolean;
     roles: string | null; // comma-separated from GROUP_CONCAT
+    client_id: number | null;
+    client_name: string | null;
 }
 
 export interface IUsersResponse {
@@ -40,6 +42,8 @@ export interface IUserDetails {
     email: string;
     phone_number: string | null;
     is_active: boolean;
+    client_id: number | null;
+    client_name: string | null;
     roles: IUserRole[];
     work_instructions: IUserWorkInstruction[];
 }

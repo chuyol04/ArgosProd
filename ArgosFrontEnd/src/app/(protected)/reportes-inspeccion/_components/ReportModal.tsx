@@ -33,6 +33,7 @@ import {
   createInspectionReport,
   updateInspectionReport,
 } from "@/app/(protected)/reportes-inspeccion/actions/reportes-inspeccion.actions";
+import { toDateInputValue, formatDateDisplay } from "@/lib/dateTimeUtils";
 
 type ModalMode = "create" | "edit" | "view";
 
@@ -43,18 +44,19 @@ interface ReportModalProps {
   mode: ModalMode;
 }
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  try {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("es-MX", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return dateStr;
+const formatDate = formatDateDisplay;
+
+/** Horas de PO: entero opcional entre 1 y 9999. */
+function validatePoHours(value: string): string | null {
+  if (!value) return null;
+  if (!/^\d+$/.test(value)) {
+    return "Horas de PO debe ser un número entero (sin decimales ni texto)";
   }
+  const num = Number(value);
+  if (num < 1 || num > 9999) {
+    return "Horas de PO debe estar entre 1 y 9999";
+  }
+  return null;
 }
 
 export default function ReportModal({
@@ -73,6 +75,7 @@ export default function ReportModal({
   const [startDate, setStartDate] = useState("");
   const [poNumber, setPoNumber] = useState("");
   const [poHours, setPoHours] = useState("");
+  const [poHoursError, setPoHoursError] = useState<string | null>(null);
   const [description, setDescription] = useState("");
   const [problem, setProblem] = useState("");
 
@@ -92,6 +95,7 @@ export default function ReportModal({
     setStartDate("");
     setPoNumber("");
     setPoHours("");
+    setPoHoursError(null);
     setDescription("");
     setProblem("");
     setInspectionDetails([]);
@@ -117,7 +121,7 @@ export default function ReportModal({
             const { report, inspections } = result.data;
             setReportDetails(result.data);
             setWorkInstructionId(String(report.work_instruction_id));
-            setStartDate(report.start_date?.split("T")[0] || "");
+            setStartDate(toDateInputValue(report.start_date));
             setPoNumber(report.po_number || "");
             setPoHours(report.po_hours ? String(report.po_hours) : "");
             setDescription(report.description || "");
@@ -146,6 +150,12 @@ export default function ReportModal({
   const handleSubmit = () => {
     if (!workInstructionId || !startDate) {
       alert("IT Asociado y Fecha de inicio son requeridos");
+      return;
+    }
+
+    const poHoursValidationError = validatePoHours(poHours);
+    if (poHoursValidationError) {
+      setPoHoursError(poHoursValidationError);
       return;
     }
 
@@ -333,11 +343,19 @@ export default function ReportModal({
                     <Input
                       id="poHours"
                       type="number"
-                      step="0.01"
-                      placeholder="Ej: 8.5"
+                      step="1"
+                      min="1"
+                      max="9999"
+                      placeholder="Ej: 40"
                       value={poHours}
-                      onChange={(e) => setPoHours(e.target.value)}
+                      onChange={(e) => {
+                        setPoHours(e.target.value);
+                        setPoHoursError(validatePoHours(e.target.value));
+                      }}
                     />
+                    {poHoursError && (
+                      <p className="text-xs text-destructive">{poHoursError}</p>
+                    )}
                   </div>
 
                   <div className="space-y-2 sm:col-span-2">

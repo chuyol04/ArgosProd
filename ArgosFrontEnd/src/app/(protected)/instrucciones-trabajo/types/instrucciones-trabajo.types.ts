@@ -17,14 +17,16 @@ export interface IWorkInstructionsResponse {
 
 export interface CreateWorkInstructionData {
     service_id: number;
-    part_id: number;
+    /** Free-text part name/description - the backend finds or creates a
+     * matching catalog row, so this no longer has to be a pre-existing part. */
+    part_name: string;
     inspection_rate_per_hour: number;
     description?: string;
 }
 
 export interface UpdateWorkInstructionData {
     service_id?: number;
-    part_id?: number;
+    part_name?: string;
     inspection_rate_per_hour?: number;
     description?: string;
 }
@@ -38,11 +40,14 @@ export interface IWorkInstructionSummary {
     part_name: string;
 }
 
-// Evidence for work instructions
+// Evidence for work instructions.
+// is_main_it: true = the signed IT file (only one per work instruction),
+// false = a complementary document (safety sheets, supporting files, etc.)
 export interface IEvidence {
     id: number;
     photo_url: string | null;
     comment: string | null;
+    is_main_it: boolean;
 }
 
 // Inspection report associated with work instruction

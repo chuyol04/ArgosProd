@@ -1,10 +1,17 @@
 import express from 'express';
 
 import * as userHandlers from '../handlers/userHandler.js'; // named exports
+import { blockClientsEntirely } from '../middleware/clientGuard.js';
 
 const router = express.Router();
 
-router.get('/', async (req, res) => {
+// NOTE: '/details' (self profile lookup) and '/change-password' (self password
+// change) are intentionally NOT gated by blockClientsEntirely - every
+// authenticated role, including Cliente, needs them. The frontend's own role
+// check (and thus the client-portal redirect) depends on '/details' working.
+// Admin-only user management endpoints are gated individually below.
+
+router.get('/', blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.getUsers(req, res);
     } catch (error) {
@@ -13,7 +20,7 @@ router.get('/', async (req, res) => {
     }
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.getUserById(req, res);
     } catch (error) {
@@ -22,7 +29,7 @@ router.get('/:id', async (req, res) => {
     }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.updateUser(req, res);
     } catch (error) {
@@ -31,7 +38,7 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-router.post('/create', async (req, res) => {
+router.post('/create', blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.createUser(req, res);
     } catch (error) {
@@ -49,7 +56,7 @@ router.post('/change-password', async (req, res) => {
     }
 });
 
-router.post('/:id/reset-password', async (req, res) => {
+router.post('/:id/reset-password', blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.resetUserPassword(req, res);
     } catch (error) {

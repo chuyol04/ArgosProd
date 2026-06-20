@@ -24,8 +24,10 @@ import {
     getUserById,
     updateUser,
     fetchRoles,
+    fetchClientsForUserSelect,
 } from "@/app/(protected)/users/actions/users.actions";
-import { IUserDetails, IRole } from "@/app/(protected)/users/types/users.types";
+import { IRole } from "@/app/(protected)/users/types/users.types";
+import { IClient } from "@/app/(protected)/clients/types/clients.types";
 import { Loader2, Save } from "lucide-react";
 
 interface UserEditModalProps {
@@ -44,21 +46,26 @@ export default function UserEditModal({
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [roles, setRoles] = useState<IRole[]>([]);
+    const [clients, setClients] = useState<IClient[]>([]);
 
     const [name, setName] = useState("");
     const [email, setEmail] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [isActive, setIsActive] = useState(true);
     const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+    const [selectedClientId, setSelectedClientId] = useState<string>("");
+
+    const isClientRoleSelected = roles.find((r) => String(r.id) === selectedRoleId)?.name === "Cliente";
 
     useEffect(() => {
         if (open && userId) {
             setIsLoading(true);
             setError(null);
 
-            Promise.all([getUserById(userId), fetchRoles()])
-                .then(([userResult, rolesData]) => {
+            Promise.all([getUserById(userId), fetchRoles(), fetchClientsForUserSelect()])
+                .then(([userResult, rolesData, clientsData]) => {
                     setRoles(rolesData);
+                    setClients(clientsData);
 
                     if (userResult.success && userResult.data) {
                         const d = userResult.data;
@@ -69,6 +76,7 @@ export default function UserEditModal({
                         setSelectedRoleId(
                             d.roles.length > 0 ? String(d.roles[0].id) : ""
                         );
+                        setSelectedClientId(d.client_id ? String(d.client_id) : "");
                     } else {
                         setError(userResult.error || "Error al cargar usuario");
                     }
@@ -82,6 +90,10 @@ export default function UserEditModal({
             setError("Nombre y correo son obligatorios");
             return;
         }
+        if (isClientRoleSelected && !selectedClientId) {
+            setError("Selecciona el cliente asociado a este usuario");
+            return;
+        }
 
         setError(null);
         startTransition(async () => {
@@ -91,6 +103,7 @@ export default function UserEditModal({
                 phone_number: phoneNumber.trim(),
                 is_active: isActive,
                 role_id: selectedRoleId ? Number(selectedRoleId) : null,
+                client_id: isClientRoleSelected && selectedClientId ? Number(selectedClientId) : null,
             });
 
             if (result.success) {
@@ -174,6 +187,31 @@ export default function UserEditModal({
                                 </SelectContent>
                             </Select>
                         </div>
+
+                        {isClientRoleSelected && (
+                            <div className="space-y-2">
+                                <Label htmlFor="client">Cliente Asociado *</Label>
+                                <Select
+                                    value={selectedClientId}
+                                    onValueChange={setSelectedClientId}
+                                    disabled={isPending}
+                                >
+                                    <SelectTrigger id="client">
+                                        <SelectValue placeholder="Seleccionar cliente..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {clients.map((client) => (
+                                            <SelectItem key={client.id} value={String(client.id)}>
+                                                {client.name}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Este usuario solo podrá ver los reportes de este cliente.
+                                </p>
+                            </div>
+                        )}
 
                         <div className="flex items-center justify-between rounded-lg border p-3">
                             <Label htmlFor="active" className="cursor-pointer">

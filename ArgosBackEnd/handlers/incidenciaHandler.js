@@ -1,19 +1,29 @@
 import MysqlClient from '../connections/mysqldb.js';
+import { isClientRole } from '../lib/constants/roles.js';
 
 // CREATE
+// The defect catalog (defect_id) is optional - a defect can be captured as
+// free text (defect_label) instead. At least one of the two is required.
 export async function createIncidencia(req, res) {
   try {
-    const { defect_id, inspection_detail_id, quantity, evidence_url } = req.body || {};
-    if (!defect_id || !inspection_detail_id) {
-      return res.status(400).json({ success: false, motive: 'defect_id and inspection_detail_id are required' });
+    const { defect_id, defect_label, inspection_detail_id, quantity, evidence_url } = req.body || {};
+    const trimmedLabel = typeof defect_label === 'string' ? defect_label.trim() : '';
+
+    if (!inspection_detail_id) {
+      return res.status(400).json({ success: false, motive: 'inspection_detail_id is required' });
+    }
+    if (!defect_id && !trimmedLabel) {
+      return res.status(400).json({ success: false, motive: 'defect_id or defect_label (free text) is required' });
     }
 
-    // Validate FK: Defects
-    const [def] = await MysqlClient.execute(
-      'SELECT id FROM defects WHERE id = ? LIMIT 1',
-      [defect_id]
-    );
-    if (def.length === 0) return res.status(404).json({ success: false, motive: 'Defect not found' });
+    // Validate FK: Defects (only when referencing the catalog)
+    if (defect_id) {
+      const [def] = await MysqlClient.execute(
+        'SELECT id FROM defects WHERE id = ? LIMIT 1',
+        [defect_id]
+      );
+      if (def.length === 0) return res.status(404).json({ success: false, motive: 'Defect not found' });
+    }
 
     // Validate FK: Inspection Details
     const [det] = await MysqlClient.execute(
@@ -23,8 +33,8 @@ export async function createIncidencia(req, res) {
     if (det.length === 0) return res.status(404).json({ success: false, motive: 'Inspection detail not found' });
 
     const [result] = await MysqlClient.execute(
-      'INSERT INTO incidents (defect_id, inspection_detail_id, quantity, evidence_url) VALUES (?, ?, ?, ?)',
-      [defect_id, inspection_detail_id, quantity || null, evidence_url || null]
+      'INSERT INTO incidents (defect_id, defect_label, inspection_detail_id, quantity, evidence_url) VALUES (?, ?, ?, ?, ?)',
+      [defect_id || null, trimmedLabel || null, inspection_detail_id, quantity || null, evidence_url || null]
     );
 
     return res.status(201).json({
@@ -43,21 +53,43 @@ export async function getIncidencias(req, res) {
   try {
     const { inspection_detail_id } = req.query;
 
+    // Client-portal users only ever see defects on their own client's boxes.
+    const requester = res.locals.requester;
+    const isClient = requester && isClientRole(requester.roles);
+    if (isClient && !requester.client_id) {
+      return res.status(200).json({ success: true, data: [] });
+    }
+
     let query = `
       SELECT i.*,
-             d.name AS defect_name,
+             COALESCE(d.name, i.defect_label) AS defect_name,
              d.description AS defect_description,
              di.serial_number AS inspection_serial_number,
              di.lot_number AS inspection_lot_number
       FROM incidents i
-      INNER JOIN defects d ON d.id = i.defect_id
+      LEFT JOIN defects d ON d.id = i.defect_id
       INNER JOIN inspection_details di ON di.id = i.inspection_detail_id
     `;
     const params = [];
+    const conditions = [];
 
     if (inspection_detail_id) {
-      query += ' WHERE i.inspection_detail_id = ?';
+      conditions.push('i.inspection_detail_id = ?');
       params.push(inspection_detail_id);
+    }
+
+    if (isClient) {
+      query += `
+        INNER JOIN inspection_reports ir ON ir.id = di.inspection_report_id
+        INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
+        INNER JOIN services s ON s.id = wi.service_id
+      `;
+      conditions.push('s.client_id = ?');
+      params.push(requester.client_id);
+    }
+
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     query += ' ORDER BY i.id DESC';
@@ -76,16 +108,26 @@ export async function getIncidenciaById(req, res) {
     const { id } = req.params;
     const [rows] = await MysqlClient.execute(
       `SELECT i.*,
-              d.name AS defect_name,
+              COALESCE(d.name, i.defect_label) AS defect_name,
               di.serial_number AS inspection_serial_number,
-              di.lot_number AS inspection_lot_number
+              di.lot_number AS inspection_lot_number,
+              s.client_id AS client_id
        FROM incidents i
-       INNER JOIN defects d ON d.id = i.defect_id
+       LEFT JOIN defects d ON d.id = i.defect_id
        INNER JOIN inspection_details di ON di.id = i.inspection_detail_id
+       INNER JOIN inspection_reports ir ON ir.id = di.inspection_report_id
+       INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
+       INNER JOIN services s ON s.id = wi.service_id
        WHERE i.id = ? LIMIT 1`,
       [id]
     );
     if (rows.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
+
+    const requester = res.locals.requester;
+    if (requester && isClientRole(requester.roles) && rows[0].client_id !== requester.client_id) {
+      return res.status(404).json({ success: false, motive: 'Incident not found' });
+    }
+
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
     console.error('Error getting incident:', error);
@@ -106,8 +148,8 @@ export async function updateIncidencia(req, res) {
     );
     if (ex.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
 
-    // Validate FKs if new ones are sent
-    if (payload.defect_id !== undefined) {
+    // Validate FKs if new ones are sent (defect_id remains optional - null clears the catalog link)
+    if (payload.defect_id) {
       const [d] = await MysqlClient.execute('SELECT id FROM defects WHERE id = ? LIMIT 1', [payload.defect_id]);
       if (d.length === 0) return res.status(404).json({ success: false, motive: 'Defect (new) not found' });
     }
@@ -117,13 +159,16 @@ export async function updateIncidencia(req, res) {
     }
 
     // Build dynamic SET clause
-    const fields = ['defect_id','inspection_detail_id','quantity','evidence_url'];
+    const fields = ['defect_id','defect_label','inspection_detail_id','quantity','evidence_url'];
     const sets = [];
     const params = [];
     for (const f of fields) {
       if (Object.prototype.hasOwnProperty.call(payload, f)) {
+        let value = payload[f];
+        if (f === 'defect_id') value = value || null;
+        if (f === 'defect_label') value = typeof value === 'string' ? (value.trim() || null) : value;
         sets.push(`${f} = ?`);
-        params.push(payload[f]);
+        params.push(value);
       }
     }
     if (sets.length === 0) return res.status(400).json({ success: false, motive: 'No fields to update' });

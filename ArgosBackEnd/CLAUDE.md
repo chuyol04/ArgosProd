@@ -97,10 +97,15 @@ API response format:
 5. Frontend middleware fetches user permissions via `/api/auth/getCurrentUser` for route protection
 
 ### Permission System
-- Permissions follow `resource.action` format (e.g., `clients.view`, `inspections.create`)
-- Roles have permissions via `role_permissions` table
-- Frontend middleware enforces route-level permissions
-- Three default roles: Inspector, Manager, Admin
+- Hardcoded role-based access control (no `permissions`/`role_permissions` tables - removed early on). Roles are plain rows in `roles` + `user_roles`; checks are role-name string comparisons via `lib/constants/roles.js` (backend) and `src/lib/constants/roles.ts` (frontend).
+- Four roles: **Inspector**, **Manager**, **Admin**, **Cliente**.
+- **Cliente** is a read-only client-portal role (added for the "Mis Reportes" feature):
+  - `users.client_id` (nullable FK to `clients`) scopes a Cliente user to exactly one client. Set via the admin Users modal when role = Cliente.
+  - Backend enforcement (the real boundary - never just hidden UI) lives in `middleware/clientGuard.js`, applied per-router in `app.js`:
+    - `blockClientsEntirely` - 403s any request from a Cliente user to `/users`, `/clients`, `/roles`, `/parts`, `/defects`, `/work-instructions`, `/user-roles`, `/favorite-routes`, `/services`, `/media`.
+    - `blockClientWrites` - on `/reports`, `/inspection-details`, `/incidents`: allows `GET`, 403s any write. The handlers themselves (`reporteHandler.js`, `detalleInspeccionHandler.js`, `incidenciaHandler.js`) additionally scope every query to `requester.client_id` and 404 if a Cliente requests a report/detail/incident belonging to another client (even by guessing an ID in the URL).
+  - Frontend `middleware.ts` confines Cliente users to `/mis-reportes` and `/cambiar-contrasena` (redirects everything else there) - this is UX only, not the security boundary.
+  - Frontend pages: `(protected)/mis-reportes/page.tsx` (list) and `(protected)/mis-reportes/[id]/page.tsx` (detail) - both read-only Server Components that reuse the existing reports/incidents server actions (no separate client-aware fetchers needed, since the backend auto-scopes by role).
 
 ### Sitemap & Navigation
 - **Source of truth**: `front/src/app/(protected)/sitemap/map.json`
@@ -122,9 +127,15 @@ API response format:
 ```
 Client → Service (contract period)
   └→ WorkInstruction (inspection spec for a Part)
+       │    └→ WorkInstructionEvidence (1 main signed IT + N complementary docs, via is_main_it)
        └→ InspectionReport
-            └→ InspectionDetail (inspector's work log)
-                 └→ Incident (if defect found) → Defect (catalog)
+            └→ InspectionDetail (inspector's work log, one "box")
+                 └→ Incident (defect found, quantity + optional evidence)
+                      → Defect (catalog, OPTIONAL) — incidents.defect_label holds
+                        free-text defects when no catalog entry is used; at least
+                        one of defect_id/defect_label is required.
+
+Client ← (optional, 1:1 per user) ── User (role 'Cliente', via users.client_id)
 ```
 
 ## Current Implementation Status
@@ -140,6 +151,19 @@ Client → Service (contract period)
   - Search filter
   - Update modal with server actions
   - Delete functionality
+- **Date/time stabilization** across reports/inspection details:
+  - MySQL pool uses `dateStrings: true` (`connections/mysqldb.js`) - DATE/TIME columns are never round-tripped through JS `Date` objects, avoiding timezone day-shift bugs.
+  - `lib/helpers/dateTimeHelpers.js` (backend) and `src/lib/dateTimeUtils.ts` (frontend) centralize sanitization (`""` → `null`, never `'0000-00-00'`) and display formatting.
+  - "Horas Trabajadas" in `InspectionDetailForm.tsx` is now read-only, auto-computed as `end_time - start_time` for that single inspector's box (never summed/multiplied across inspectors); invalid ranges (end < start) show inline validation instead of a wrong number.
+- **`po_hours`** (reports) widened to `DECIMAL(8,2)` and validated as an integer 1-9999 (frontend inline + backend 400) - same widening applied to `inspection_details.hours`.
+- **Free-text defects**: `incidents.defect_id` is now nullable; new `incidents.defect_label VARCHAR(150)` holds a manually-typed defect when no catalog entry is used. `DefectsSection.tsx` lets the catalog (optional) pre-fill the free-text field; evidence can be removed from an existing defect without deleting the whole entry.
+- **Excel export** (`exportReporteToExcel`) now emits one row per defect per box (repeating the box's data), with the columns described in the export's column-width config; boxes with zero defects still get exactly one row.
+- **Work instruction files** split into "IT Principal" (one signed file, `work_instruction_evidence.is_main_it`) and "Documentos Complementarios" (many, optional). Files can be attached during *creation* now (queued locally, uploaded+linked right after the record is created - no orphaned GridFS files if creation fails) instead of requiring a save-then-edit round trip.
+- **Client portal** ("Mis Reportes"): role `Cliente`, `users.client_id`, backend-enforced scoping in `middleware/clientGuard.js` + handler-level filtering - see Permission System above. `/users/details` and `/users/change-password` are intentionally **not** gated by `blockClientsEntirely` (every role, including Cliente, needs them to self-identify); only the admin-only user-management routes are gated, per-route, inside `userRoutes.js`.
+- **"Piezas Inspeccionadas"** in `InspectionDetailForm.tsx` is read-only/auto-computed as `Aceptadas + Rechazadas + Retrabajadas` for that single box (never summed across boxes, never negative). Capture order is Aceptadas → Rechazadas → Retrabajadas → Inspeccionadas (calculated). If the sum of defect quantities for a box doesn't match its `rejected_pieces`, a non-blocking amber warning is shown (`DefectsSection`'s `onTotalQuantityChange` reports the total up to the parent form).
+- **"Problema / Condición Revisada"**: `inspection_details` queries now also return `report_problem` (= `inspection_reports.problem`), shown read-only in `InspectionDetailForm.tsx` before the piece-count fields, and added as its own column in the Excel export (right after the piece counts, before the per-defect breakdown). It's distinct from a "Defecto" (what was actually found) - it's what the inspector is supposed to be looking for.
+- **Free-text "Pieza" in Work Instructions**: `WorkInstructionModal.tsx`'s part field is now a text input (with a `<datalist>` of existing catalog names as suggestions) instead of a mandatory `<Select>`. The backend (`findOrCreatePartByName` in `instruccionTrabajoHandler.js`) resolves the typed name to an existing `parts` row (case-insensitive match) or creates a new one - `work_instructions.part_id` stays a valid FK either way, no schema change needed.
+- **Home dashboard** (`(protected)/home/_components/Home.tsx`): the old "Favoritos" empty-state message ("No tienes rutas favoritas...") was replaced by an "Accesos Rápidos" section - numbered cards (1. Clientes → 7. Administración) covering the main flow in order, filtered the same way as `Sidebar.tsx` (Admin sees all 7 steps incl. Usuarios/Roles/Media; Manager/Inspector see everything except the admin-only cards). The Favoritos section itself is unchanged and still renders below it, just only when the user actually has starred routes. Role `Cliente` never reaches this page - `middleware.ts` redirects it to `/mis-reportes` before it renders.
 
 ### Patterns to Follow
 
@@ -182,6 +206,13 @@ const [qSearch, setQSearch] = useQueryState("search", searchParser);
 - Handler functions still use Spanish names (e.g., `getPiezas` for parts) but query English table/column names
 - Environment variables required in `.env` files for both front and back
 - For pagination queries, use safe integer interpolation instead of prepared statement placeholders for LIMIT/OFFSET
+- DATE/TIME values: always go through `sanitizeDateField`/`sanitizeTimeField` (backend) or the helpers in `src/lib/dateTimeUtils.ts` (frontend) - never `new Date(dbDateString)` for display/comparison, it reintroduces timezone bugs now that the pool returns plain strings.
+- `incidents.defect_id` is optional; always read the defect name via `COALESCE(d.name, i.defect_label)`, never `d.name` alone.
+- `work_instruction_evidence.is_main_it`: only one row per `work_instruction_id` should have this set to 1 - handlers that insert/update it must first reset existing mains for that work instruction (see `addEvidence`/`setMainEvidence` in `instruccionTrabajoHandler.js`).
+- Any new endpoint reachable by a Cliente-role user (currently only `/reports`, `/inspection-details`, `/incidents`) must filter by the requester's `client_id` inside the handler itself - `res.locals.requester` is already populated by `clientGuard.js` middleware, no extra DB lookup needed.
+- Never gate `/users/details` or `/users/change-password` with `blockClientsEntirely` - every authenticated role self-identifies through `/users/details` (frontend `middleware.ts` and `UserDataProvider` both depend on it); gating the whole `/users` router broke the Cliente role detection entirely in an earlier pass. Admin-only user management stays gated per-route inside `userRoutes.js`.
+- `work_instructions.part_id` is still `NOT NULL`/FK - "free text" parts are implemented via find-or-create (`findOrCreatePartByName`), not by making the column nullable. Follow the same pattern (rather than a schema change) for any other field that needs to move from "mandatory catalog pick" to "free text, optionally backed by a catalog".
+- Local dev DB lives in Docker (`docker-compose.dev.yml`, `argos_mysql` on `localhost:3307`, db `argos_db`, user `argos_user`/`argos_pass`); schema migrations applied there during development must also be added to `new_mysql_schema.sql` (and `populate_mock_data.sql` for seed data) and re-applied manually on the VPS.
 
 ## LLM Knowledge Base
 

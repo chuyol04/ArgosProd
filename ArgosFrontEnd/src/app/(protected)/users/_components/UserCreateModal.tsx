@@ -19,8 +19,13 @@ import {
     DialogTitle,
     DialogFooter,
 } from "@/components/ui/dialog";
-import { createUser, fetchRoles } from "@/app/(protected)/users/actions/users.actions";
+import {
+    createUser,
+    fetchRoles,
+    fetchClientsForUserSelect,
+} from "@/app/(protected)/users/actions/users.actions";
 import { IRole } from "@/app/(protected)/users/types/users.types";
+import { IClient } from "@/app/(protected)/clients/types/clients.types";
 import { Loader2, Plus, Copy, Check, AlertTriangle } from "lucide-react";
 
 interface UserCreateModalProps {
@@ -32,6 +37,7 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
     const router = useRouter();
     const [isPending, startTransition] = useTransition();
     const [roles, setRoles] = useState<IRole[]>([]);
+    const [clients, setClients] = useState<IClient[]>([]);
     const [error, setError] = useState<string | null>(null);
 
     // Form
@@ -39,10 +45,13 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
     const [email, setEmail] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [selectedRoleId, setSelectedRoleId] = useState<string>("");
+    const [selectedClientId, setSelectedClientId] = useState<string>("");
 
     // Result
     const [tempPassword, setTempPassword] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+
+    const isClientRoleSelected = roles.find((r) => String(r.id) === selectedRoleId)?.name === "Cliente";
 
     useEffect(() => {
         if (open) {
@@ -50,16 +59,22 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
             setEmail("");
             setPhoneNumber("");
             setSelectedRoleId("");
+            setSelectedClientId("");
             setError(null);
             setTempPassword(null);
             setCopied(false);
             fetchRoles().then(setRoles);
+            fetchClientsForUserSelect().then(setClients);
         }
     }, [open]);
 
     const handleCreate = () => {
         if (!name.trim() || !email.trim()) {
             setError("Nombre y correo son obligatorios");
+            return;
+        }
+        if (isClientRoleSelected && !selectedClientId) {
+            setError("Selecciona el cliente asociado a este usuario");
             return;
         }
         setError(null);
@@ -69,6 +84,7 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                 email: email.trim(),
                 phone_number: phoneNumber.trim(),
                 role_id: selectedRoleId ? Number(selectedRoleId) : null,
+                client_id: isClientRoleSelected && selectedClientId ? Number(selectedClientId) : null,
             });
             if (result.success && result.temp_password) {
                 setTempPassword(result.temp_password);
@@ -193,6 +209,30 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                             </SelectContent>
                         </Select>
                     </div>
+                    {isClientRoleSelected && (
+                        <div className="space-y-2">
+                            <Label>Cliente Asociado *</Label>
+                            <Select
+                                value={selectedClientId}
+                                onValueChange={setSelectedClientId}
+                                disabled={isPending}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Seleccionar cliente..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {clients.map((client) => (
+                                        <SelectItem key={client.id} value={String(client.id)}>
+                                            {client.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                                Este usuario solo podrá ver los reportes de este cliente.
+                            </p>
+                        </div>
+                    )}
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>

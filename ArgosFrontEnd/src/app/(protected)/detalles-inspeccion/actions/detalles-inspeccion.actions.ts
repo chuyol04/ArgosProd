@@ -251,12 +251,14 @@ export async function fetchReportsForSelect(): Promise<IReportOption[]> {
         part_name: string;
         service_name: string;
         po_number: string | null;
+        problem: string | null;
       }) => ({
         id: r.id,
         work_instruction_id: r.work_instruction_id,
         part_name: r.part_name,
         service_name: r.service_name,
         po_number: r.po_number,
+        problem: r.problem,
       })
     );
   } catch (err) {

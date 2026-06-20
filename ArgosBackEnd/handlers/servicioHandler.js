@@ -1,13 +1,16 @@
 import MysqlClient from '../connections/mysqldb.js';
+import { sanitizeDateField } from '../lib/helpers/dateTimeHelpers.js';
 
 // CREATE
 export async function createServicio(req, res) {
   try {
     const { client_id, start_date, end_date, name } = req.body || {};
 
-    if (!client_id || !start_date) {
+    const safeStartDate = sanitizeDateField(start_date);
+    if (!client_id || !safeStartDate) {
       return res.status(400).json({ success: false, motive: 'client_id and start_date are required' });
     }
+    const safeEndDate = sanitizeDateField(end_date) ?? null;
 
     const [client] = await MysqlClient.execute('SELECT id FROM clients WHERE id = ? LIMIT 1', [client_id]);
     if (client.length === 0) {
@@ -16,7 +19,7 @@ export async function createServicio(req, res) {
 
     const [result] = await MysqlClient.execute(
       'INSERT INTO services (client_id, start_date, end_date, name) VALUES (?, ?, ?, ?)',
-      [client_id, start_date, end_date || null, name || null]
+      [client_id, safeStartDate, safeEndDate, name || null]
     );
 
     return res.status(201).json({ success: true, id: result.insertId, motive: 'Service created' });
@@ -189,8 +192,8 @@ export async function updateServicio(req, res) {
 
     const fieldsToUpdate = [], params = [];
     if (client_id !== undefined) { fieldsToUpdate.push('client_id = ?'); params.push(client_id); }
-    if (start_date !== undefined) { fieldsToUpdate.push('start_date = ?'); params.push(start_date); }
-    if (end_date !== undefined) { fieldsToUpdate.push('end_date = ?'); params.push(end_date); }
+    if (start_date !== undefined) { fieldsToUpdate.push('start_date = ?'); params.push(sanitizeDateField(start_date)); }
+    if (end_date !== undefined) { fieldsToUpdate.push('end_date = ?'); params.push(sanitizeDateField(end_date)); }
     if (name !== undefined) { fieldsToUpdate.push('name = ?'); params.push(name); }
 
     if (fieldsToUpdate.length === 0) return res.status(400).json({ success: false, motive: 'No fields to update' });

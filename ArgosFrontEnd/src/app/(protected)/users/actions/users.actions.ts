@@ -3,6 +3,8 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { IUserDetails, IRole } from "../types/users.types";
+import { getClients } from "@/app/(protected)/clients/data/clients.data";
+import { IClient } from "@/app/(protected)/clients/types/clients.types";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
 
@@ -39,6 +41,7 @@ export async function updateUser(
         phone_number: string;
         is_active: boolean;
         role_id: number | null;
+        client_id?: number | null;
     }
 ): Promise<{ success: boolean; error?: string }> {
     try {
@@ -67,6 +70,7 @@ export async function createUser(data: {
     email: string;
     phone_number: string;
     role_id: number | null;
+    client_id?: number | null;
 }): Promise<{ success: boolean; id?: number; temp_password?: string; error?: string }> {
     try {
         const session = await getSession();
@@ -128,6 +132,14 @@ export async function changePassword(
         return { success: true };
     } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : "Error" };
+    }
+}
+
+export async function fetchClientsForUserSelect(): Promise<IClient[]> {
+    try {
+        return await getClients();
+    } catch {
+        return [];
     }
 }
 

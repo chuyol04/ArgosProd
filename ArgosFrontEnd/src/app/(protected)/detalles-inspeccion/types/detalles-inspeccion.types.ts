@@ -27,6 +27,10 @@ export interface IInspectionDetailExtended extends IInspectionDetail {
   part_description: string | null;
   po_number: string | null;
   report_start_date: string | null;
+  /** "Problema / Condición Revisada" inherited from the parent report - what
+   * is being inspected/looked for (e.g. "Golpe / Falta de ranura"), not to be
+   * confused with the defects actually found and logged afterward. */
+  report_problem: string | null;
   work_instruction_description: string | null;
   service_name: string;
   client_name: string;
@@ -79,4 +83,7 @@ export interface IReportOption {
   part_name: string;
   service_name: string;
   po_number: string | null;
+  /** "Problema / Condición Revisada" - shown to the inspector before they
+   * pick this report, so they know what to look for in each box. */
+  problem: string | null;
 }

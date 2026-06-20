@@ -13,18 +13,28 @@ interface SidebarProps {
     onClose: () => void;
 }
 
+const CLIENT_PORTAL_CATEGORY = {
+    name: "Mi Cuenta",
+    routes: [{ name: "Mis Reportes", path: "/mis-reportes" }],
+};
+
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
     const router = useRouter();
     const { user } = useUser();
 
     const isAdmin = user?.roles?.includes("Admin") ?? false;
+    const isClientOnly = user?.roles?.includes("Cliente") ?? false;
 
     const categories = useMemo(() => {
+        // Fail to the most restrictive state while the role hasn't loaded yet -
+        // never show the full/inspector menu by default.
+        if (!user) return [];
+        if (isClientOnly) return [CLIENT_PORTAL_CATEGORY];
         if (isAdmin) return sitemapData;
         return sitemapData.filter(
             (cat) => !ADMIN_ONLY_CATEGORIES.includes(cat.name)
         );
-    }, [isAdmin]);
+    }, [user, isAdmin, isClientOnly]);
 
     const handleNavigate = (path: string) => {
         router.push(path);

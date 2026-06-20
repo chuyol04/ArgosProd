@@ -69,7 +69,9 @@ CREATE TABLE users (
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
     phone_number VARCHAR(50), -- Changed from 'contact'
-    is_active BOOLEAN DEFAULT TRUE
+    is_active BOOLEAN DEFAULT TRUE,
+    client_id INT NULL, -- Set only for users with role 'Cliente': the single client they're scoped to.
+    FOREIGN KEY (client_id) REFERENCES clients(id)
 );
 
 -- -----------------------------------------------------
@@ -81,7 +83,7 @@ CREATE TABLE inspection_reports (
     work_instruction_id INT NOT NULL,
     start_date DATE NOT NULL,
     po_number VARCHAR(50), -- Purchase Order Number
-    po_hours DECIMAL(5,2),  -- Hours associated with the Purchase Order
+    po_hours DECIMAL(8,2),  -- Hours associated with the Purchase Order
     description TEXT,
     problem TEXT,
     photo_url TEXT,
@@ -105,7 +107,7 @@ CREATE TABLE inspection_details (
     week TINYINT,
     inspection_date DATE,
     manufacture_date DATE,
-    hours DECIMAL(5,2),
+    hours DECIMAL(8,2),
     start_time TIME,
     end_time TIME,
     shift VARCHAR(20),
@@ -121,7 +123,8 @@ CREATE TABLE inspection_details (
 CREATE TABLE incidents (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inspection_detail_id INT NOT NULL,
-    defect_id INT NOT NULL,
+    defect_id INT, -- Optional: catalog reference. NULL when captured as free text.
+    defect_label VARCHAR(150), -- Free-text defect description, independent of the catalog.
     quantity INT,
     evidence_url TEXT,
     FOREIGN KEY (inspection_detail_id) REFERENCES inspection_details(id),
@@ -171,6 +174,7 @@ CREATE TABLE work_instruction_evidence (
     work_instruction_id INT NOT NULL,
     photo_url TEXT,
     comment TEXT,
+    is_main_it TINYINT(1) NOT NULL DEFAULT 0, -- 1 = signed main IT file, 0 = complementary document. Only one main per work instruction.
     FOREIGN KEY (work_instruction_id) REFERENCES work_instructions(id)
 );
 

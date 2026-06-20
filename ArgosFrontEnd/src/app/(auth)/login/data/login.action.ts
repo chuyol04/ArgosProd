@@ -30,6 +30,10 @@ export async function loginAction(
     return { success: false, error: "Email y contraseña son requeridos" };
   }
 
+  // Determined inside the try block, used for the redirect AFTER it (next/navigation's
+  // redirect() throws a control-flow exception that must never be caught).
+  let destination = "/home";
+
   try {
     const res = await fetch(`${EXPRESS_BASE_URL}/login/submit`, {
       method: "POST",
@@ -62,11 +66,29 @@ export async function loginAction(
       path: "/",
       maxAge: Math.floor(SESSION_MAX_AGE_MS / 1000),
     });
+
+    // Client-portal users land on their own read-only section instead of /home.
+    try {
+      const detailsRes = await fetch(`${EXPRESS_BASE_URL}/users/details`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: `session=${sessionCookie}` },
+        cache: "no-store",
+      });
+      if (detailsRes.ok) {
+        const { success, user } = await detailsRes.json();
+        if (success && Array.isArray(user?.roles) && user.roles.includes("Cliente")) {
+          destination = "/mis-reportes";
+        }
+      }
+    } catch (error) {
+      console.error("Login role lookup error (defaulting to /home):", error);
+    }
   } catch (error) {
     console.error("Login error:", error);
     return { success: false, error: "Error procesando autenticación" };
   }
 
-  // Redirect on success - this throws internally, never returns
-  redirect("/home");
+  // Redirect on success - this throws internally, never returns. Must be
+  // outside any try/catch above so its control-flow exception isn't swallowed.
+  redirect(destination);
 }

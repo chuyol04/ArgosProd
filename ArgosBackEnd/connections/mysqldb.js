@@ -17,6 +17,12 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  // DATE/DATETIME/TIMESTAMP columns are returned as plain 'YYYY-MM-DD[ HH:MM:SS]'
+  // strings instead of JS Date objects. Date objects get serialized through
+  // toISOString() (UTC), which silently shifts the calendar day depending on
+  // the server/browser timezone offset. Keeping them as raw strings avoids
+  // any timezone math for values that are timezone-less by definition.
+  dateStrings: true,
 });
 
 // Logs útiles del pool base (no-promesa)

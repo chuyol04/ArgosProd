@@ -12,6 +12,7 @@ import servicioRouter from './routes/servicioRoutes.js';
 // import inspectionRouter from './routes/inspectionRoutes.js'; // Removed
 import loginRouter from './routes/loginRoutes.js';
 import { verifySession } from './middleware/middlewareHandlers.js';
+import { blockClientsEntirely, blockClientWrites } from './middleware/clientGuard.js';
 
 import piezaRouter from './routes/piezaRoutes.js';
 import defectoRouter from './routes/defectoRoutes.js';
@@ -42,18 +43,26 @@ app.use(express.json());
 app.use('/login', loginRouter);
 
 // middleware protegido
+// blockClientsEntirely: catálogos/admin/clientes/servicios - el portal de
+// clientes (rol 'Cliente') no necesita ni debe ver nada de esto.
+// blockClientWrites: reportes/detalles/incidentes - el portal SÍ necesita
+// leerlos (filtrados por su propio client_id en cada handler), pero nunca
+// escribirlos.
+// '/users' is NOT gated by blockClientsEntirely here - '/users/details' and
+// '/users/change-password' must stay reachable by every role (see userRoutes.js
+// for the per-route gating of the actual admin-only user management endpoints).
 app.use('/users', verifySession, userRouter);
-app.use('/clients', verifySession, clienteRouter);
-app.use('/roles', verifySession, rolRouter);
-app.use('/parts', verifySession, piezaRouter);
-app.use('/defects', verifySession, defectoRouter);
-app.use('/work-instructions', verifySession, instruccionTrabajoRouter);
-app.use('/reports', verifySession, reporteRouter);
-app.use('/inspection-details', verifySession, detalleRouter);
-app.use('/incidents', verifySession, incidenciaRouter);
-app.use('/user-roles', verifySession, rolesUsuariosRouter);
-app.use('/favorite-routes', verifySession, rutasFavoritasRouter);
-app.use('/services', verifySession, servicioRouter);
-app.use('/media', verifySession, mediaRouter);
+app.use('/clients', verifySession, blockClientsEntirely, clienteRouter);
+app.use('/roles', verifySession, blockClientsEntirely, rolRouter);
+app.use('/parts', verifySession, blockClientsEntirely, piezaRouter);
+app.use('/defects', verifySession, blockClientsEntirely, defectoRouter);
+app.use('/work-instructions', verifySession, blockClientsEntirely, instruccionTrabajoRouter);
+app.use('/reports', verifySession, blockClientWrites, reporteRouter);
+app.use('/inspection-details', verifySession, blockClientWrites, detalleRouter);
+app.use('/incidents', verifySession, blockClientWrites, incidenciaRouter);
+app.use('/user-roles', verifySession, blockClientsEntirely, rolesUsuariosRouter);
+app.use('/favorite-routes', verifySession, blockClientsEntirely, rutasFavoritasRouter);
+app.use('/services', verifySession, blockClientsEntirely, servicioRouter);
+app.use('/media', verifySession, blockClientsEntirely, mediaRouter);
 
 export default app;

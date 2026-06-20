@@ -30,6 +30,9 @@ router.post('/:id/evidence', instruccionTrabajoHandlers.addEvidence);
 // DELETE /work-instructions/:id/evidence/:evidenceId → Delete evidence file
 router.delete('/:id/evidence/:evidenceId', instruccionTrabajoHandlers.deleteEvidence);
 
+// PUT /work-instructions/:id/evidence/:evidenceId/main → Reclassify an existing file as the main signed IT
+router.put('/:id/evidence/:evidenceId/main', instruccionTrabajoHandlers.setMainEvidence);
+
 // DELETE /work-instructions/:id
 router.delete('/:id', instruccionTrabajoHandlers.deleteInstruccionTrabajo);
 
