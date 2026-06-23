@@ -99,7 +99,7 @@ export default function WorkInstructionDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[74vw] max-w-[74vw] max-h-[85vh] overflow-hidden p-0">
+      <DialogContent className="w-[92vw] max-w-[92vw] sm:w-[74vw] sm:max-w-[74vw] max-h-[85vh] overflow-hidden p-0">
         <div className="p-6 pb-0">
           <DialogHeader>
             <DialogTitle>Detalles de Instrucción de Trabajo</DialogTitle>
@@ -116,9 +116,9 @@ export default function WorkInstructionDetailsModal({
         ) : error ? (
           <div className="py-8 text-center text-destructive">{error}</div>
         ) : details ? (
-          <div className="grid grid-cols-2 gap-6 p-6 pt-4 h-[calc(85vh-100px)]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-4 max-h-[calc(85vh-100px)] md:h-[calc(85vh-100px)] overflow-y-auto md:overflow-visible">
             {/* Left Column - Description */}
-            <div className="flex flex-col h-full">
+            <div className="flex flex-col h-full min-h-[200px] md:min-h-0">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Descripción</h3>
               <div className="flex-1 p-4 rounded-lg bg-muted/30 border overflow-y-auto">
                 {details.instruction.description ? (
@@ -130,9 +130,9 @@ export default function WorkInstructionDetailsModal({
             </div>
 
             {/* Right Column - All other content */}
-            <div className="flex flex-col h-full overflow-y-auto space-y-4">
+            <div className="flex flex-col h-full md:overflow-y-auto space-y-4">
               {/* Basic Info */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <h3 className="text-xs font-medium text-muted-foreground">Pieza</h3>
                   <p className="text-sm font-medium">{details.instruction.part_name}</p>
@@ -160,7 +160,7 @@ export default function WorkInstructionDetailsModal({
                   Archivos ({details.evidences.length})
                 </h3>
                 {details.evidences.length > 0 ? (
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {details.evidences.map((evidence) =>
                       evidence.photo_url && /^[a-f0-9]{24}$/.test(evidence.photo_url) ? (
                         <MediaItem
@@ -224,8 +224,8 @@ export default function WorkInstructionDetailsModal({
                   Reportes de Inspección ({details.reports.length})
                 </h3>
                 {details.reports.length > 0 ? (
-                  <div className="border rounded-lg overflow-hidden max-h-[150px] overflow-y-auto">
-                    <table className="w-full text-sm">
+                  <div className="border rounded-lg overflow-x-auto max-h-[150px] overflow-y-auto">
+                    <table className="w-full min-w-[320px] text-sm">
                       <thead className="bg-muted sticky top-0">
                         <tr>
                           <th className="p-2 text-left text-xs font-medium text-muted-foreground">ID</th>

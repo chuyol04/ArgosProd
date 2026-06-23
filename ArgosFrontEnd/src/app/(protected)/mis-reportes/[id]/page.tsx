@@ -150,7 +150,7 @@ export default async function MisReporteDetallePage({ params }: Props) {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-4 gap-3 text-sm">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
                     <div>
                       <p className="text-muted-foreground text-xs">Inspeccionadas</p>
                       <p className="font-medium">{detail.inspected_pieces ?? 0}</p>

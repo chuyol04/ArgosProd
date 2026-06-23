@@ -18,20 +18,20 @@ export default function Header({ onMenuClick }: HeaderProps) {
     const homePath = isClientOnly ? "/mis-reportes" : "/home";
 
     return (
-        <header className="flex flex-row w-full px-4 h-[70px] bg-gray-900 sticky top-0 z-30 items-center">
-            <div className="w-1/3 flex flex-row items-center">
+        <header className="flex flex-row w-full px-3 sm:px-4 h-[60px] sm:h-[70px] bg-gray-900 sticky top-0 z-30 items-center">
+            <div className="flex-1 flex flex-row items-center min-w-0">
                 <button onClick={() => router.push(homePath)} className="hover:opacity-80 transition-opacity">
                     <Image
                         src="/logo.png"
                         alt="OzCab Group"
                         width={120}
                         height={40}
-                        className="h-10 w-auto object-contain"
+                        className="h-8 sm:h-10 w-auto object-contain"
                         priority
                     />
                 </button>
             </div>
-            <div className="w-2/3 flex flex-row justify-end pr-2 items-center gap-2 lg:gap-4">
+            <div className="flex flex-row justify-end items-center gap-1.5 sm:gap-2 lg:gap-4">
                 <button
                     className="flex flex-row items-center gap-2 hover:opacity-80 transition-opacity"
                     onClick={() => router.push(homePath)}

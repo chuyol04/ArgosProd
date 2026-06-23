@@ -53,12 +53,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
 
             {/* Sidebar */}
             <div
-                className={`fixed top-0 right-0 h-full w-80 bg-white dark:bg-gray-900 z-50 shadow-xl transform transition-transform duration-300 ${
+                className={`fixed top-0 right-0 h-full w-full sm:w-80 max-w-full flex flex-col bg-white dark:bg-gray-900 z-50 shadow-xl transform transition-transform duration-300 ${
                     isOpen ? "translate-x-0" : "translate-x-full"
                 }`}
             >
                 {/* Header */}
-                <div className="flex items-center justify-between p-4 border-b dark:border-gray-700">
+                <div className="flex shrink-0 items-center justify-between p-4 border-b dark:border-gray-700">
                     <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
                         Navegación
                     </h2>
@@ -71,7 +71,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 </div>
 
                 {/* Categories */}
-                <div className="overflow-y-auto h-[calc(100%-60px-112px)] p-4">
+                <div className="overflow-y-auto flex-1 p-4">
                     {categories.length > 0 ? (
                         categories.map(category => (
                             <div key={category.name} className="mb-6">
@@ -100,7 +100,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 </div>
 
                 {/* Footer actions */}
-                <div className="absolute bottom-0 left-0 right-0 p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-900 space-y-1">
+                <div className="shrink-0 p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-900 space-y-1">
                     <button
                         onClick={() => handleNavigate("/cambiar-contrasena")}
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"

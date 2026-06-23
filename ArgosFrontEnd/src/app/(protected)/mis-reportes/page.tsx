@@ -68,7 +68,7 @@ export default async function MisReportesPage({ searchParams }: Props) {
                   {report.inspector_names || "Sin inspector asignado"}
                 </div>
 
-                <div className="mt-1 grid grid-cols-4 gap-2 rounded-lg bg-muted/40 p-2 text-center">
+                <div className="mt-1 grid grid-cols-2 sm:grid-cols-4 gap-2 rounded-lg bg-muted/40 p-2 text-center">
                   <div>
                     <p className="text-sm font-semibold">{report.total_inspected_pieces ?? 0}</p>
                     <p className="text-muted-foreground text-[10px] uppercase">Inspec.</p>

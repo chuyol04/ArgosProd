@@ -224,13 +224,13 @@ export default function Home() {
         <div className='flex flex-col'>
             {/* Header section - outside PageContainer */}
             <div className='flex flex-col gap-4  pt-4'>
-                <div className='flex flex-row w-full items-center px-4 sm:px-6 lg:px-8'>
-                    <div className='flex w-2/3 items-center'>
-                        <span className='text-2xl'>{user?.name}</span>
+                <div className='flex flex-col sm:flex-row w-full items-start sm:items-center gap-1 sm:gap-0 px-4 sm:px-6 lg:px-8'>
+                    <div className='flex flex-1 min-w-0 items-center'>
+                        <span className='text-xl sm:text-2xl truncate'>{user?.name}</span>
                     </div>
-                    <div className='flex w-1/3'>
+                    <div className='flex shrink-0'>
                         {hasMounted && time ? (
-                            <span className="text-2xl font-mono font-thin text-[#005B94]">
+                            <span className="text-xl sm:text-2xl font-mono font-thin text-[#005B94]">
                                 {time.toLocaleTimeString([], {
                                     hour: '2-digit',
                                     minute: '2-digit',
@@ -238,7 +238,7 @@ export default function Home() {
                                 })}
                             </span>
                         ) : (
-                            <span className="text-2xl font-mono">--:--:--</span>
+                            <span className="text-xl sm:text-2xl font-mono">--:--:--</span>
                         )}
                     </div>
                 </div>

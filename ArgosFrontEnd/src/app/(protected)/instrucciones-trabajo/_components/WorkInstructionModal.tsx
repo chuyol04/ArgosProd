@@ -266,7 +266,7 @@ export default function WorkInstructionModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[74vw] max-w-[74vw] max-h-[85vh] overflow-hidden p-0">
+      <DialogContent className="w-[92vw] max-w-[92vw] sm:w-[74vw] sm:max-w-[74vw] max-h-[85vh] overflow-hidden p-0">
         <div className="p-6 pb-0">
           <DialogHeader>
             <DialogTitle>
@@ -286,9 +286,9 @@ export default function WorkInstructionModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-2 gap-6 p-6 pt-4 h-[calc(85vh-180px)]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-4 max-h-[calc(85vh-180px)] md:h-[calc(85vh-180px)] overflow-y-auto md:overflow-visible">
               {/* Left Column - Description (Rich Text Editor) */}
-              <div className="flex flex-col h-full">
+              <div className="flex flex-col h-full min-h-[260px] md:min-h-0">
                 <Label htmlFor="description" className="text-sm font-medium text-muted-foreground mb-2">
                   Descripción
                 </Label>
@@ -304,7 +304,7 @@ export default function WorkInstructionModal({
               </div>
 
               {/* Right Column - Other Fields + Photos (scrollable) */}
-              <div className="flex flex-col h-full overflow-y-auto space-y-4 pr-2">
+              <div className="flex flex-col h-full md:overflow-y-auto space-y-4 md:pr-2">
                 <div className="grid gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="service_id">Servicio *</Label>
@@ -429,7 +429,7 @@ export default function WorkInstructionModal({
               </div>
             </div>
 
-            <DialogFooter className="p-6 pt-0">
+            <DialogFooter className="p-6 pt-0 flex-col sm:flex-row gap-2">
               <Button
                 type="button"
                 variant="outline"
