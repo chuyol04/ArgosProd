@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { IPartsResponse } from "@/app/(protected)/parts/types/parts.types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -53,6 +53,19 @@ export default function PartsTable({ initialData }: Props) {
   const [qLimit, setQLimit] = useUrlInt("limit", 10);
   const [qPage, setQPage] = useUrlInt("page", 1);
 
+  // Local draft so typing stays instant - the URL (and the server refetch it
+  // triggers) only updates after the user pauses, instead of on every keystroke.
+  const [searchInput, setSearchInput] = useState(qSearch);
+
+  useEffect(() => {
+    if (searchInput === qSearch) return;
+    const timeout = setTimeout(() => {
+      setQSearch(searchInput);
+      setQPage(1);
+    }, 350);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
   const tableRows = useMemo(
     () =>
       (initialData.parts ?? []).map((p) => ({
@@ -76,11 +89,6 @@ export default function PartsTable({ initialData }: Props) {
 
   const changeLimit = (limitStr: string) => {
     setQLimit(Number(limitStr));
-    setQPage(1);
-  };
-
-  const onSearch = (q: string) => {
-    setQSearch(q);
     setQPage(1);
   };
 
@@ -110,8 +118,8 @@ export default function PartsTable({ initialData }: Props) {
                 id="search"
                 placeholder="Buscar por nombre o descripción..."
                 className="min-w-0 flex-1"
-                value={qSearch}
-                onChange={(e) => onSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
             </div>
           </div>

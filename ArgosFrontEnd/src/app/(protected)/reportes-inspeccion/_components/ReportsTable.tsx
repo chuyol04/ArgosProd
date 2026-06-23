@@ -1,7 +1,7 @@
 "use client";
 
 import { IInspectionReportsResponse } from "@/app/(protected)/reportes-inspeccion/types/reportes-inspeccion.types";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -49,6 +49,19 @@ export default function ReportsTable({ initialData }: Props) {
   const [qLimit, setQLimit] = useUrlInt("limit", 10);
   const [qPage, setQPage] = useUrlInt("page", 1);
 
+  // Local draft so typing stays instant - the URL (and the server refetch it
+  // triggers) only updates after the user pauses, instead of on every keystroke.
+  const [searchInput, setSearchInput] = useState(qSearch);
+
+  useEffect(() => {
+    if (searchInput === qSearch) return;
+    const timeout = setTimeout(() => {
+      setQSearch(searchInput);
+      setQPage(1);
+    }, 350);
+    return () => clearTimeout(timeout);
+  }, [searchInput]);
+
   // Map reports to table rows
   const tableRows = useMemo(
     () =>
@@ -79,11 +92,6 @@ export default function ReportsTable({ initialData }: Props) {
   const changeLimit = (limitStr: string) => {
     const limit = Number(limitStr);
     setQLimit(limit);
-    setQPage(1);
-  };
-
-  const onSearch = (q: string) => {
-    setQSearch(q);
     setQPage(1);
   };
 
@@ -123,8 +131,8 @@ export default function ReportsTable({ initialData }: Props) {
                 id="search"
                 placeholder="Buscar por pieza, servicio, cliente o PO..."
                 className="min-w-0 flex-1"
-                value={qSearch}
-                onChange={(e) => onSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
               />
             </div>
           </div>
