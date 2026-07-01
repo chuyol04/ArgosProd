@@ -1,17 +1,6 @@
-# OzCab Backend API Documentation
+# OzCab Backend API Reference
 
-This document details the API endpoints for the OzCab backend, built with Node.js, Express.js, and MySQL. The backend is currently undergoing a refactoring process to standardize table and column names to English using `snake_case` conventions, and to improve modularity.
-
-## 1. Backend Overview
-
-The OzCab backend provides a RESTful API to manage various entities related to auditing manufacturing processes, including clients, services, parts, work instructions, inspections, users, roles, and permissions. It integrates with Firebase for user authentication.
-
-**Technology Stack:**
-*   **Language:** Node.js
-*   **Framework:** Express.js
-*   **Database:** MySQL
-*   **ORM/DB Client:** `mysql2` with Promise API
-*   **Authentication:** Firebase Admin SDK (for session verification), integrated with custom login/user endpoints.
+This document details the API endpoints for the OzCab backend. For architecture, stack, auth flow, and the permission system, see [`CLAUDE.md`](../CLAUDE.md) at the repo root — this file only covers endpoint-level request/response detail.
 
 ## 2. Database Schema (`ozcab_db`)
 
@@ -1814,21 +1803,4 @@ The following endpoints are identified but have not yet been refactored to the n
 
 ### 3.13 Access Control & Client Portal
 
-Access control is hardcoded by role name (no `permissions`/`role_permissions` tables - that approach was dropped in favor of simple role checks). Four roles exist: `Inspector`, `Manager`, `Admin`, `Cliente`.
-
-`middleware/clientGuard.js` (applied per-router in `app.js`, right after `verifySession`) enforces the `Cliente` role's read-only client portal:
-
-| Middleware | Applied to | Effect for role `Cliente` |
-|---|---|---|
-| `blockClientsEntirely` | `/users`, `/clients`, `/roles`, `/parts`, `/defects`, `/work-instructions`, `/user-roles`, `/favorite-routes`, `/services`, `/media` | 403 on every method |
-| `blockClientWrites` | `/reports`, `/inspection-details`, `/incidents` | 403 on `POST`/`PUT`/`DELETE`; `GET` allowed |
-
-Both middlewares populate `res.locals.requester` (`{ id, roles, client_id, ... }`) so handlers don't re-query the DB. On the GET endpoints a `Cliente` user can reach, the handlers themselves additionally scope every query to `requester.client_id`:
-
-*   `GET /reports`, `GET /reports/:id`, `GET /reports/:id/export` - filtered/404'd by the report's client.
-*   `GET /inspection-details`, `GET /inspection-details/:id` - filtered/404'd by the box's client.
-*   `GET /incidents`, `GET /incidents/:id` - filtered/404'd by the underlying box's client.
-
-This means a `Cliente` user can never see another client's data, **even by guessing/typing an ID directly in a URL** - the restriction lives in the SQL, not just in what the frontend chooses to render or link to.
-
-A user gets the `Cliente` role like any other role (via `/roles` + `POST /users/create` or `PUT /users/:id` with `role_id`), plus `client_id` set to the client they should be scoped to.
+See the "Permission System" section in [`CLAUDE.md`](../CLAUDE.md) for the full `clientGuard.js` breakdown. Summary: `GET /reports`, `GET /reports/:id`, `GET /reports/:id/export`, `GET /inspection-details`, `GET /inspection-details/:id`, `GET /incidents`, `GET /incidents/:id` are all scoped/404'd to the requester's `client_id` when the role is `Cliente`.

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-OzCab is a manufacturing audit/inspection management system. The MVP focuses on inspecting, approving, and rejecting manufactured parts. The project is a full-stack application with separate `back/` and `front/` directories.
+OzCab is a manufacturing audit/inspection management system. The MVP focuses on inspecting, approving, and rejecting manufactured parts. The project is a full-stack application with separate `ArgosBackEnd/` and `ArgosFrontEnd/` directories.
 
 ## Commands
 
@@ -30,19 +30,19 @@ npm run lint
 ```
 
 ### Database
-- Schema: `back/new_mysql_schema.sql`
-- Mock data: `back/populate_mock_data.sql`
-- Connection: MySQL via mysql2 promise pool, credentials in `back/.env`
+- Schema: `ArgosBackEnd/new_mysql_schema.sql`
+- Mock data: `ArgosBackEnd/populate_mock_data.sql`
+- Connection: MySQL via mysql2 promise pool, credentials in `ArgosBackEnd/.env`
 
 ## Architecture
 
 ### Backend (Express.js + MySQL)
 - **Framework**: Express 5, ESM JavaScript
-- **Database**: MySQL via mysql2 with promise-based pool (`back/connections/mysqldb.js`)
+- **Database**: MySQL via mysql2 with promise-based pool (`ArgosBackEnd/connections/mysqldb.js`)
 - **Auth**: Firebase Admin SDK for session cookie verification
 - **Pattern**: Routes → Handlers → MySQL queries
 
-Route files in `back/routes/` define endpoints and map to handler functions in `back/handlers/`. All protected routes use the `verifySession` middleware which validates Firebase session cookies and stores `firebase_uid` in `res.locals`.
+Route files in `ArgosBackEnd/routes/` define endpoints and map to handler functions in `ArgosBackEnd/handlers/`. All protected routes use the `verifySession` middleware which validates Firebase session cookies and stores `firebase_uid` in `res.locals`.
 
 API response format:
 ```js
@@ -66,7 +66,7 @@ API response format:
 - `(auth)/` - Public auth pages (login)
 - `(protected)/` - Protected pages requiring authentication
 
-**Feature Structure** (`front/src/app/(protected)/<feature>/`):
+**Feature Structure** (`ArgosFrontEnd/src/app/(protected)/<feature>/`):
 ```
 ├── _components/    # Feature-specific components
 ├── actions/        # Server actions for data mutations
@@ -108,7 +108,7 @@ API response format:
   - Frontend pages: `(protected)/mis-reportes/page.tsx` (list) and `(protected)/mis-reportes/[id]/page.tsx` (detail) - both read-only Server Components that reuse the existing reports/incidents server actions (no separate client-aware fetchers needed, since the backend auto-scopes by role).
 
 ### Sitemap & Navigation
-- **Source of truth**: `front/src/app/(protected)/sitemap/map.json`
+- **Source of truth**: `ArgosFrontEnd/src/app/(protected)/sitemap/map.json`
 - Contains categories with routes, each route has:
   - `id`: Unique identifier for favorites
   - `name`: Display name
@@ -119,7 +119,7 @@ API response format:
 ### Favorites System
 - Users can star routes in sitemap
 - Stored in `favorite_routes` table with `route_id` (references map.json id)
-- Server actions in `front/src/app/(protected)/favorite-routes/actions/`
+- Server actions in `ArgosFrontEnd/src/app/(protected)/favorite-routes/actions/`
 - Displayed on Home page grouped by category
 
 ## Domain Model
@@ -169,7 +169,7 @@ Client ← (optional, 1:1 per user) ── User (role 'Cliente', via users.clien
 
 **Server Actions** (for data mutations):
 ```typescript
-// front/src/app/(protected)/<feature>/actions/<feature>.actions.ts
+// ArgosFrontEnd/src/app/(protected)/<feature>/actions/<feature>.actions.ts
 "use server";
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -217,6 +217,11 @@ const [qSearch, setQSearch] = useQueryState("search", searchParser);
 ## LLM Knowledge Base
 
 For detailed context, patterns, and code templates, see:
-- `back/llm/knowledge_dump.txt` - Complete project knowledge, architecture, patterns, and status
-- `back/llm/code_templates.txt` - Copy-paste ready templates for new features
-- `back/llm/q&a.txt` - Business logic Q&A from stakeholder
+- `ArgosBackEnd/llm/knowledge_dump.txt` - Complete project knowledge, architecture, patterns, and status
+- `ArgosBackEnd/llm/code_templates.txt` - Copy-paste ready templates for new features
+- `ArgosBackEnd/llm/q&a.txt` - Business logic Q&A from stakeholder
+
+## Related Docs
+
+- [`ArgosBackEnd/API_REFERENCE.md`](ArgosBackEnd/API_REFERENCE.md) - full endpoint-level request/response reference
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) - VPS infrastructure, deploy workflow, incident history
