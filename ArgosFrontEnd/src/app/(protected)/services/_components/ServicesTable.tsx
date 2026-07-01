@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useUrlInt, useUrlString } from "@/lib/useUrlState";
+import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
 import {
   Select,
   SelectContent,
@@ -29,6 +29,7 @@ import {
   Trash2,
   Eye,
   Plus,
+  Search,
 } from "lucide-react";
 import ServiceModal from "./ServiceModal";
 import ServiceDetailsModal from "./ServiceDetailsModal";
@@ -74,9 +75,10 @@ export default function ServicesTable({ initialData, clients }: Props) {
     setModalOpen(true);
   };
 
-  const [qSearch, setQSearch] = useUrlString("search");
-  const [qLimit, setQLimit] = useUrlInt("limit", 10);
+  const [qSearch] = useUrlString("search");
+  const [qLimit] = useUrlInt("limit", 10);
   const [qPage, setQPage] = useUrlInt("page", 1);
+  const setUrlParams = useUrlParams();
 
   // Local draft so typing stays instant - the URL (and the server refetch it
   // triggers) only updates after the user pauses, instead of on every keystroke.
@@ -85,11 +87,14 @@ export default function ServicesTable({ initialData, clients }: Props) {
   useEffect(() => {
     if (searchInput === qSearch) return;
     const timeout = setTimeout(() => {
-      setQSearch(searchInput);
-      setQPage(1);
+      setUrlParams({ search: searchInput || null, page: null });
     }, 350);
     return () => clearTimeout(timeout);
   }, [searchInput]);
+
+  const handleSearch = () => {
+    setUrlParams({ search: searchInput || null, page: null });
+  };
 
   // Map services to table rows
   const tableRows = useMemo(
@@ -118,9 +123,7 @@ export default function ServicesTable({ initialData, clients }: Props) {
   };
 
   const changeLimit = (limitStr: string) => {
-    const limit = Number(limitStr);
-    setQLimit(limit);
-    setQPage(1);
+    setUrlParams({ limit: Number(limitStr), page: null });
   };
 
   const handleUpdate = (id: number) => {
@@ -158,13 +161,19 @@ export default function ServicesTable({ initialData, clients }: Props) {
         <div className="flex flex-col gap-3 sm:flex-row lg:gap-4">
           <div className="flex w-full flex-col gap-2">
             <Label htmlFor="search">Buscar:</Label>
-            <Input
-              id="search"
-              placeholder="Buscar por descripción o cliente..."
-              className="min-w-0 flex-1"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="search"
+                placeholder="Buscar por descripción o cliente..."
+                className="min-w-0 flex-1"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              />
+              <Button type="button" variant="outline" size="icon" onClick={handleSearch}>
+                <Search className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         </div>
       </div>

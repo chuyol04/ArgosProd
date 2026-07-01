@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useUrlInt, useUrlString } from "@/lib/useUrlState";
+import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -68,9 +68,10 @@ function formatDate(dateStr: string): string {
 }
 
 export function MediaGallery({ initialData, error }: MediaGalleryProps) {
-  const [qSearch, setQSearch] = useUrlString("search");
-  const [qLimit, setQLimit] = useUrlInt("limit", 20);
+  const [qSearch] = useUrlString("search");
+  const [qLimit] = useUrlInt("limit", 20);
   const [qPage, setQPage] = useUrlInt("page", 1);
+  const setUrlParams = useUrlParams();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
@@ -108,8 +109,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
   }, [files, selectedIds.size]);
 
   const handleSearch = () => {
-    setQSearch(searchInput || "");
-    setQPage(1);
+    setUrlParams({ search: searchInput || null, page: null });
   };
 
   const handleDelete = async () => {
@@ -192,8 +192,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
           <Select
             value={String(rowsPerPage)}
             onValueChange={(val) => {
-              setQLimit(Number(val));
-              setQPage(1);
+              setUrlParams({ limit: Number(val), page: null });
             }}
           >
             <SelectTrigger className="w-[100px]">

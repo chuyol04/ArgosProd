@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useUrlInt, useUrlString } from "@/lib/useUrlState";
+import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -41,9 +41,10 @@ interface UsersTableProps {
 }
 
 export default function UsersTable({ initialData, error }: UsersTableProps) {
-    const [qSearch, setQSearch] = useUrlString("search");
-    const [qLimit, setQLimit] = useUrlInt("limit", 10);
+    const [qSearch] = useUrlString("search");
+    const [qLimit] = useUrlInt("limit", 10);
     const [qPage, setQPage] = useUrlInt("page", 1);
+    const setUrlParams = useUrlParams();
 
     const [searchInput, setSearchInput] = useState(qSearch);
     const [detailsUserId, setDetailsUserId] = useState<number | null>(null);
@@ -58,8 +59,7 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
     const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
 
     const handleSearch = () => {
-        setQSearch(searchInput || "");
-        setQPage(1);
+        setUrlParams({ search: searchInput || null, page: null });
     };
 
     return (
@@ -106,8 +106,7 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                 <Select
                     value={String(rowsPerPage)}
                     onValueChange={(val) => {
-                        setQLimit(Number(val));
-                        setQPage(1);
+                        setUrlParams({ limit: Number(val), page: null });
                     }}
                 >
                     <SelectTrigger className="w-[100px]">
