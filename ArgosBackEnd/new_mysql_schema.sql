@@ -54,7 +54,7 @@ CREATE TABLE work_instructions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     service_id INT NOT NULL,
     part_id INT NOT NULL,
-    description VARCHAR(255),
+    description TEXT,
     inspection_rate_per_hour INT NOT NULL, -- Number of pieces to be inspected per hour.
     FOREIGN KEY (service_id) REFERENCES services(id),
     FOREIGN KEY (part_id) REFERENCES parts(id)
