@@ -446,6 +446,8 @@ server {
     listen 80;
     server_name ozcabinspeccion.com www.ozcabinspeccion.com;
 
+    client_max_body_size 12M;
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
@@ -594,6 +596,24 @@ docker compose up -d
 ```
 
 **Regla crítica:** Si el VPS se renueva nuevamente y Neubox reinstala CSF, repetir el proceso de deshabilitar CSF e instalar UFW. UFW no afecta las reglas iptables de Docker.
+
+---
+
+### Subida de archivos fallaba a partir de ~1-2MB (2026-08-03)
+
+**Síntoma:** al subir un archivo de evidencia/IT en Instrucciones de Trabajo (`/api/media/upload`, `ArgosFrontEnd/src/app/api/media/upload/route.ts`), archivos mayores a ~1-2MB mostraban "Upload failed" en el modal.
+
+**Causa:** el bloque `server` de `/etc/nginx/sites-available/argos` no definía `client_max_body_size`. El valor por defecto de Nginx es **1MB**, así que cualquier request mayor recibía `413 Request Entity Too Large` antes de llegar a Next.js. No era un problema de espacio en disco ni de configuración del backend Express — el endpoint de subida vive en el frontend Next.js y sube por streaming a GridFS/MongoDB, sin límite propio.
+
+**Fix aplicado en VPS:**
+```bash
+nano /etc/nginx/sites-available/argos   # agregar client_max_body_size 12M; dentro del bloque server
+nginx -t && systemctl reload nginx
+```
+
+12M porque la UI (`WorkInstructionModal.tsx`) anuncia un máximo de 10MB por archivo; se deja margen para el overhead de multipart. Ver bloque de config actualizado en la sección 8 (Nginx).
+
+**Verificado:** subida de archivo >2MB exitosa tras el reload.
 
 ---
 
