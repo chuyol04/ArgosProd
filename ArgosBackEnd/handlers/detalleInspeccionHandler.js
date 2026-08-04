@@ -131,6 +131,7 @@ export async function getDetalleInspeccionById(req, res) {
         p.name AS part_name, p.description AS part_description,
         ir.po_number, ir.start_date AS report_start_date, ir.problem AS report_problem,
         wi.description AS work_instruction_description,
+        wi.inspection_rate_per_hour,
         s.name AS service_name,
         c.id AS client_id, c.name AS client_name,
         u.name AS inspector_name

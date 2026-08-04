@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo } from "react";
+import { useState, useTransition, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,7 @@ import {
   deleteInspectionDetail,
   fetchInspectorsForSelect,
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
-import { DefectsSection } from "./DefectsSection";
+import { DefectsSection, DefectsSectionHandle } from "./DefectsSection";
 import {
   toDateInputValue,
   toTimeInputValue,
@@ -37,9 +37,79 @@ import {
   emptyToUndefined,
   calculateWorkedHours,
   isInvalidTimeRange,
+  isValidTimeFormat,
 } from "@/lib/dateTimeUtils";
 
 type Mode = "view" | "edit" | "create";
+
+// Fields that must be filled before saving, in the same top-to-bottom order
+// they appear in the form - used to jump to the first one that fails.
+type RequiredField =
+  | "serial_number"
+  | "lot_number"
+  | "inspector_id"
+  | "shift"
+  | "inspection_date"
+  | "manufacture_date"
+  | "start_time"
+  | "end_time";
+
+const REQUIRED_FIELD_ORDER: RequiredField[] = [
+  "serial_number",
+  "lot_number",
+  "inspector_id",
+  "shift",
+  "inspection_date",
+  "manufacture_date",
+  "start_time",
+  "end_time",
+];
+
+function validateFormData(
+  data: IInspectionDetailFormData
+): Partial<Record<RequiredField, string>> {
+  const errors: Partial<Record<RequiredField, string>> = {};
+  const REQUIRED_MESSAGE = "Este campo es obligatorio.";
+
+  if (!data.serial_number?.trim()) errors.serial_number = REQUIRED_MESSAGE;
+  if (!data.lot_number?.trim()) errors.lot_number = REQUIRED_MESSAGE;
+  if (!data.inspector_id) errors.inspector_id = REQUIRED_MESSAGE;
+
+  if (!data.shift) {
+    errors.shift = REQUIRED_MESSAGE;
+  } else if (!/^\d+$/.test(data.shift)) {
+    errors.shift = "Ingresa un número de turno válido.";
+  }
+
+  if (!data.inspection_date) errors.inspection_date = REQUIRED_MESSAGE;
+
+  if (!data.manufacture_date) {
+    errors.manufacture_date = REQUIRED_MESSAGE;
+  } else if (data.inspection_date && data.manufacture_date > data.inspection_date) {
+    errors.manufacture_date =
+      "La fecha de manufactura no puede ser posterior a la fecha de inspección.";
+  }
+
+  if (!data.start_time) {
+    errors.start_time = REQUIRED_MESSAGE;
+  } else if (!isValidTimeFormat(data.start_time)) {
+    errors.start_time = "Formato de hora inválido.";
+  }
+
+  if (!data.end_time) {
+    errors.end_time = REQUIRED_MESSAGE;
+  } else if (!isValidTimeFormat(data.end_time)) {
+    errors.end_time = "Formato de hora inválido.";
+  } else if (
+    data.start_time &&
+    isValidTimeFormat(data.start_time) &&
+    isInvalidTimeRange(data.start_time, data.end_time)
+  ) {
+    errors.end_time = "La hora de fin debe ser posterior a la hora de inicio.";
+  }
+
+  return errors;
+}
 
 interface InspectionDetailFormProps {
   detail?: IInspectionDetailExtended;
@@ -56,15 +126,19 @@ function FormField({
   isReadOnly,
   children,
   valueClassName = "",
+  error,
+  fieldRef,
 }: {
   label: string;
   value?: string | number | null;
   isReadOnly: boolean;
   children?: React.ReactNode;
   valueClassName?: string;
+  error?: string;
+  fieldRef?: (el: HTMLDivElement | null) => void;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div ref={fieldRef} className="space-y-1.5">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
@@ -75,6 +149,7 @@ function FormField({
       ) : (
         children
       )}
+      {!isReadOnly && error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }
@@ -95,6 +170,18 @@ export default function InspectionDetailForm({
   const [isPending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [error, setError] = useState<string | null>(null);
+  const defectsSectionRef = useRef<DefectsSectionHandle>(null);
+
+  // Required-field validation: errors are computed continuously but only
+  // shown once the user leaves that field (touched) or tries to save.
+  const [touched, setTouched] = useState<Partial<Record<RequiredField, boolean>>>({});
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const fieldRefs = useRef<Partial<Record<RequiredField, HTMLDivElement | null>>>({});
+  const setFieldRef = (field: RequiredField) => (el: HTMLDivElement | null) => {
+    fieldRefs.current[field] = el;
+  };
+  const handleBlurField = (field: RequiredField) =>
+    setTouched((prev) => ({ ...prev, [field]: true }));
 
   // Role-based permissions
   const isManagerOrAbove = useMemo(() => {
@@ -189,10 +276,10 @@ export default function InspectionDetailForm({
     () => calculateWorkedHours(formData.start_time, formData.end_time),
     [formData.start_time, formData.end_time]
   );
-  const timeRangeInvalid = useMemo(
-    () => isInvalidTimeRange(formData.start_time, formData.end_time),
-    [formData.start_time, formData.end_time]
-  );
+
+  const fieldErrors = useMemo(() => validateFormData(formData), [formData]);
+  const showError = (field: RequiredField) =>
+    touched[field] || submitAttempted ? fieldErrors[field] : undefined;
 
   useEffect(() => {
     if (isReadOnly) return;
@@ -214,6 +301,16 @@ export default function InspectionDetailForm({
     setFormData((prev) => ({ ...prev, inspected_pieces: computedInspectedPieces }));
   }, [computedInspectedPieces, isReadOnly]);
 
+  // "Rate de Inspección": horas TEÓRICAS que debería tomar la caja según el
+  // rate (piezas/hora) configurado en la instrucción de trabajo, distinto de
+  // "Horas Trabajadas" (horas REALES por hora_inicio/hora_fin). Se recalcula
+  // solo cuando cambian las piezas inspeccionadas o el rate de la instrucción.
+  const inspectionRate = detail?.inspection_rate_per_hour ?? null;
+  const estimatedHoursByRate = useMemo(() => {
+    if (inspectionRate == null || inspectionRate === 0) return null;
+    return Math.round((computedInspectedPieces / inspectionRate) * 100) / 100;
+  }, [computedInspectedPieces, inspectionRate]);
+
   // "Problema / Condición Revisada": inherited from the parent report - what
   // is being inspected/looked for (e.g. "Golpe / Falta de ranura"). For an
   // existing detail it comes from the join (report_problem); while creating,
@@ -232,6 +329,19 @@ export default function InspectionDetailForm({
 
   const handleSave = () => {
     setError(null);
+
+    const errors = validateFormData(formData);
+    if (Object.keys(errors).length > 0) {
+      setSubmitAttempted(true);
+      const firstErrorField = REQUIRED_FIELD_ORDER.find((f) => errors[f]);
+      if (firstErrorField) {
+        const el = fieldRefs.current[firstErrorField];
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        el?.querySelector<HTMLElement>("input, button, select, textarea")?.focus();
+      }
+      return;
+    }
+
     // Empty date/time inputs must be sent as `undefined` (omit field on update,
     // null on create), never as "" - the DATE/TIME columns reject empty strings.
     const payload: IInspectionDetailFormData = {
@@ -250,6 +360,14 @@ export default function InspectionDetailForm({
         }
         const result = await createInspectionDetail(payload);
         if (result.success && result.id) {
+          const failedDefects = await defectsSectionRef.current?.commitPendingDefects(
+            result.id
+          );
+          if (failedDefects && failedDefects.length > 0) {
+            alert(
+              `El detalle se creó, pero no se pudieron guardar estos defectos: ${failedDefects.join(", ")}. Puedes agregarlos de nuevo desde la pantalla del detalle.`
+            );
+          }
           router.push(`/detalles-inspeccion/${result.id}`);
         } else {
           setError(result.error || "Error al crear detalle");
@@ -305,6 +423,8 @@ export default function InspectionDetailForm({
       });
     }
     setError(null);
+    setTouched({});
+    setSubmitAttempted(false);
   };
 
   return (
@@ -332,7 +452,15 @@ export default function InspectionDetailForm({
           {isReadOnly && (
             <>
               {canEdit && (
-                <Button variant="outline" size="sm" onClick={() => setMode("edit")}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTouched({});
+                    setSubmitAttempted(false);
+                    setMode("edit");
+                  }}
+                >
                   <Pencil className="mr-1.5 h-4 w-4" />
                   Editar
                 </Button>
@@ -450,35 +578,62 @@ export default function InspectionDetailForm({
         <CardContent className="space-y-4">
           {/* Serial and Lot Number - Full Width */}
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            <FormField label="Número de Serie" value={detail?.serial_number} isReadOnly={isReadOnly}>
+            <FormField
+              label="Número de Serie *"
+              value={detail?.serial_number}
+              isReadOnly={isReadOnly}
+              error={showError("serial_number")}
+              fieldRef={setFieldRef("serial_number")}
+            >
               <Input
                 value={formData.serial_number || ""}
                 onChange={(e) => handleInputChange("serial_number", e.target.value)}
+                onBlur={() => handleBlurField("serial_number")}
                 placeholder="Ej: SN-001-ABCD-1234-XYZ"
                 className="font-mono"
+                aria-invalid={!!showError("serial_number")}
               />
             </FormField>
 
-            <FormField label="Número de Lote" value={detail?.lot_number} isReadOnly={isReadOnly}>
+            <FormField
+              label="Número de Lote *"
+              value={detail?.lot_number}
+              isReadOnly={isReadOnly}
+              error={showError("lot_number")}
+              fieldRef={setFieldRef("lot_number")}
+            >
               <Input
                 value={formData.lot_number || ""}
                 onChange={(e) => handleInputChange("lot_number", e.target.value)}
+                onBlur={() => handleBlurField("lot_number")}
                 placeholder="Ej: LOT-2024-001-ABCD"
                 className="font-mono"
+                aria-invalid={!!showError("lot_number")}
               />
             </FormField>
           </div>
 
           {/* Inspector and Shift */}
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            <FormField label="Inspector" value={detail?.inspector_name} isReadOnly={isReadOnly}>
+            <FormField
+              label="Inspector *"
+              value={detail?.inspector_name}
+              isReadOnly={isReadOnly}
+              error={showError("inspector_id")}
+              fieldRef={setFieldRef("inspector_id")}
+            >
               <Select
                 value={formData.inspector_id ? String(formData.inspector_id) : ""}
-                onValueChange={(val) =>
-                  handleInputChange("inspector_id", val ? Number(val) : undefined)
-                }
+                onValueChange={(val) => {
+                  handleInputChange("inspector_id", val ? Number(val) : undefined);
+                  handleBlurField("inspector_id");
+                }}
               >
-                <SelectTrigger className="w-full">
+                <SelectTrigger
+                  className="w-full"
+                  onBlur={() => handleBlurField("inspector_id")}
+                  aria-invalid={!!showError("inspector_id")}
+                >
                   <SelectValue placeholder="Seleccione inspector" />
                 </SelectTrigger>
                 <SelectContent>
@@ -501,11 +656,22 @@ export default function InspectionDetailForm({
               </Select>
             </FormField>
 
-            <FormField label="Turno" value={detail?.shift} isReadOnly={isReadOnly}>
+            <FormField
+              label="Turno *"
+              value={detail?.shift}
+              isReadOnly={isReadOnly}
+              error={showError("shift")}
+              fieldRef={setFieldRef("shift")}
+            >
               <Input
+                type="number"
+                min="0"
+                inputMode="numeric"
                 value={formData.shift || ""}
-                onChange={(e) => handleInputChange("shift", e.target.value)}
-                placeholder="Ej: Turno 1, Matutino, etc."
+                onChange={(e) => handleInputChange("shift", e.target.value.replace(/\D/g, ""))}
+                onBlur={() => handleBlurField("shift")}
+                placeholder="Ej: 1, 2, 3"
+                aria-invalid={!!showError("shift")}
               />
             </FormField>
           </div>
@@ -519,26 +685,34 @@ export default function InspectionDetailForm({
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
           <FormField
-            label="Fecha de Inspección"
+            label="Fecha de Inspección *"
             value={formatDate(detail?.inspection_date || null)}
             isReadOnly={isReadOnly}
+            error={showError("inspection_date")}
+            fieldRef={setFieldRef("inspection_date")}
           >
             <Input
               type="date"
               value={formData.inspection_date || ""}
               onChange={(e) => handleInputChange("inspection_date", e.target.value)}
+              onBlur={() => handleBlurField("inspection_date")}
+              aria-invalid={!!showError("inspection_date")}
             />
           </FormField>
 
           <FormField
-            label="Fecha de Manufactura"
+            label="Fecha de Manufactura *"
             value={formatDate(detail?.manufacture_date || null)}
             isReadOnly={isReadOnly}
+            error={showError("manufacture_date")}
+            fieldRef={setFieldRef("manufacture_date")}
           >
             <Input
               type="date"
               value={formData.manufacture_date || ""}
               onChange={(e) => handleInputChange("manufacture_date", e.target.value)}
+              onBlur={() => handleBlurField("manufacture_date")}
+              aria-invalid={!!showError("manufacture_date")}
             />
           </FormField>
 
@@ -554,29 +728,40 @@ export default function InspectionDetailForm({
             />
           </FormField>
 
-          <FormField label="Hora de Inicio" value={formatTime(detail?.start_time || null)} isReadOnly={isReadOnly}>
+          <FormField
+            label="Hora de Inicio *"
+            value={formatTime(detail?.start_time || null)}
+            isReadOnly={isReadOnly}
+            error={showError("start_time")}
+            fieldRef={setFieldRef("start_time")}
+          >
             <Input
               type="time"
+              step={60}
+              lang="es-MX"
               value={formData.start_time || ""}
               onChange={(e) => handleInputChange("start_time", e.target.value)}
+              onBlur={() => handleBlurField("start_time")}
+              aria-invalid={!!showError("start_time")}
             />
           </FormField>
 
           <FormField
-            label="Hora de Fin"
+            label="Hora de Fin *"
             value={formatTime(detail?.end_time || null)}
             isReadOnly={isReadOnly}
+            error={showError("end_time")}
+            fieldRef={setFieldRef("end_time")}
           >
             <Input
               type="time"
+              step={60}
+              lang="es-MX"
               value={formData.end_time || ""}
               onChange={(e) => handleInputChange("end_time", e.target.value)}
+              onBlur={() => handleBlurField("end_time")}
+              aria-invalid={!!showError("end_time")}
             />
-            {timeRangeInvalid && (
-              <p className="mt-1 text-xs text-destructive">
-                La hora de fin no puede ser anterior a la hora de inicio.
-              </p>
-            )}
           </FormField>
 
           {/* Horas Trabajadas: siempre de solo lectura, calculada automáticamente
@@ -664,6 +849,49 @@ export default function InspectionDetailForm({
         </CardContent>
       </Card>
 
+      {/* Rate de Inspección: horas TEÓRICAS esperadas según el rate (piezas/hora)
+          configurado en la instrucción de trabajo de esta pieza/servicio. No debe
+          confundirse con "Horas Trabajadas" (horas reales de hora_inicio/hora_fin). */}
+      {detail && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Rate de Inspección</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {inspectionRate == null ? (
+              <p className="text-sm text-muted-foreground">Rate no configurado</p>
+            ) : inspectionRate === 0 ? (
+              <p className="text-sm text-muted-foreground">Rate no válido</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Rate Establecido
+                  </p>
+                  <p className="text-sm font-medium text-foreground">
+                    {inspectionRate} piezas por hora
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Piezas Inspeccionadas
+                  </p>
+                  <p className="text-sm font-medium text-foreground">{computedInspectedPieces}</p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Horas Estimadas por Rate
+                  </p>
+                  <p className="text-sm font-medium text-foreground">
+                    {(estimatedHoursByRate ?? 0).toFixed(2)} horas
+                  </p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       {/* Comments Section */}
       <Card>
         <CardHeader className="pb-3">
@@ -701,6 +929,7 @@ export default function InspectionDetailForm({
             </div>
           )}
           <DefectsSection
+            ref={defectsSectionRef}
             inspectionDetailId={detail?.id ?? null}
             disabled={isReadOnly || !canEdit}
             onTotalQuantityChange={setDefectsTotalQuantity}

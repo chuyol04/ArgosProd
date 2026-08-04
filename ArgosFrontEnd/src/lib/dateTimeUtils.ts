@@ -87,8 +87,8 @@ function parseTimeToMinutes(value: string | null | undefined): number | null {
 /**
  * Worked hours = end_time - start_time, for a single inspector's own
  * report (never summed across inspectors, never multiplied by headcount).
- * Returns `null` when either time is missing or when end < start (an
- * invalid range we never silently "fix" into a wrong number).
+ * Returns `null` when either time is missing or end isn't strictly after
+ * start (an invalid range we never silently "fix" into a wrong number).
  */
 export function calculateWorkedHours(
   startTime: string | null | undefined,
@@ -97,11 +97,11 @@ export function calculateWorkedHours(
   const start = parseTimeToMinutes(startTime);
   const end = parseTimeToMinutes(endTime);
   if (start === null || end === null) return null;
-  if (end < start) return null;
+  if (end <= start) return null;
   return Math.round(((end - start) / 60) * 100) / 100;
 }
 
-/** True when both times are present but end_time is before start_time. */
+/** True when both times are present but end_time isn't strictly after start_time. */
 export function isInvalidTimeRange(
   startTime: string | null | undefined,
   endTime: string | null | undefined
@@ -109,5 +109,11 @@ export function isInvalidTimeRange(
   const start = parseTimeToMinutes(startTime);
   const end = parseTimeToMinutes(endTime);
   if (start === null || end === null) return false;
-  return end < start;
+  return end <= start;
+}
+
+/** `true` for a well-formed 'HH:MM' 24-hour string (00:00–23:59). */
+export function isValidTimeFormat(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
 }

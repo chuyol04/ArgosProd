@@ -32,6 +32,10 @@ export interface IInspectionDetailExtended extends IInspectionDetail {
    * confused with the defects actually found and logged afterward. */
   report_problem: string | null;
   work_instruction_description: string | null;
+  /** "Piezas por Hora" configurado en la instrucción de trabajo asociada a
+   * esta pieza/servicio - usado para calcular las "Horas estimadas por rate".
+   * null si la instrucción de trabajo no tiene un rate configurado. */
+  inspection_rate_per_hour: number | null;
   service_name: string;
   client_name: string;
   inspector_name: string | null;

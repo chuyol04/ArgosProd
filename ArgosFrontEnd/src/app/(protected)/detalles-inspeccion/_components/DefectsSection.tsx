@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,15 +30,18 @@ import {
   fetchDefects,
   fetchIncidentsByDetail,
   createIncident,
+  updateIncident,
   deleteIncident,
   removeIncidentEvidence,
   IDefect,
   IIncident,
 } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
+import { deleteMediaIfExists } from "@/lib/storage/deleteMedia";
 import { uploadFile, getFileCategory } from "@/lib/storage/fileUpload";
 import { MediaItem } from "@/components/ui/media-item";
 import {
   Plus,
+  Pencil,
   Trash2,
   Image as ImageIcon,
   File as FileIcon,
@@ -45,17 +55,39 @@ interface DefectsSectionProps {
   inspectionDetailId: number | null;
   disabled?: boolean;
   /** Reports the sum of all defect quantities for this box, so the parent
-   * form can warn when it doesn't match the rejected pieces count. */
+   * form can warn when it doesn't match the rejected pieces count. Sourced
+   * from saved incidents when the detail already exists, or from the
+   * not-yet-saved pending defects while creating one. */
   onTotalQuantityChange?: (total: number) => void;
 }
 
-export function DefectsSection({
-  inspectionDetailId,
-  disabled = false,
-  onTotalQuantityChange,
-}: DefectsSectionProps) {
+// A defect captured before the inspection detail itself has been saved.
+// Kept purely in memory - no upload, no incident row - until the parent
+// form creates the detail and calls commitPendingDefects with its new id.
+interface IPendingDefect {
+  tempId: string;
+  defect_id?: number;
+  defect_label: string;
+  quantity: number;
+  evidenceFile?: File;
+  evidencePreview?: string | null;
+}
+
+export interface DefectsSectionHandle {
+  /** Uploads evidence and creates an incident for every pending defect,
+   * relating them to the just-created inspection detail. Returns the labels
+   * of any defects that failed, so the caller can surface them without
+   * blocking navigation to the record that was already created. */
+  commitPendingDefects: (inspectionDetailId: number) => Promise<string[]>;
+}
+
+export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionProps>(
+  function DefectsSection({ inspectionDetailId, disabled = false, onTotalQuantityChange }, ref) {
+  const isPendingMode = inspectionDetailId == null;
+
   const [defects, setDefects] = useState<IDefect[]>([]);
   const [incidents, setIncidents] = useState<IIncident[]>([]);
+  const [pendingDefects, setPendingDefects] = useState<IPendingDefect[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -70,11 +102,16 @@ export function DefectsSection({
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | string | null>(null);
   const [removingEvidenceId, setRemovingEvidenceId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load defects catalog and incidents
+  // Which existing entry (if any) the modal is currently editing.
+  const [editingSavedId, setEditingSavedId] = useState<number | null>(null);
+  const [editingPendingId, setEditingPendingId] = useState<string | null>(null);
+  const isEditing = editingSavedId != null || editingPendingId != null;
+
+  // Load defects catalog and, when the detail already exists, its incidents.
   useEffect(() => {
     const loadData = async () => {
       setIsLoading(true);
@@ -96,11 +133,13 @@ export function DefectsSection({
     loadData();
   }, [inspectionDetailId]);
 
-  // Keep the parent form informed of the total defect quantity for this box.
+  // Keep the parent form informed of the total defect quantity for this box,
+  // whether it comes from saved incidents or still-pending defects.
   useEffect(() => {
-    const total = incidents.reduce((sum, i) => sum + (i.quantity || 0), 0);
+    const source = isPendingMode ? pendingDefects : incidents;
+    const total = source.reduce((sum, i) => sum + (i.quantity || 0), 0);
     onTotalQuantityChange?.(total);
-  }, [incidents, onTotalQuantityChange]);
+  }, [incidents, pendingDefects, isPendingMode, onTotalQuantityChange]);
 
   const resetModal = useCallback(() => {
     setSelectedDefectId("");
@@ -109,6 +148,8 @@ export function DefectsSection({
     setEvidenceFile(null);
     setEvidencePreview(null);
     setUploadProgress(0);
+    setEditingSavedId(null);
+    setEditingPendingId(null);
   }, []);
 
   // Picking from the catalog just pre-fills the free-text label.
@@ -125,12 +166,38 @@ export function DefectsSection({
     setSelectedDefectId("");
   };
 
-  const handleOpenModal = () => {
-    if (!inspectionDetailId) {
-      alert("Guarda el detalle de inspección primero para agregar defectos.");
-      return;
-    }
+  const handleOpenAddModal = () => {
     resetModal();
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditSaved = (incident: IIncident) => {
+    setSelectedDefectId(incident.defect_id ? String(incident.defect_id) : "");
+    setDefectLabel(incident.defect_label || incident.defect_name);
+    setQuantity(incident.quantity != null ? String(incident.quantity) : "");
+    setEvidenceFile(null);
+    setEvidencePreview(null);
+    setUploadProgress(0);
+    setEditingSavedId(incident.id);
+    setEditingPendingId(null);
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditPending = (pending: IPendingDefect) => {
+    setSelectedDefectId(pending.defect_id ? String(pending.defect_id) : "");
+    setDefectLabel(pending.defect_label);
+    setQuantity(String(pending.quantity));
+    setEvidenceFile(pending.evidenceFile ?? null);
+    // Use a fresh object URL for the modal preview so removing/replacing the
+    // file while editing never revokes the URL the list thumbnail relies on.
+    setEvidencePreview(
+      pending.evidenceFile && getFileCategory(pending.evidenceFile) === "image"
+        ? URL.createObjectURL(pending.evidenceFile)
+        : null
+    );
+    setUploadProgress(0);
+    setEditingSavedId(null);
+    setEditingPendingId(pending.tempId);
     setIsModalOpen(true);
   };
 
@@ -165,8 +232,13 @@ export function DefectsSection({
 
   const handleSubmit = async () => {
     const trimmedLabel = defectLabel.trim();
-    if (!trimmedLabel || !inspectionDetailId) {
+    if (!trimmedLabel) {
       alert("Escribe una descripción del defecto");
+      return;
+    }
+    const parsedQuantity = Number(quantity);
+    if (!quantity || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+      alert("La cantidad debe ser mayor que cero");
       return;
     }
 
@@ -174,31 +246,103 @@ export function DefectsSection({
     setUploadProgress(0);
 
     try {
-      let evidenceUrl: string | undefined;
+      // Editing a defect that was already saved to the database.
+      if (editingSavedId != null) {
+        const existing = incidents.find((i) => i.id === editingSavedId);
+        let newEvidenceUrl: string | undefined;
+        if (evidenceFile) {
+          newEvidenceUrl = await uploadFile(
+            evidenceFile,
+            `defects/${inspectionDetailId}`,
+            (progress) => setUploadProgress(progress.progress)
+          );
+        }
 
-      // Upload evidence file if provided
+        const result = await updateIncident(editingSavedId, {
+          defect_id: selectedDefectId ? Number(selectedDefectId) : null,
+          defect_label: trimmedLabel,
+          quantity: parsedQuantity,
+          ...(newEvidenceUrl ? { evidence_url: newEvidenceUrl } : {}),
+        });
+
+        if (result.success) {
+          if (newEvidenceUrl && existing?.evidence_url) {
+            await deleteMediaIfExists(existing.evidence_url);
+          }
+          const incidentsData = await fetchIncidentsByDetail(inspectionDetailId!);
+          setIncidents(incidentsData);
+          setIsModalOpen(false);
+          resetModal();
+        } else {
+          alert(result.error || "Error al actualizar defecto");
+        }
+        return;
+      }
+
+      // Editing a defect that hasn't been saved yet (create-mode).
+      if (editingPendingId != null) {
+        setPendingDefects((prev) =>
+          prev.map((p) =>
+            p.tempId === editingPendingId
+              ? {
+                  ...p,
+                  defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
+                  defect_label: trimmedLabel,
+                  quantity: parsedQuantity,
+                  evidenceFile: evidenceFile ?? undefined,
+                  evidencePreview,
+                }
+              : p
+          )
+        );
+        setIsModalOpen(false);
+        resetModal();
+        return;
+      }
+
+      // Adding a brand new defect.
+      if (isPendingMode) {
+        // No detail id yet - keep it in memory, upload/save happens on
+        // commitPendingDefects once the parent form creates the detail.
+        setPendingDefects((prev) => [
+          ...prev,
+          {
+            tempId:
+              typeof crypto !== "undefined" && crypto.randomUUID
+                ? crypto.randomUUID()
+                : `pending-${Date.now()}-${Math.random()}`,
+            defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
+            defect_label: trimmedLabel,
+            quantity: parsedQuantity,
+            evidenceFile: evidenceFile ?? undefined,
+            evidencePreview,
+          },
+        ]);
+        setIsModalOpen(false);
+        resetModal();
+        return;
+      }
+
+      // Detail already exists - save immediately as before.
+      let evidenceUrl: string | undefined;
       if (evidenceFile) {
         evidenceUrl = await uploadFile(
           evidenceFile,
           `defects/${inspectionDetailId}`,
-          (progress) => {
-            setUploadProgress(progress.progress);
-          }
+          (progress) => setUploadProgress(progress.progress)
         );
       }
 
-      // Create incident - defect_id (catalog) is optional, defect_label (free text) is what's required
       const result = await createIncident({
         defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
         defect_label: trimmedLabel,
-        inspection_detail_id: inspectionDetailId,
-        quantity: quantity ? Number(quantity) : undefined,
+        inspection_detail_id: inspectionDetailId!,
+        quantity: parsedQuantity,
         evidence_url: evidenceUrl,
       });
 
       if (result.success) {
-        // Reload incidents
-        const incidentsData = await fetchIncidentsByDetail(inspectionDetailId);
+        const incidentsData = await fetchIncidentsByDetail(inspectionDetailId!);
         setIncidents(incidentsData);
         setIsModalOpen(false);
         resetModal();
@@ -206,14 +350,14 @@ export function DefectsSection({
         alert(result.error || "Error al crear incidente");
       }
     } catch (error) {
-      console.error("Error creating incident:", error);
-      alert("Error al crear incidente");
+      console.error("Error saving defect:", error);
+      alert("Error al guardar defecto");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (incidentId: number) => {
+  const handleDeleteSaved = async (incidentId: number) => {
     if (!confirm("¿Estás seguro de eliminar este defecto?")) return;
 
     setDeletingId(incidentId);
@@ -230,6 +374,15 @@ export function DefectsSection({
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const handleDeletePending = (tempId: string) => {
+    if (!confirm("¿Estás seguro de eliminar este defecto?")) return;
+    setPendingDefects((prev) => {
+      const target = prev.find((p) => p.tempId === tempId);
+      if (target?.evidencePreview) URL.revokeObjectURL(target.evidencePreview);
+      return prev.filter((p) => p.tempId !== tempId);
+    });
   };
 
   // Removes only the evidence file from an already-saved defect (e.g. it was
@@ -256,6 +409,37 @@ export function DefectsSection({
     }
   };
 
+  // Called by the parent form right after it creates the inspection detail -
+  // uploads evidence and creates an incident for every defect gathered while
+  // the detail didn't exist yet.
+  const commitPendingDefects = useCallback(
+    async (newDetailId: number): Promise<string[]> => {
+      const failed: string[] = [];
+      for (const pending of pendingDefects) {
+        try {
+          let evidenceUrl: string | undefined;
+          if (pending.evidenceFile) {
+            evidenceUrl = await uploadFile(pending.evidenceFile, `defects/${newDetailId}`);
+          }
+          const result = await createIncident({
+            defect_id: pending.defect_id,
+            defect_label: pending.defect_label,
+            inspection_detail_id: newDetailId,
+            quantity: pending.quantity,
+            evidence_url: evidenceUrl,
+          });
+          if (!result.success) failed.push(pending.defect_label);
+        } catch {
+          failed.push(pending.defect_label);
+        }
+      }
+      return failed;
+    },
+    [pendingDefects]
+  );
+
+  useImperativeHandle(ref, () => ({ commitPendingDefects }), [commitPendingDefects]);
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-4">
@@ -264,110 +448,164 @@ export function DefectsSection({
     );
   }
 
+  const entryCount = isPendingMode ? pendingDefects.length : incidents.length;
+
   return (
     <div className="space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-amber-500" />
-          Defectos Encontrados ({incidents.length})
+          Defectos Encontrados ({entryCount})
         </Label>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          onClick={handleOpenModal}
-          disabled={disabled || !inspectionDetailId}
+          onClick={handleOpenAddModal}
+          disabled={disabled}
         >
           <Plus className="h-4 w-4 mr-1" />
           Agregar
         </Button>
       </div>
 
-      {/* Incidents List */}
-      {incidents.length === 0 ? (
+      {/* Entries list */}
+      {entryCount === 0 ? (
         <div className="text-center py-4 text-sm text-muted-foreground border rounded-lg bg-muted/20">
-          {inspectionDetailId
-            ? "No se han registrado defectos"
-            : "Guarda el detalle de inspección para agregar defectos"}
+          No se han registrado defectos
         </div>
       ) : (
         <div className="space-y-2">
-          {incidents.map((incident) => (
-            <div
-              key={incident.id}
-              className="flex items-center gap-3 p-3 border rounded-lg bg-card"
-            >
-              {/* Evidence thumbnail - optional, one image represents the whole defect/quantity */}
-              {incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) ? (
-                <div className="relative flex-shrink-0">
-                  <MediaItem
-                    mediaId={incident.evidence_url}
-                    size="sm"
-                  />
-                  {!disabled && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="icon"
-                      className="absolute -right-2 -top-2 h-5 w-5 rounded-full"
-                      onClick={() => handleRemoveEvidence(incident)}
-                      disabled={removingEvidenceId === incident.id}
-                      title="Eliminar evidencia"
-                    >
-                      {removingEvidenceId === incident.id ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <X className="h-3 w-3" />
-                      )}
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
-                  <FileIcon className="h-5 w-5 text-muted-foreground" />
-                </div>
-              )}
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">
-                  {incident.defect_name}
-                </p>
-                {incident.quantity && (
-                  <p className="text-xs text-muted-foreground">
-                    Cantidad: {incident.quantity}
-                  </p>
-                )}
-              </div>
-
-              {/* Delete button */}
-              {!disabled && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:text-destructive"
-                  onClick={() => handleDelete(incident.id)}
-                  disabled={deletingId === incident.id}
+          {isPendingMode
+            ? pendingDefects.map((pending) => (
+                <div
+                  key={pending.tempId}
+                  className="flex items-center gap-3 p-3 border rounded-lg bg-card"
                 >
-                  {deletingId === incident.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  {pending.evidencePreview ? (
+                    <img
+                      src={pending.evidencePreview}
+                      alt="Evidencia"
+                      className="h-12 w-12 rounded border object-cover flex-shrink-0"
+                    />
                   ) : (
-                    <Trash2 className="h-4 w-4" />
+                    <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
+                      <FileIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
                   )}
-                </Button>
-              )}
-            </div>
-          ))}
+
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{pending.defect_label}</p>
+                    <p className="text-xs text-muted-foreground">Cantidad: {pending.quantity}</p>
+                  </div>
+
+                  {!disabled && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleOpenEditPending(pending)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => handleDeletePending(pending.tempId)}
+                        disabled={deletingId === pending.tempId}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))
+            : incidents.map((incident) => (
+                <div
+                  key={incident.id}
+                  className="flex items-center gap-3 p-3 border rounded-lg bg-card"
+                >
+                  {/* Evidence thumbnail - optional, one image represents the whole defect/quantity */}
+                  {incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) ? (
+                    <div className="relative flex-shrink-0">
+                      <MediaItem mediaId={incident.evidence_url} size="sm" />
+                      {!disabled && (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="icon"
+                          className="absolute -right-2 -top-2 h-5 w-5 rounded-full"
+                          onClick={() => handleRemoveEvidence(incident)}
+                          disabled={removingEvidenceId === incident.id}
+                          title="Eliminar evidencia"
+                        >
+                          {removingEvidenceId === incident.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <X className="h-3 w-3" />
+                          )}
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-12 h-12 rounded border bg-muted flex items-center justify-center flex-shrink-0">
+                      <FileIcon className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{incident.defect_name}</p>
+                    {incident.quantity != null && (
+                      <p className="text-xs text-muted-foreground">
+                        Cantidad: {incident.quantity}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Edit / Delete buttons */}
+                  {!disabled && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleOpenEditSaved(incident)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => handleDeleteSaved(incident.id)}
+                        disabled={deletingId === incident.id}
+                      >
+                        {deletingId === incident.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              ))}
         </div>
       )}
 
-      {/* Add Defect Modal */}
+      {/* Add/Edit Defect Modal */}
       <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Agregar Defecto</DialogTitle>
+            <DialogTitle>{isEditing ? "Editar Defecto" : "Agregar Defecto"}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-4">
@@ -408,7 +646,7 @@ export function DefectsSection({
 
             {/* Quantity */}
             <div className="space-y-2">
-              <Label htmlFor="quantity">Cantidad</Label>
+              <Label htmlFor="quantity">Cantidad *</Label>
               <Input
                 id="quantity"
                 type="number"
@@ -508,4 +746,5 @@ export function DefectsSection({
       </Dialog>
     </div>
   );
-}
+  }
+);
