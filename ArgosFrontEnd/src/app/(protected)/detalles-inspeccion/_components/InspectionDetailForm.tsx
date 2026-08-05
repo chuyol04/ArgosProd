@@ -28,6 +28,7 @@ import {
   fetchInspectorsForSelect,
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
 import { DefectsSection, DefectsSectionHandle } from "./DefectsSection";
+import { SerialNumbersInput } from "./SerialNumbersInput";
 import {
   toDateInputValue,
   toTimeInputValue,
@@ -45,7 +46,7 @@ type Mode = "view" | "edit" | "create";
 // Fields that must be filled before saving, in the same top-to-bottom order
 // they appear in the form - used to jump to the first one that fails.
 type RequiredField =
-  | "serial_number"
+  | "serial_numbers"
   | "lot_number"
   | "inspector_id"
   | "shift"
@@ -55,7 +56,7 @@ type RequiredField =
   | "end_time";
 
 const REQUIRED_FIELD_ORDER: RequiredField[] = [
-  "serial_number",
+  "serial_numbers",
   "lot_number",
   "inspector_id",
   "shift",
@@ -66,12 +67,15 @@ const REQUIRED_FIELD_ORDER: RequiredField[] = [
 ];
 
 function validateFormData(
-  data: IInspectionDetailFormData
+  data: IInspectionDetailFormData,
+  serialNumbersCount: number
 ): Partial<Record<RequiredField, string>> {
   const errors: Partial<Record<RequiredField, string>> = {};
   const REQUIRED_MESSAGE = "Este campo es obligatorio.";
 
-  if (!data.serial_number?.trim()) errors.serial_number = REQUIRED_MESSAGE;
+  if (serialNumbersCount === 0) {
+    errors.serial_numbers = "Debe agregar al menos un número de serie.";
+  }
   if (!data.lot_number?.trim()) errors.lot_number = REQUIRED_MESSAGE;
   if (!data.inspector_id) errors.inspector_id = REQUIRED_MESSAGE;
 
@@ -200,7 +204,7 @@ export default function InspectionDetailForm({
 
   const [formData, setFormData] = useState<IInspectionDetailFormData>({
     inspection_report_id: detail?.inspection_report_id || reportId || 0,
-    serial_number: detail?.serial_number ?? "",
+    serial_numbers: [],
     lot_number: detail?.lot_number ?? "",
     inspector_id: detail?.inspector_id ?? undefined,
     hours: detail?.hours ?? undefined,
@@ -255,7 +259,7 @@ export default function InspectionDetailForm({
 
   const handleInputChange = (
     field: keyof IInspectionDetailFormData,
-    value: string | number | undefined
+    value: string | number | string[] | undefined
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -277,7 +281,20 @@ export default function InspectionDetailForm({
     [formData.start_time, formData.end_time]
   );
 
-  const fieldErrors = useMemo(() => validateFormData(formData), [formData]);
+  // Saved-mode serial number count, reported up by SerialNumbersInput - only
+  // relevant when editing an existing detail (pending-mode count instead
+  // comes straight from formData.serial_numbers).
+  const [savedSerialNumbersCount, setSavedSerialNumbersCount] = useState(
+    detail?.serial_numbers?.length ?? 0
+  );
+  const serialNumbersCount = detail
+    ? savedSerialNumbersCount
+    : formData.serial_numbers?.length ?? 0;
+
+  const fieldErrors = useMemo(
+    () => validateFormData(formData, serialNumbersCount),
+    [formData, serialNumbersCount]
+  );
   const showError = (field: RequiredField) =>
     touched[field] || submitAttempted ? fieldErrors[field] : undefined;
 
@@ -330,7 +347,7 @@ export default function InspectionDetailForm({
   const handleSave = () => {
     setError(null);
 
-    const errors = validateFormData(formData);
+    const errors = validateFormData(formData, serialNumbersCount);
     if (Object.keys(errors).length > 0) {
       setSubmitAttempted(true);
       const firstErrorField = REQUIRED_FIELD_ORDER.find((f) => errors[f]);
@@ -405,7 +422,7 @@ export default function InspectionDetailForm({
       setMode("view");
       setFormData({
         inspection_report_id: detail?.inspection_report_id || 0,
-        serial_number: detail?.serial_number ?? "",
+        serial_numbers: [],
         lot_number: detail?.lot_number ?? "",
         inspector_id: detail?.inspector_id ?? undefined,
         hours: detail?.hours ?? undefined,
@@ -576,25 +593,42 @@ export default function InspectionDetailForm({
           <CardTitle className="text-sm font-medium">Identificación</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Serial and Lot Number - Full Width */}
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            <FormField
-              label="Número de Serie *"
-              value={detail?.serial_number}
-              isReadOnly={isReadOnly}
-              error={showError("serial_number")}
-              fieldRef={setFieldRef("serial_number")}
-            >
-              <Input
-                value={formData.serial_number || ""}
-                onChange={(e) => handleInputChange("serial_number", e.target.value)}
-                onBlur={() => handleBlurField("serial_number")}
-                placeholder="Ej: SN-001-ABCD-1234-XYZ"
-                className="font-mono"
-                aria-invalid={!!showError("serial_number")}
+          {/* Serial Numbers - a box can relate to several, full width so the
+              tag list has room without cramping the rest of the section. */}
+          <div ref={setFieldRef("serial_numbers")} className="space-y-1.5">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Número de Serie *
+            </p>
+            {isReadOnly ? (
+              detail?.serial_numbers && detail.serial_numbers.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {detail.serial_numbers.map((s) => (
+                    <span
+                      key={s.id}
+                      className="rounded-full border bg-muted px-2.5 py-1 text-xs font-mono"
+                    >
+                      {s.serial_number}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm font-medium text-foreground">-</p>
+              )
+            ) : (
+              <SerialNumbersInput
+                inspectionDetailId={detail?.id ?? null}
+                disabled={!canEdit}
+                error={showError("serial_numbers")}
+                pendingValues={formData.serial_numbers ?? []}
+                onPendingValuesChange={(values) => handleInputChange("serial_numbers", values)}
+                initialSerialNumbers={detail?.serial_numbers ?? []}
+                onCountChange={setSavedSerialNumbersCount}
               />
-            </FormField>
+            )}
+          </div>
 
+          {/* Lot Number */}
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             <FormField
               label="Número de Lote *"
               value={detail?.lot_number}

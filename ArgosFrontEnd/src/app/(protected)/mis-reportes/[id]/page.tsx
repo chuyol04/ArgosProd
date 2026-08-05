@@ -134,7 +134,11 @@ export default async function MisReporteDetallePage({ params }: Props) {
                   <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                     <div>
                       <p className="text-muted-foreground text-xs"># Serie</p>
-                      <p>{detail.serial_number || "-"}</p>
+                      <p>
+                        {detail.serial_numbers.length > 0
+                          ? detail.serial_numbers.map((s) => s.serial_number).join(", ")
+                          : "-"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs"># Lote</p>

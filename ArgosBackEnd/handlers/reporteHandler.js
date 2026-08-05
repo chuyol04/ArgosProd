@@ -192,7 +192,7 @@ export async function getReporteById(req, res) {
     const [inspections] = await MysqlClient.execute(`
       SELECT
         idt.id,
-        idt.serial_number, idt.lot_number, idt.inspector_id, u.name as inspector_name,
+        idt.lot_number, idt.inspector_id, u.name as inspector_name,
         idt.inspection_date, idt.manufacture_date, idt.shift, idt.hours,
         idt.inspected_pieces, idt.accepted_pieces, idt.rejected_pieces, idt.reworked_pieces
       FROM inspection_details idt
@@ -200,6 +200,28 @@ export async function getReporteById(req, res) {
       WHERE idt.inspection_report_id = ?
       ORDER BY idt.inspection_date DESC
     `, [id]);
+
+    // A box can relate to several serial numbers - attach them as an array
+    // per inspection, same shape as `getDetalleInspeccionById`.
+    if (inspections.length > 0) {
+      const detailIds = inspections.map((d) => d.id);
+      const placeholders = detailIds.map(() => '?').join(',');
+      const [serialRows] = await MysqlClient.execute(
+        `SELECT inspection_detail_id, id, serial_number
+         FROM inspection_detail_serial_numbers
+         WHERE inspection_detail_id IN (${placeholders})
+         ORDER BY id ASC`,
+        detailIds
+      );
+      const serialsByDetail = new Map();
+      for (const s of serialRows) {
+        if (!serialsByDetail.has(s.inspection_detail_id)) serialsByDetail.set(s.inspection_detail_id, []);
+        serialsByDetail.get(s.inspection_detail_id).push({ id: s.id, serial_number: s.serial_number });
+      }
+      for (const inspection of inspections) {
+        inspection.serial_numbers = serialsByDetail.get(inspection.id) || [];
+      }
+    }
 
     return res.status(200).json({ success: true, data: { report, inspections } });
   } catch (error) {
@@ -318,7 +340,10 @@ export async function exportReporteToExcel(req, res) {
     const [inspections] = await MysqlClient.execute(`
       SELECT
         idt.*,
-        u.name AS inspector_name
+        u.name AS inspector_name,
+        (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
+         FROM inspection_detail_serial_numbers sn
+         WHERE sn.inspection_detail_id = idt.id) AS serial_numbers_list
       FROM inspection_details idt
       LEFT JOIN users u ON u.id = idt.inspector_id
       WHERE idt.inspection_report_id = ?
@@ -437,7 +462,7 @@ export async function exportReporteToExcel(req, res) {
           formatTimeOnly(detail.end_time),
           detail.hours ?? '-',
           report.part_name,
-          detail.serial_number || '-',
+          detail.serial_numbers_list || '-',
           detail.lot_number || '-',
           formatDateOnlyEs(detail.manufacture_date),
           boxLabel,

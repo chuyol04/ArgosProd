@@ -9,6 +9,7 @@ TRUNCATE TABLE favorite_routes;
 TRUNCATE TABLE user_roles;
 TRUNCATE TABLE roles;
 TRUNCATE TABLE incidents;
+TRUNCATE TABLE inspection_detail_serial_numbers;
 TRUNCATE TABLE inspection_details;
 TRUNCATE TABLE inspection_reports;
 TRUNCATE TABLE work_instruction_evidence;
@@ -91,17 +92,29 @@ INSERT INTO inspection_reports (id, work_instruction_id, start_date, po_number, 
 -- 10. inspection_details
 INSERT INTO inspection_details (
     id, inspection_report_id, inspector_id,
-    serial_number, lot_number,
+    lot_number,
     inspected_pieces, accepted_pieces, rejected_pieces, reworked_pieces,
     week, inspection_date, manufacture_date,
     hours, start_time, end_time, shift, comments
 ) VALUES
-(1, 1, 2, 'SN001', 'LOT001', 100,  95,  5, 0, 2,  '2024-01-10', '2024-01-05', 2.5, '09:00:00', '11:30:00', 'Morning',   '5 pieces rejected — scratches'),
-(2, 1, 2, 'SN002', 'LOT001', 80,   78,  2, 0, 2,  '2024-01-10', '2024-01-05', 2.0, '11:30:00', '13:30:00', 'Morning',   '2 pieces rejected — dents'),
-(3, 2, 3, 'SN003', 'LOT002', 150, 148,  2, 1, 12, '2024-03-20', '2024-03-10', 3.0, '14:00:00', '17:00:00', 'Afternoon', '1 reworked successfully'),
-(4, 3, 2, 'SN004', 'LOT003', 200, 195,  5, 3, 15, '2024-04-05', '2024-04-01', 4.0, '07:00:00', '11:00:00', 'Morning',   '3 reworked, 2 scrapped'),
-(5, 4, 3, 'SN005', 'LOT004', 300, 297,  3, 2, 20, '2024-05-12', '2024-05-08', 5.0, '08:00:00', '13:00:00', 'Morning',   'Minor burrs on edges'),
-(6, 5, 2, 'SN006', 'LOT005', 500, 497,  3, 0, 23, '2024-06-01', '2024-05-28', 6.0, '06:00:00', '12:00:00', 'Morning',   '3 wrong color, returned to supplier');
+(1, 1, 2, 'LOT001', 100,  95,  5, 0, 2,  '2024-01-10', '2024-01-05', 2.5, '09:00:00', '11:30:00', 'Morning',   '5 pieces rejected — scratches'),
+(2, 1, 2, 'LOT001', 80,   78,  2, 0, 2,  '2024-01-10', '2024-01-05', 2.0, '11:30:00', '13:30:00', 'Morning',   '2 pieces rejected — dents'),
+(3, 2, 3, 'LOT002', 150, 148,  2, 1, 12, '2024-03-20', '2024-03-10', 3.0, '14:00:00', '17:00:00', 'Afternoon', '1 reworked successfully'),
+(4, 3, 2, 'LOT003', 200, 195,  5, 3, 15, '2024-04-05', '2024-04-01', 4.0, '07:00:00', '11:00:00', 'Morning',   '3 reworked, 2 scrapped'),
+(5, 4, 3, 'LOT004', 300, 297,  3, 2, 20, '2024-05-12', '2024-05-08', 5.0, '08:00:00', '13:00:00', 'Morning',   'Minor burrs on edges'),
+(6, 5, 2, 'LOT005', 500, 497,  3, 0, 23, '2024-06-01', '2024-05-28', 6.0, '06:00:00', '12:00:00', 'Morning',   '3 wrong color, returned to supplier');
+
+-- 10b. inspection_detail_serial_numbers
+INSERT INTO inspection_detail_serial_numbers (inspection_detail_id, serial_number) VALUES
+(1, 'SN001'),
+(2, 'SN002'),
+(3, 'SN003A'),
+(3, 'SN003B'),
+(4, 'SN004'),
+(5, 'SN005'),
+(6, 'SN006A'),
+(6, 'SN006B'),
+(6, 'SN006C');
 
 -- 11. incidents
 INSERT INTO incidents (id, inspection_detail_id, defect_id, quantity, evidence_url) VALUES

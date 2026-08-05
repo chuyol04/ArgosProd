@@ -447,7 +447,9 @@ export default function ReportModal({
                                     {detail.id}
                                   </td>
                                   <td className="text-card-foreground px-4 py-2 text-xs">
-                                    {detail.serial_number || detail.lot_number || "-"}
+                                    {detail.serial_numbers.length > 0
+                                      ? detail.serial_numbers.map((s) => s.serial_number).join(", ")
+                                      : detail.lot_number || "-"}
                                   </td>
                                   <td className="text-card-foreground px-4 py-2 text-xs">
                                     {formatDate(detail.inspection_date)}

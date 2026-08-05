@@ -3,12 +3,27 @@ import { isManagerOrAbove, isClientRole } from '../lib/constants/roles.js';
 import userHelper from '../lib/helpers/userHelpers.js';
 import { sanitizeDateField, sanitizeTimeField, todayLocalDateString } from '../lib/helpers/dateTimeHelpers.js';
 
+const MAX_SERIAL_NUMBERS = 20;
+
+// Trims, uppercases and de-duplicates a raw list of serial numbers, dropping
+// empty entries and capping at MAX_SERIAL_NUMBERS - used by both `create`
+// (bulk insert) and `addSerialNumber` (single insert, dedup against existing).
+function sanitizeSerialNumbers(rawList) {
+  if (!Array.isArray(rawList)) return [];
+  const seen = new Set();
+  for (const raw of rawList) {
+    const trimmed = typeof raw === 'string' ? raw.trim().toUpperCase() : '';
+    if (trimmed) seen.add(trimmed);
+    if (seen.size >= MAX_SERIAL_NUMBERS) break;
+  }
+  return [...seen];
+}
+
 // CREATE
 export async function createDetalleInspeccion(req, res) {
   try {
     const {
       inspection_report_id,
-      serial_number,
       lot_number,
       inspector_id,
       hours,
@@ -22,7 +37,8 @@ export async function createDetalleInspeccion(req, res) {
       reworked_pieces,
       start_time,
       end_time,
-      shift
+      shift,
+      serial_numbers
     } = req.body || {};
 
     if (!inspection_report_id) {
@@ -47,22 +63,101 @@ export async function createDetalleInspeccion(req, res) {
 
     const [result] = await MysqlClient.execute(
       `INSERT INTO inspection_details (
-        inspection_report_id, serial_number, lot_number, inspector_id, hours, week,
+        inspection_report_id, lot_number, inspector_id, hours, week,
         inspection_date, manufacture_date, comments, inspected_pieces,
         accepted_pieces, rejected_pieces, reworked_pieces,
         start_time, end_time, shift
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        inspection_report_id, serial_number || null, lot_number || null, inspector_id || null, hours || null, week || null,
+        inspection_report_id, lot_number || null, inspector_id || null, hours || null, week || null,
         safeInspectionDate, safeManufactureDate, comments || null, inspected_pieces || null,
         accepted_pieces || null, rejected_pieces || null, reworked_pieces || null,
         safeStartTime, safeEndTime, shift || null
       ]
     );
 
+    // A box can relate to several serial numbers - inserted together with the
+    // detail itself so the create screen never needs a save-then-edit round trip.
+    const cleanSerials = sanitizeSerialNumbers(serial_numbers);
+    for (const serial of cleanSerials) {
+      await MysqlClient.execute(
+        'INSERT IGNORE INTO inspection_detail_serial_numbers (inspection_detail_id, serial_number) VALUES (?, ?)',
+        [result.insertId, serial]
+      );
+    }
+
     return res.status(201).json({ success: true, id: result.insertId, motive: 'Inspection detail created' });
   } catch (error) {
     console.error('Error creating Inspection Detail:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// Add one serial number to an existing inspection detail (edit-mode flow -
+// mirrors how defects/incidents are added one at a time after creation).
+export async function addSerialNumber(req, res) {
+  try {
+    const { id } = req.params;
+    const { serial_number } = req.body || {};
+    const trimmed = typeof serial_number === 'string' ? serial_number.trim().toUpperCase() : '';
+
+    if (!trimmed) {
+      return res.status(400).json({ success: false, motive: 'serial_number is required' });
+    }
+
+    const [detailRows] = await MysqlClient.execute(
+      'SELECT id FROM inspection_details WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (detailRows.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Inspection detail not found' });
+    }
+
+    const [[{ total }]] = await MysqlClient.execute(
+      'SELECT COUNT(*) AS total FROM inspection_detail_serial_numbers WHERE inspection_detail_id = ?',
+      [id]
+    );
+    if (total >= MAX_SERIAL_NUMBERS) {
+      return res.status(400).json({
+        success: false,
+        motive: `Se permite un máximo de ${MAX_SERIAL_NUMBERS} números de serie`
+      });
+    }
+
+    const [dup] = await MysqlClient.execute(
+      'SELECT id FROM inspection_detail_serial_numbers WHERE inspection_detail_id = ? AND serial_number = ? LIMIT 1',
+      [id, trimmed]
+    );
+    if (dup.length > 0) {
+      return res.status(409).json({ success: false, motive: 'Este número de serie ya fue agregado' });
+    }
+
+    const [result] = await MysqlClient.execute(
+      'INSERT INTO inspection_detail_serial_numbers (inspection_detail_id, serial_number) VALUES (?, ?)',
+      [id, trimmed]
+    );
+
+    return res.status(201).json({ success: true, id: result.insertId, serial_number: trimmed });
+  } catch (error) {
+    console.error('Error adding serial number:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// Remove one serial number from an existing inspection detail.
+export async function deleteSerialNumber(req, res) {
+  try {
+    const { id, serialId } = req.params;
+    const [result] = await MysqlClient.execute(
+      'DELETE FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ?',
+      [serialId, id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, motive: 'Serial number not found' });
+    }
+    return res.status(200).json({ success: true, motive: 'Serial number deleted' });
+  } catch (error) {
+    console.error('Error deleting serial number:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
   }
 }
@@ -114,6 +209,27 @@ export async function getDetallesInspeccion(req, res) {
     query += ' ORDER BY idt.inspection_date DESC';
 
     const [rows] = await MysqlClient.execute(query, params);
+
+    if (rows.length > 0) {
+      const detailIds = rows.map((r) => r.id);
+      const placeholders = detailIds.map(() => '?').join(',');
+      const [serialRows] = await MysqlClient.execute(
+        `SELECT inspection_detail_id, id, serial_number
+         FROM inspection_detail_serial_numbers
+         WHERE inspection_detail_id IN (${placeholders})
+         ORDER BY id ASC`,
+        detailIds
+      );
+      const serialsByDetail = new Map();
+      for (const s of serialRows) {
+        if (!serialsByDetail.has(s.inspection_detail_id)) serialsByDetail.set(s.inspection_detail_id, []);
+        serialsByDetail.get(s.inspection_detail_id).push({ id: s.id, serial_number: s.serial_number });
+      }
+      for (const row of rows) {
+        row.serial_numbers = serialsByDetail.get(row.id) || [];
+      }
+    }
+
     return res.status(200).json({ success: true, data: rows });
   } catch (error) {
     console.error('Error getting inspection details:', error);
@@ -156,7 +272,12 @@ export async function getDetalleInspeccionById(req, res) {
       return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
     }
 
-    return res.status(200).json({ success: true, data: rows[0] });
+    const [serialRows] = await MysqlClient.execute(
+      'SELECT id, serial_number FROM inspection_detail_serial_numbers WHERE inspection_detail_id = ? ORDER BY id ASC',
+      [id]
+    );
+
+    return res.status(200).json({ success: true, data: { ...rows[0], serial_numbers: serialRows } });
   } catch (error) {
     console.error('Error getting inspection detail by ID:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
@@ -211,7 +332,7 @@ export async function updateDetalleInspeccion(req, res) {
     }
 
     const fields = [
-      'inspection_report_id','serial_number','lot_number','inspector_id','hours','week',
+      'inspection_report_id','lot_number','inspector_id','hours','week',
       'inspection_date','manufacture_date','comments','inspected_pieces',
       'accepted_pieces','rejected_pieces','reworked_pieces',
       'start_time','end_time','shift'

@@ -175,6 +175,94 @@ export async function deleteInspectionDetail(
   }
 }
 
+export async function addSerialNumber(
+  inspectionDetailId: number,
+  serialNumber: string
+): Promise<{ success: boolean; id?: number; serial_number?: string; error?: string }> {
+  try {
+    if (!EXPRESS_BASE_URL) {
+      throw new Error("EXPRESS_BASE_URL is not defined");
+    }
+
+    const cookieStore = await cookies();
+    const session = cookieStore.get("session")?.value;
+
+    if (!session) {
+      throw new Error("No session cookie");
+    }
+
+    const res = await fetch(
+      `${EXPRESS_BASE_URL}/inspection-details/${inspectionDetailId}/serial-numbers`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `session=${session}`,
+        },
+        body: JSON.stringify({ serial_number: serialNumber }),
+      }
+    );
+
+    const json = await res.json();
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.motive || "Failed to add serial number");
+    }
+
+    revalidatePath("/detalles-inspeccion");
+    return { success: true, id: json.id, serial_number: json.serial_number };
+  } catch (err) {
+    console.error("Add serial number error:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
+}
+
+export async function deleteSerialNumber(
+  inspectionDetailId: number,
+  serialId: number
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!EXPRESS_BASE_URL) {
+      throw new Error("EXPRESS_BASE_URL is not defined");
+    }
+
+    const cookieStore = await cookies();
+    const session = cookieStore.get("session")?.value;
+
+    if (!session) {
+      throw new Error("No session cookie");
+    }
+
+    const res = await fetch(
+      `${EXPRESS_BASE_URL}/inspection-details/${inspectionDetailId}/serial-numbers/${serialId}`,
+      {
+        method: "DELETE",
+        headers: {
+          Cookie: `session=${session}`,
+        },
+      }
+    );
+
+    const json = await res.json();
+
+    if (!res.ok || !json.success) {
+      throw new Error(json.motive || "Failed to delete serial number");
+    }
+
+    revalidatePath("/detalles-inspeccion");
+    return { success: true };
+  } catch (err) {
+    console.error("Delete serial number error:", err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Unknown error",
+    };
+  }
+}
+
 export async function fetchInspectorsForSelect(workInstructionId?: number): Promise<IInspector[]> {
   try {
     if (!EXPRESS_BASE_URL) {

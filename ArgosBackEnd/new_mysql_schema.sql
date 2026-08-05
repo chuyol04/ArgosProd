@@ -98,7 +98,6 @@ CREATE TABLE inspection_details (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inspection_report_id INT NOT NULL,
     inspector_id INT NOT NULL, -- Assumes 'inspector_id' is a 'user_id'.
-    serial_number VARCHAR(50),
     lot_number VARCHAR(50),
     inspected_pieces INT,
     accepted_pieces INT,
@@ -114,6 +113,18 @@ CREATE TABLE inspection_details (
     comments TEXT,
     FOREIGN KEY (inspection_report_id) REFERENCES inspection_reports(id),
     FOREIGN KEY (inspector_id) REFERENCES users(id)
+);
+
+-- -----------------------------------------------------
+-- Table `inspection_detail_serial_numbers`
+-- One inspection detail (box) can relate to several serial numbers.
+-- -----------------------------------------------------
+CREATE TABLE inspection_detail_serial_numbers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    inspection_detail_id INT NOT NULL,
+    serial_number VARCHAR(50) NOT NULL,
+    FOREIGN KEY (inspection_detail_id) REFERENCES inspection_details(id) ON DELETE CASCADE,
+    UNIQUE KEY uq_inspection_detail_serial (inspection_detail_id, serial_number)
 );
 
 -- -----------------------------------------------------

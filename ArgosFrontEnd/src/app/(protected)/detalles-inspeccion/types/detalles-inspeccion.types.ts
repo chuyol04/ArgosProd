@@ -1,8 +1,15 @@
+export interface ISerialNumber {
+  id: number;
+  serial_number: string;
+}
+
 // Base inspection detail fields (from DB)
 export interface IInspectionDetail {
   id: number;
   inspection_report_id: number;
-  serial_number: string | null;
+  /** A box can relate to several serial numbers - stored in its own table
+   * (`inspection_detail_serial_numbers`), never as a single/CSV column. */
+  serial_numbers: ISerialNumber[];
   lot_number: string | null;
   inspector_id: number | null;
   hours: number | null;
@@ -44,7 +51,10 @@ export interface IInspectionDetailExtended extends IInspectionDetail {
 // Form data for create/update
 export interface IInspectionDetailFormData {
   inspection_report_id: number;
-  serial_number?: string;
+  /** Only used on create: the box's serial numbers gathered before it has an
+   * id yet, inserted together with the detail itself. Existing details add/
+   * remove serial numbers one at a time via dedicated endpoints instead. */
+  serial_numbers?: string[];
   lot_number?: string;
   inspector_id?: number;
   hours?: number;

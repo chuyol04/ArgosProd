@@ -52,7 +52,8 @@ export interface UpdateInspectionReportData {
 // Inspection detail associated with a report
 export interface IInspectionDetail {
   id: number;
-  serial_number: string | null;
+  /** A box can relate to several serial numbers. */
+  serial_numbers: { id: number; serial_number: string }[];
   lot_number: string | null;
   inspector_id: number;
   inspector_name: string;

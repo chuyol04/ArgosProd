@@ -64,7 +64,9 @@ export async function getIncidencias(req, res) {
       SELECT i.*,
              COALESCE(d.name, i.defect_label) AS defect_name,
              d.description AS defect_description,
-             di.serial_number AS inspection_serial_number,
+             (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
+              FROM inspection_detail_serial_numbers sn
+              WHERE sn.inspection_detail_id = di.id) AS inspection_serial_number,
              di.lot_number AS inspection_lot_number
       FROM incidents i
       LEFT JOIN defects d ON d.id = i.defect_id
@@ -109,7 +111,9 @@ export async function getIncidenciaById(req, res) {
     const [rows] = await MysqlClient.execute(
       `SELECT i.*,
               COALESCE(d.name, i.defect_label) AS defect_name,
-              di.serial_number AS inspection_serial_number,
+              (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
+               FROM inspection_detail_serial_numbers sn
+               WHERE sn.inspection_detail_id = di.id) AS inspection_serial_number,
               di.lot_number AS inspection_lot_number,
               s.client_id AS client_id
        FROM incidents i
