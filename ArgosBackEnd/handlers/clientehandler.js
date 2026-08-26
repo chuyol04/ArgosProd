@@ -101,6 +101,26 @@ export async function deleteCliente(req, res) {
       return res.status(404).json({ success: false, motive: 'Cliente no encontrado' });
     }
 
+    const [[services], [users]] = await Promise.all([
+      MysqlClient.execute('SELECT COUNT(*) AS total FROM services WHERE client_id = ?', [id]),
+      MysqlClient.execute('SELECT COUNT(*) AS total FROM users WHERE client_id = ?', [id]),
+    ]);
+
+    if (services[0].total > 0 || users[0].total > 0) {
+      const dependencies = [];
+      if (services[0].total > 0) {
+        dependencies.push(`${services[0].total} servicio(s) asociado(s)`);
+      }
+      if (users[0].total > 0) {
+        dependencies.push(`${users[0].total} usuario(s) asignado(s)`);
+      }
+
+      return res.status(409).json({
+        success: false,
+        motive: `No se puede eliminar este cliente porque tiene ${dependencies.join(' y ')}. Para continuar, elimina primero las incidencias, luego los detalles de inspección, los reportes, las instrucciones de trabajo y los servicios. Reasigna o elimina también los usuarios asignados antes de volver a intentarlo.`,
+      });
+    }
+
     // Delete
     const [result] = await MysqlClient.execute(
       'DELETE FROM clients WHERE id = ?',

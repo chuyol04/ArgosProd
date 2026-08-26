@@ -250,6 +250,17 @@ export async function deleteServicio(req, res) {
       return res.status(404).json({ success: false, motive: 'Service not found' });
     }
 
+    const [workInstructions] = await MysqlClient.execute(
+      'SELECT COUNT(*) AS total FROM work_instructions WHERE service_id = ?',
+      [id]
+    );
+    if (workInstructions[0].total > 0) {
+      return res.status(409).json({
+        success: false,
+        motive: `No se puede eliminar este servicio porque tiene ${workInstructions[0].total} instrucción(es) de trabajo asociada(s). Primero elimina las incidencias, luego los detalles de inspección, los reportes y finalmente las instrucciones de trabajo.`,
+      });
+    }
+
     const [result] = await MysqlClient.execute('DELETE FROM services WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(500).json({ success: false, motive: 'No service was deleted' });

@@ -333,6 +333,31 @@ export async function deleteInstruccionTrabajo(req, res) {
       return res.status(404).json({ success: false, motive: 'Work instruction not found' });
     }
 
+    const [[reports], [evidence]] = await Promise.all([
+      MysqlClient.execute(
+        'SELECT COUNT(*) AS total FROM inspection_reports WHERE work_instruction_id = ?',
+        [id]
+      ),
+      MysqlClient.execute(
+        'SELECT COUNT(*) AS total FROM work_instruction_evidence WHERE work_instruction_id = ?',
+        [id]
+      ),
+    ]);
+    if (reports[0].total > 0 || evidence[0].total > 0) {
+      const dependencies = [];
+      if (reports[0].total > 0) {
+        dependencies.push(`${reports[0].total} reporte(s) asociado(s)`);
+      }
+      if (evidence[0].total > 0) {
+        dependencies.push(`${evidence[0].total} archivo(s) o evidencia(s)`);
+      }
+
+      return res.status(409).json({
+        success: false,
+        motive: `No se puede eliminar esta instrucción de trabajo porque tiene ${dependencies.join(' y ')}. Primero elimina las incidencias y los detalles de inspección de cada reporte, después los reportes y los archivos o evidencias asociados.`,
+      });
+    }
+
     const [result] = await MysqlClient.execute('DELETE FROM work_instructions WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(500).json({ success: false, motive: 'No record was deleted' });

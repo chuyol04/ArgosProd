@@ -293,6 +293,17 @@ export async function deleteReporte(req, res) {
       return res.status(404).json({ success: false, motive: 'Report not found' });
     }
 
+    const [details] = await MysqlClient.execute(
+      'SELECT COUNT(*) AS total FROM inspection_details WHERE inspection_report_id = ?',
+      [id]
+    );
+    if (details[0].total > 0) {
+      return res.status(409).json({
+        success: false,
+        motive: `No se puede eliminar este reporte porque tiene ${details[0].total} detalle(s) de inspección asociado(s). Primero elimina las incidencias de cada detalle y después los detalles de inspección.`,
+      });
+    }
+
     const [result] = await MysqlClient.execute('DELETE FROM inspection_reports WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(500).json({ success: false, motive: 'No report was deleted' });

@@ -387,6 +387,17 @@ export async function deleteDetalleInspeccion(req, res) {
       return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
     }
 
+    const [incidents] = await MysqlClient.execute(
+      'SELECT COUNT(*) AS total FROM incidents WHERE inspection_detail_id = ?',
+      [id]
+    );
+    if (incidents[0].total > 0) {
+      return res.status(409).json({
+        success: false,
+        motive: `No se puede eliminar este detalle de inspección porque tiene ${incidents[0].total} incidencia(s) asociada(s). Primero elimina las incidencias y después vuelve a intentarlo.`,
+      });
+    }
+
     const [result] = await MysqlClient.execute('DELETE FROM inspection_details WHERE id = ?', [id]);
     if (result.affectedRows === 0) {
       return res.status(500).json({ success: false, motive: 'No record was deleted' });
