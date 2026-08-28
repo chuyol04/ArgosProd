@@ -77,6 +77,7 @@ export interface IInspectionReportDetails {
 export interface IWorkInstructionOption {
   id: number;
   description: string | null;
+  problem: string | null;
   part_name: string;
   service_name: string;
   client_name: string;

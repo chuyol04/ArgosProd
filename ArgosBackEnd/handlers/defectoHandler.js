@@ -28,7 +28,17 @@ export async function createDefecto(req, res) {
 // READ ALL
 export async function getDefectos(req, res) {
   try {
-    const [rows] = await MysqlClient.execute('SELECT * FROM defects');
+    const { work_instruction_id } = req.query;
+    const [rows] = work_instruction_id
+      ? await MysqlClient.execute(
+          `SELECT d.*
+           FROM defects d
+           INNER JOIN work_instruction_defects wid ON wid.defect_id = d.id
+           WHERE wid.work_instruction_id = ?
+           ORDER BY d.name`,
+          [work_instruction_id]
+        )
+      : await MysqlClient.execute('SELECT * FROM defects ORDER BY name');
     return res.status(200).json({ success: true, data: rows });
   } catch (error) {
     console.error('Error getting defects:', error);

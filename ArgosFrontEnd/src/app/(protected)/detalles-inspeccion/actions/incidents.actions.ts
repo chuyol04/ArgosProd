@@ -42,7 +42,7 @@ export interface UpdateIncidentData {
   evidence_url?: string | null;
 }
 
-export async function fetchDefects(): Promise<IDefect[]> {
+export async function fetchDefects(workInstructionId?: number): Promise<IDefect[]> {
   try {
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
@@ -55,7 +55,8 @@ export async function fetchDefects(): Promise<IDefect[]> {
       throw new Error("No session cookie");
     }
 
-    const res = await fetch(`${EXPRESS_BASE_URL}/defects`, {
+    const query = workInstructionId ? `?work_instruction_id=${workInstructionId}` : "";
+    const res = await fetch(`${EXPRESS_BASE_URL}/defects${query}`, {
       method: "GET",
       headers: {
         Cookie: `session=${session}`,

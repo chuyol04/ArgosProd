@@ -14,6 +14,7 @@ TRUNCATE TABLE inspection_details;
 TRUNCATE TABLE inspection_reports;
 TRUNCATE TABLE work_instruction_evidence;
 TRUNCATE TABLE work_instruction_collaborators;
+TRUNCATE TABLE work_instruction_defects;
 TRUNCATE TABLE work_instructions;
 TRUNCATE TABLE users;
 TRUNCATE TABLE defects;
@@ -59,6 +60,13 @@ INSERT INTO work_instructions (id, service_id, part_id, description, inspection_
 (3, 2, 3, 'Torque test for Bolt M8',                 150),
 (4, 3, 4, 'Dimensional check for Bracket B3',        200),
 (5, 4, 5, '100% visual inspection for Cover Plate',  300);
+
+INSERT INTO work_instruction_defects (work_instruction_id, defect_id) VALUES
+(1, 1), (1, 2),
+(2, 3),
+(3, 4),
+(4, 4),
+(5, 5), (5, 6);
 
 -- 6. users (admin has real firebase UID, others are mock)
 INSERT INTO users (id, firebase_uid, name, email, phone_number, is_active) VALUES

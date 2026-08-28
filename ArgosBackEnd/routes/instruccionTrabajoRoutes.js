@@ -24,6 +24,9 @@ router.put('/:id/detail', instruccionTrabajoHandlers.updateInstruccionTrabajoDet
 // PUT /work-instructions/:id/collaborators → Sync collaborators for a work instruction
 router.put('/:id/collaborators', instruccionTrabajoHandlers.updateWorkInstructionCollaborators);
 
+// PUT /work-instructions/:id/defects → Sync expected defects for a work instruction
+router.put('/:id/defects', instruccionTrabajoHandlers.updateWorkInstructionDefects);
+
 // POST /work-instructions/:id/evidence → Add evidence file
 router.post('/:id/evidence', instruccionTrabajoHandlers.addEvidence);
 

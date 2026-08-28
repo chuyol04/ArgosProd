@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,12 +31,17 @@ import {
   fetchPartsForSelect,
   fetchUsersForSelect,
   updateWorkInstructionCollaborators,
+  updateWorkInstructionDefects,
   addWorkInstructionEvidence,
   IServiceOption,
   IPartOption,
   IUserOption,
 } from "@/app/(protected)/instrucciones-trabajo/actions/instrucciones-trabajo.actions";
 import { IEvidence } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
+import {
+  fetchDefects,
+  IDefect,
+} from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
 import { WorkInstructionFiles } from "./WorkInstructionFiles";
 import { uploadFile } from "@/lib/storage/fileUpload";
 
@@ -60,12 +66,15 @@ export default function WorkInstructionModal({
   const [services, setServices] = useState<IServiceOption[]>([]);
   const [parts, setParts] = useState<IPartOption[]>([]);
   const [users, setUsers] = useState<IUserOption[]>([]);
+  const [defects, setDefects] = useState<IDefect[]>([]);
   const [selectedCollaborators, setSelectedCollaborators] = useState<number[]>([]);
+  const [selectedDefects, setSelectedDefects] = useState<number[]>([]);
   const [formData, setFormData] = useState({
     service_id: "",
     part_name: "",
     inspection_rate_per_hour: "",
     description: "",
+    problem: "",
   });
 
   // Files/evidence state
@@ -83,8 +92,10 @@ export default function WorkInstructionModal({
         part_name: "",
         inspection_rate_per_hour: "",
         description: "",
+        problem: "",
       });
       setSelectedCollaborators([]);
+      setSelectedDefects([]);
       setExistingFiles([]);
       setQueuedMainFile(null);
       setQueuedComplementaryFiles([]);
@@ -104,11 +115,13 @@ export default function WorkInstructionModal({
           fetchServicesForSelect(),
           fetchPartsForSelect(),
           fetchUsersForSelect(),
+          fetchDefects(),
         ])
-          .then(([wiResult, servicesData, partsData, usersData]) => {
+          .then(([wiResult, servicesData, partsData, usersData, defectsData]) => {
             setServices(servicesData);
             setParts(partsData);
             setUsers(usersData);
+            setDefects(defectsData);
             if (wiResult.success && wiResult.data) {
               const instruction = wiResult.data.instruction;
               setFormData({
@@ -116,9 +129,11 @@ export default function WorkInstructionModal({
                 part_name: instruction.part_name || "",
                 inspection_rate_per_hour: String(instruction.inspection_rate_per_hour),
                 description: instruction.description || "",
+                problem: instruction.problem || "",
               });
               const collaboratorIds = wiResult.data.collaborators.map(c => c.id);
               setSelectedCollaborators(collaboratorIds);
+              setSelectedDefects(wiResult.data.defects.map((defect) => defect.id));
               setExistingFiles(wiResult.data.evidences || []);
             } else {
               setError(wiResult.error || "Error al cargar instrucción de trabajo");
@@ -136,11 +151,13 @@ export default function WorkInstructionModal({
           fetchServicesForSelect(),
           fetchPartsForSelect(),
           fetchUsersForSelect(),
+          fetchDefects(),
         ])
-          .then(([servicesData, partsData, usersData]) => {
+          .then(([servicesData, partsData, usersData, defectsData]) => {
             setServices(servicesData);
             setParts(partsData);
             setUsers(usersData);
+            setDefects(defectsData);
             if (defaultServiceId) {
               setFormData((prev) => ({ ...prev, service_id: String(defaultServiceId) }));
             }
@@ -167,6 +184,14 @@ export default function WorkInstructionModal({
     );
   };
 
+  const handleDefectToggle = (defectId: number) => {
+    setSelectedDefects((prev) =>
+      prev.includes(defectId)
+        ? prev.filter((id) => id !== defectId)
+        : [...prev, defectId]
+    );
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -184,6 +209,7 @@ export default function WorkInstructionModal({
           part_name: formData.part_name.trim(),
           inspection_rate_per_hour: Number(formData.inspection_rate_per_hour),
           description: formData.description || undefined,
+          problem: formData.problem,
         });
 
         if (!result.success) {
@@ -201,6 +227,15 @@ export default function WorkInstructionModal({
           setError(collabResult.error || "Error al actualizar colaboradores");
           return;
         }
+
+        const defectResult = await updateWorkInstructionDefects(
+          workInstructionId,
+          selectedDefects
+        );
+        if (!defectResult.success) {
+          setError(defectResult.error || "Error al actualizar defectos");
+          return;
+        }
         // Files are uploaded in real-time via WorkInstructionFiles component
       } else {
         // Create new work instruction
@@ -209,6 +244,7 @@ export default function WorkInstructionModal({
           part_name: formData.part_name.trim(),
           inspection_rate_per_hour: Number(formData.inspection_rate_per_hour),
           description: formData.description || undefined,
+          problem: formData.problem || undefined,
         });
 
         if (!result.success) {
@@ -219,6 +255,14 @@ export default function WorkInstructionModal({
         // Add collaborators if any selected
         if (selectedCollaborators.length > 0 && result.id) {
           await updateWorkInstructionCollaborators(result.id, selectedCollaborators);
+        }
+
+        if (selectedDefects.length > 0 && result.id) {
+          const defectResult = await updateWorkInstructionDefects(result.id, selectedDefects);
+          if (!defectResult.success) {
+            setError(defectResult.error || "La IT se creó, pero no se pudieron asociar los defectos");
+            return;
+          }
         }
 
         // Upload + link any files attached during creation. The IT already
@@ -299,6 +343,19 @@ export default function WorkInstructionModal({
                     disabled={isPending}
                     placeholder="Escribe la descripción de la instrucción de trabajo..."
                     className="h-full"
+                  />
+                </div>
+                <div className="grid gap-2 mt-4">
+                  <Label htmlFor="problem" className="text-sm font-medium text-muted-foreground">
+                    Problema
+                  </Label>
+                  <Textarea
+                    id="problem"
+                    value={formData.problem}
+                    onChange={(e) => handleChange("problem", e.target.value)}
+                    disabled={isPending}
+                    placeholder="Describe el problema asociado a la IT..."
+                    rows={3}
                   />
                 </div>
               </div>
@@ -396,6 +453,48 @@ export default function WorkInstructionModal({
                       ))
                     )}
                   </div>
+                </div>
+
+                <Separator />
+
+                {/* Expected defects for this work instruction */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">
+                    Defectos esperados ({selectedDefects.length} seleccionados)
+                  </Label>
+                  <div className="border rounded-lg p-3 max-h-[150px] overflow-y-auto space-y-2">
+                    {defects.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay defectos en el catálogo</p>
+                    ) : (
+                      defects.map((defect) => (
+                        <div
+                          key={defect.id}
+                          className="flex items-center space-x-3 p-2 rounded hover:bg-muted/50"
+                        >
+                          <Checkbox
+                            id={`defect-${defect.id}`}
+                            checked={selectedDefects.includes(defect.id)}
+                            onCheckedChange={() => handleDefectToggle(defect.id)}
+                            disabled={isPending}
+                          />
+                          <label
+                            htmlFor={`defect-${defect.id}`}
+                            className="flex-1 cursor-pointer text-sm"
+                          >
+                            <span className="font-medium">{defect.name}</span>
+                            {defect.description && (
+                              <span className="block text-xs text-muted-foreground">
+                                {defect.description}
+                              </span>
+                            )}
+                          </label>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    En la inspección también se podrán registrar defectos nuevos como texto libre.
+                  </p>
                 </div>
 
                 <Separator />

@@ -55,9 +55,18 @@ CREATE TABLE work_instructions (
     service_id INT NOT NULL,
     part_id INT NOT NULL,
     description TEXT,
+    problem TEXT,
     inspection_rate_per_hour INT NOT NULL, -- Number of pieces to be inspected per hour.
     FOREIGN KEY (service_id) REFERENCES services(id),
     FOREIGN KEY (part_id) REFERENCES parts(id)
+);
+
+CREATE TABLE work_instruction_defects (
+    work_instruction_id INT NOT NULL,
+    defect_id INT NOT NULL,
+    PRIMARY KEY (work_instruction_id, defect_id),
+    FOREIGN KEY (work_instruction_id) REFERENCES work_instructions(id) ON DELETE CASCADE,
+    FOREIGN KEY (defect_id) REFERENCES defects(id) ON DELETE CASCADE
 );
 
 -- -----------------------------------------------------

@@ -337,6 +337,13 @@ export default function InspectionDetailForm({
     return reports.find((r) => r.id === formData.inspection_report_id)?.problem ?? null;
   }, [detail, reports, formData.inspection_report_id]);
 
+  const workInstructionId = useMemo(
+    () =>
+      detail?.work_instruction_id ??
+      reports.find((report) => report.id === formData.inspection_report_id)?.work_instruction_id,
+    [detail, reports, formData.inspection_report_id]
+  );
+
   // Sum of defect quantities reported by DefectsSection, compared against
   // rejected pieces - shown as a non-blocking visual warning when they differ.
   const [defectsTotalQuantity, setDefectsTotalQuantity] = useState(0);
@@ -965,6 +972,7 @@ export default function InspectionDetailForm({
           <DefectsSection
             ref={defectsSectionRef}
             inspectionDetailId={detail?.id ?? null}
+            workInstructionId={workInstructionId}
             disabled={isReadOnly || !canEdit}
             onTotalQuantityChange={setDefectsTotalQuantity}
           />

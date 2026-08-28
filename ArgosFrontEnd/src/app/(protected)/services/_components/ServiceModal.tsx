@@ -181,7 +181,7 @@ export default function ServiceModal({
                     ) : (
                       clients.map((client) => (
                         <SelectItem key={client.id} value={String(client.id)}>
-                          {client.name}
+                          {client.name} — {client.email}
                         </SelectItem>
                       ))
                     )}

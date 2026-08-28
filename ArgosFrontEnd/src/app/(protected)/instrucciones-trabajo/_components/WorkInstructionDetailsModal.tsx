@@ -127,6 +127,12 @@ export default function WorkInstructionDetailsModal({
                   <p className="text-sm text-muted-foreground italic">Sin descripción</p>
                 )}
               </div>
+              <h3 className="text-sm font-medium text-muted-foreground mb-2 mt-4">Problema</h3>
+              <div className="p-4 rounded-lg bg-muted/30 border">
+                <p className="text-sm whitespace-pre-wrap">
+                  {details.instruction.problem || "Sin problema registrado"}
+                </p>
+              </div>
             </div>
 
             {/* Right Column - All other content */}
@@ -150,6 +156,25 @@ export default function WorkInstructionDetailsModal({
                   <h3 className="text-xs font-medium text-muted-foreground">Rate (Piezas/Hora)</h3>
                   <p className="text-sm font-medium">{details.instruction.inspection_rate_per_hour}</p>
                 </div>
+              </div>
+
+              <Separator />
+
+              <div className="space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground">
+                  Defectos esperados ({details.defects.length})
+                </h3>
+                {details.defects.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {details.defects.map((defect) => (
+                      <span key={defect.id} className="rounded-full border bg-muted px-3 py-1 text-xs">
+                        {defect.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Sin defectos asociados.</p>
+                )}
               </div>
 
               <Separator />

@@ -30,6 +30,7 @@ export interface IInspectionDetail {
 
 // Extended detail with joined fields
 export interface IInspectionDetailExtended extends IInspectionDetail {
+  work_instruction_id: number;
   part_name: string;
   part_description: string | null;
   po_number: string | null;

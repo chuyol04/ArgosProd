@@ -2,6 +2,7 @@ export interface IWorkInstruction {
     id: number;
     inspection_rate_per_hour: number;
     description: string | null;
+    problem: string | null;
     part_id: number;
     part_name: string;
     service_id: number;
@@ -22,6 +23,7 @@ export interface CreateWorkInstructionData {
     part_name: string;
     inspection_rate_per_hour: number;
     description?: string;
+    problem?: string;
 }
 
 export interface UpdateWorkInstructionData {
@@ -29,6 +31,7 @@ export interface UpdateWorkInstructionData {
     part_name?: string;
     inspection_rate_per_hour?: number;
     description?: string;
+    problem?: string;
 }
 
 // Simplified version for service details modal
@@ -68,12 +71,19 @@ export interface ICollaborator {
     role: string;
 }
 
+export interface IWorkInstructionDefect {
+    id: number;
+    name: string;
+    description: string | null;
+}
+
 // Full work instruction details for the modal
 export interface IWorkInstructionDetails {
     instruction: {
         id: number;
         inspection_rate_per_hour: number;
         description: string | null;
+        problem: string | null;
         part_id: number;
         part_name: string;
         service_id: number;
@@ -85,4 +95,5 @@ export interface IWorkInstructionDetails {
     evidences: IEvidence[];
     reports: IInspectionReport[];
     collaborators: ICollaborator[];
+    defects: IWorkInstructionDefect[];
 }

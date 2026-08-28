@@ -228,6 +228,7 @@ export async function getWorkInstructionById(
                 id: instruction.id,
                 inspection_rate_per_hour: instruction.inspection_rate_per_hour,
                 description: instruction.description,
+                problem: instruction.problem,
                 part_id: instruction.part_id,
                 part_name: instruction.part_name,
                 service_id: instruction.service_id,
@@ -411,6 +412,45 @@ export async function updateWorkInstructionCollaborators(
         return { success: true };
     } catch (err) {
         console.error("Update collaborators error:", err);
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function updateWorkInstructionDefects(
+    id: number,
+    defectIds: number[]
+): Promise<{ success: boolean; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const cookieStore = await cookies();
+        const session = cookieStore.get('session')?.value;
+        if (!session) {
+            throw new Error("No session cookie");
+        }
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/work-instructions/${id}/defects`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Cookie': `session=${session}`,
+            },
+            body: JSON.stringify({ defect_ids: defectIds }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+            throw new Error(json.motive || "Failed to update defects");
+        }
+
+        revalidatePath('/instrucciones-trabajo');
+        return { success: true };
+    } catch (err) {
+        console.error("Update work instruction defects error:", err);
         return {
             success: false,
             error: err instanceof Error ? err.message : "Unknown error"

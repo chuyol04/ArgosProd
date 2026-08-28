@@ -53,6 +53,7 @@ import {
 
 interface DefectsSectionProps {
   inspectionDetailId: number | null;
+  workInstructionId?: number;
   disabled?: boolean;
   /** Reports the sum of all defect quantities for this box, so the parent
    * form can warn when it doesn't match the rejected pieces count. Sourced
@@ -82,7 +83,7 @@ export interface DefectsSectionHandle {
 }
 
 export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionProps>(
-  function DefectsSection({ inspectionDetailId, disabled = false, onTotalQuantityChange }, ref) {
+  function DefectsSection({ inspectionDetailId, workInstructionId, disabled = false, onTotalQuantityChange }, ref) {
   const isPendingMode = inspectionDetailId == null;
 
   const [defects, setDefects] = useState<IDefect[]>([]);
@@ -116,7 +117,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const defectsData = await fetchDefects();
+        const defectsData = await fetchDefects(workInstructionId);
         setDefects(defectsData);
 
         if (inspectionDetailId) {
@@ -131,7 +132,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     };
 
     loadData();
-  }, [inspectionDetailId]);
+  }, [inspectionDetailId, workInstructionId]);
 
   // Keep the parent form informed of the total defect quantity for this box,
   // whether it comes from saved incidents or still-pending defects.
@@ -612,14 +613,14 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
             {/* Catalog shortcut - optional, only pre-fills the free-text field below */}
             {defects.length > 0 && (
               <div className="space-y-2">
-                <Label htmlFor="defect-catalog">Seleccionar de catálogo (opcional)</Label>
+                <Label htmlFor="defect-catalog">Seleccionar defecto de la IT (opcional)</Label>
                 <Select
                   value={selectedDefectId}
                   onValueChange={handleSelectCatalogDefect}
                   disabled={isSubmitting}
                 >
                   <SelectTrigger id="defect-catalog">
-                    <SelectValue placeholder="Selecciona un defecto del catálogo..." />
+                    <SelectValue placeholder="Selecciona un defecto asociado..." />
                   </SelectTrigger>
                   <SelectContent>
                     {defects.map((defect) => (

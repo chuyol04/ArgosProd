@@ -43,12 +43,14 @@ export async function fetchWorkInstructionsForSelect(): Promise<IWorkInstruction
       (wi: {
         id: number;
         description: string | null;
+        problem: string | null;
         part_name: string;
         service_name: string;
         client_name: string;
       }) => ({
         id: wi.id,
         description: wi.description,
+        problem: wi.problem,
         part_name: wi.part_name,
         service_name: wi.service_name,
         client_name: wi.client_name,

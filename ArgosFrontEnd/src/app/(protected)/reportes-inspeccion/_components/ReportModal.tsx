@@ -45,6 +45,8 @@ interface ReportModalProps {
 }
 
 const formatDate = formatDateDisplay;
+const richTextToPlainText = (html: string | null) =>
+  html ? new DOMParser().parseFromString(html, "text/html").body.textContent || "" : "";
 
 /** Horas de PO: entero opcional entre 1 y 9999. */
 function validatePoHours(value: string): string | null {
@@ -146,6 +148,13 @@ export default function ReportModal({
       resetForm();
     }
   }, [open]);
+
+  const handleWorkInstructionChange = (value: string) => {
+    const workInstruction = workInstructions.find((wi) => String(wi.id) === value);
+    setWorkInstructionId(value);
+    setDescription(richTextToPlainText(workInstruction?.description ?? null));
+    setProblem(workInstruction?.problem || "");
+  };
 
   const handleSubmit = () => {
     if (!workInstructionId || !startDate) {
@@ -298,7 +307,7 @@ export default function ReportModal({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor="workInstruction">IT Asociado *</Label>
-                    <Select value={workInstructionId} onValueChange={setWorkInstructionId}>
+                    <Select value={workInstructionId} onValueChange={handleWorkInstructionChange}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Seleccionar IT..." />
                       </SelectTrigger>

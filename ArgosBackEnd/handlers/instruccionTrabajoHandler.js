@@ -25,7 +25,7 @@ async function findOrCreatePartByName(rawName) {
 // CREATE
 export async function createInstruccionTrabajo(req, res) {
   try {
-    const { inspection_rate_per_hour, description, service_id, part_id, part_name } = req.body || {};
+    const { inspection_rate_per_hour, description, problem, service_id, part_id, part_name } = req.body || {};
 
     if (!inspection_rate_per_hour || !service_id || (!part_id && !part_name)) {
       return res.status(400).json({ success: false, motive: 'inspection_rate_per_hour, service_id, and part_id/part_name are required' });
@@ -50,8 +50,8 @@ export async function createInstruccionTrabajo(req, res) {
     }
 
     const [result] = await MysqlClient.execute(
-      'INSERT INTO work_instructions (inspection_rate_per_hour, description, service_id, part_id) VALUES (?, ?, ?, ?)',
-      [inspection_rate_per_hour, description || null, service_id, resolvedPartId]
+      'INSERT INTO work_instructions (inspection_rate_per_hour, description, problem, service_id, part_id) VALUES (?, ?, ?, ?, ?)',
+      [inspection_rate_per_hour, description || null, problem || null, service_id, resolvedPartId]
     );
 
     return res.status(201).json({
@@ -77,6 +77,7 @@ export async function getInstruccionesTrabajo(req, res) {
         wi.id,
         wi.inspection_rate_per_hour,
         wi.description,
+        wi.problem,
         wi.part_id,
         p.name AS part_name,
         s.id AS service_id,
@@ -153,6 +154,7 @@ export async function getInstruccionTrabajoById(req, res) {
         wi.id,
         wi.inspection_rate_per_hour,
         wi.description,
+        wi.problem,
         wi.part_id,
         p.name AS part_name,
         s.id AS service_id,
@@ -195,13 +197,22 @@ export async function getInstruccionTrabajoById(req, res) {
       WHERE wic.work_instruction_id = ?
     `, [id]);
 
+    const [defects] = await MysqlClient.execute(`
+      SELECT d.id, d.name, d.description
+      FROM work_instruction_defects wid
+      INNER JOIN defects d ON d.id = wid.defect_id
+      WHERE wid.work_instruction_id = ?
+      ORDER BY d.name
+    `, [id]);
+
     return res.status(200).json({
       success: true,
       data: {
         instruction: itData,
         evidences,
         reports,
-        collaborators
+        collaborators,
+        defects
       }
     });
   } catch (error) {
@@ -214,7 +225,7 @@ export async function getInstruccionTrabajoById(req, res) {
 export async function updateInstruccionTrabajo(req, res) {
   try {
     const { id } = req.params;
-    const { inspection_rate_per_hour, description, service_id, part_id, part_name } = req.body || {};
+    const { inspection_rate_per_hour, description, problem, service_id, part_id, part_name } = req.body || {};
 
     const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
     if (exists.length === 0) {
@@ -251,6 +262,10 @@ export async function updateInstruccionTrabajo(req, res) {
     if (description !== undefined) {
       fields.push('description = ?');
       params.push(description);
+    }
+    if (problem !== undefined) {
+      fields.push('problem = ?');
+      params.push(problem);
     }
     if (service_id !== undefined) {
       fields.push('service_id = ?');
@@ -401,6 +416,49 @@ export async function updateWorkInstructionCollaborators(req, res) {
   } catch (error) {
     console.error('Error updating collaborators:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+// UPDATE DEFECTS - Sync the expected defect catalog for a work instruction.
+export async function updateWorkInstructionDefects(req, res) {
+  let connection;
+  try {
+    connection = await MysqlClient.getConnection();
+    const { id } = req.params;
+    const { defect_ids = [] } = req.body || {};
+    if (!Array.isArray(defect_ids) || defect_ids.some((defectId) => !Number.isInteger(defectId))) {
+      return res.status(400).json({ success: false, motive: 'defect_ids must be an array of integers' });
+    }
+
+    const [exists] = await connection.execute(
+      'SELECT id FROM work_instructions WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (exists.length === 0) {
+      return res.status(404).json({ success: false, motive: 'Work instruction not found' });
+    }
+
+    const uniqueDefectIds = [...new Set(defect_ids)];
+    await connection.beginTransaction();
+    await connection.execute(
+      'DELETE FROM work_instruction_defects WHERE work_instruction_id = ?',
+      [id]
+    );
+    if (uniqueDefectIds.length > 0) {
+      const placeholders = uniqueDefectIds.map(() => '(?, ?)').join(', ');
+      await connection.execute(
+        `INSERT INTO work_instruction_defects (work_instruction_id, defect_id) VALUES ${placeholders}`,
+        uniqueDefectIds.flatMap((defectId) => [id, defectId])
+      );
+    }
+    await connection.commit();
+    return res.status(200).json({ success: true, motive: 'Defects updated successfully' });
+  } catch (error) {
+    if (connection) await connection.rollback();
+    console.error('Error updating work instruction defects:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  } finally {
+    connection?.release();
   }
 }
 
