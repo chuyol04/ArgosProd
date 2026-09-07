@@ -490,8 +490,8 @@ nginx -t && systemctl reload nginx
 curl -I https://ozcabinspeccion.com
 ```
 
-Después de confirmar HTTPS, cambia `COOKIE_SECURE` a `"true"` en
-`docker-compose.yml` y reconstruye el frontend.
+Después de confirmar HTTPS, agrega `COOKIE_SECURE=true` a `/opt/argos/.env`
+y reconstruye el frontend.
 
 ---
 
