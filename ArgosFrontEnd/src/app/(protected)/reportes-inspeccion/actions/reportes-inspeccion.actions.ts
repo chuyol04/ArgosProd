@@ -42,6 +42,8 @@ export async function fetchWorkInstructionsForSelect(): Promise<IWorkInstruction
     return (json.data || []).map(
       (wi: {
         id: number;
+        start_date: string | null;
+        inspection_mode: "rate" | "full_time";
         description: string | null;
         problem: string | null;
         part_name: string;
@@ -49,6 +51,8 @@ export async function fetchWorkInstructionsForSelect(): Promise<IWorkInstruction
         client_name: string;
       }) => ({
         id: wi.id,
+        start_date: wi.start_date,
+        inspection_mode: wi.inspection_mode,
         description: wi.description,
         problem: wi.problem,
         part_name: wi.part_name,

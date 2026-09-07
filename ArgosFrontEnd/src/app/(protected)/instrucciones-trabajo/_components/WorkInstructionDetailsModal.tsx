@@ -153,8 +153,16 @@ export default function WorkInstructionDetailsModal({
                   <p className="text-xs text-muted-foreground">{details.instruction.client_email}</p>
                 </div>
                 <div className="space-y-1">
-                  <h3 className="text-xs font-medium text-muted-foreground">Rate (Piezas/Hora)</h3>
-                  <p className="text-sm font-medium">{details.instruction.inspection_rate_per_hour}</p>
+                  <h3 className="text-xs font-medium text-muted-foreground">Modalidad</h3>
+                  <p className="text-sm font-medium">
+                    {details.instruction.inspection_mode === "full_time"
+                      ? "Full time"
+                      : `Rate: ${details.instruction.inspection_rate_per_hour ?? "-"} piezas/hora`}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <h3 className="text-xs font-medium text-muted-foreground">Inicio de contención</h3>
+                  <p className="text-sm font-medium">{formatDate(details.instruction.start_date)}</p>
                 </div>
               </div>
 

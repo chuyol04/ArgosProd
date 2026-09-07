@@ -200,7 +200,7 @@ export async function getUserById(req, res) {
         );
 
         const [workInstructions] = await MysqlClient.execute(
-            `SELECT wi.id, wi.description, wi.inspection_rate_per_hour,
+            `SELECT wi.id, wi.description, wi.inspection_mode, wi.inspection_rate_per_hour,
                     p.name AS part_name, s.name AS service_name, c.name AS client_name
              FROM work_instruction_collaborators wic
              INNER JOIN work_instructions wi ON wi.id = wic.work_instruction_id

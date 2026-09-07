@@ -177,8 +177,9 @@ export async function deleteInspectionDetail(
 
 export async function addSerialNumber(
   inspectionDetailId: number,
-  serialNumber: string
-): Promise<{ success: boolean; id?: number; serial_number?: string; error?: string }> {
+  serialNumber: string,
+  lotNumber: string
+): Promise<{ success: boolean; id?: number; serial_number?: string; lot_number?: string; error?: string }> {
   try {
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
@@ -199,7 +200,7 @@ export async function addSerialNumber(
           "Content-Type": "application/json",
           Cookie: `session=${session}`,
         },
-        body: JSON.stringify({ serial_number: serialNumber }),
+        body: JSON.stringify({ serial_number: serialNumber, lot_number: lotNumber }),
       }
     );
 
@@ -210,7 +211,7 @@ export async function addSerialNumber(
     }
 
     revalidatePath("/detalles-inspeccion");
-    return { success: true, id: json.id, serial_number: json.serial_number };
+    return { success: true, id: json.id, serial_number: json.serial_number, lot_number: json.lot_number };
   } catch (err) {
     console.error("Add serial number error:", err);
     return {
@@ -340,6 +341,8 @@ export async function fetchReportsForSelect(): Promise<IReportOption[]> {
         service_name: string;
         po_number: string | null;
         problem: string | null;
+        inspection_mode: "rate" | "full_time";
+        inspection_rate_per_hour: number | null;
       }) => ({
         id: r.id,
         work_instruction_id: r.work_instruction_id,
@@ -347,6 +350,8 @@ export async function fetchReportsForSelect(): Promise<IReportOption[]> {
         service_name: r.service_name,
         po_number: r.po_number,
         problem: r.problem,
+        inspection_mode: r.inspection_mode,
+        inspection_rate_per_hour: r.inspection_rate_per_hour,
       })
     );
   } catch (err) {

@@ -18,6 +18,7 @@ import { useUser } from "@/contexts/users/userContext";
 import {
   IInspectionDetailExtended,
   IInspectionDetailFormData,
+  ISerialLotInput,
   IInspector,
   IReportOption,
 } from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
@@ -37,6 +38,7 @@ import {
   isPastLocalDate,
   emptyToUndefined,
   calculateWorkedHours,
+  isoWeekFromDate,
   isInvalidTimeRange,
   isValidTimeFormat,
 } from "@/lib/dateTimeUtils";
@@ -47,7 +49,6 @@ type Mode = "view" | "edit" | "create";
 // they appear in the form - used to jump to the first one that fails.
 type RequiredField =
   | "serial_numbers"
-  | "lot_number"
   | "inspector_id"
   | "shift"
   | "inspection_date"
@@ -57,7 +58,6 @@ type RequiredField =
 
 const REQUIRED_FIELD_ORDER: RequiredField[] = [
   "serial_numbers",
-  "lot_number",
   "inspector_id",
   "shift",
   "inspection_date",
@@ -76,7 +76,6 @@ function validateFormData(
   if (serialNumbersCount === 0) {
     errors.serial_numbers = "Debe agregar al menos un número de serie.";
   }
-  if (!data.lot_number?.trim()) errors.lot_number = REQUIRED_MESSAGE;
   if (!data.inspector_id) errors.inspector_id = REQUIRED_MESSAGE;
 
   if (!data.shift) {
@@ -205,7 +204,7 @@ export default function InspectionDetailForm({
   const [formData, setFormData] = useState<IInspectionDetailFormData>({
     inspection_report_id: detail?.inspection_report_id || reportId || 0,
     serial_numbers: [],
-    lot_number: detail?.lot_number ?? "",
+    serial_lots: [],
     inspector_id: detail?.inspector_id ?? undefined,
     hours: detail?.hours ?? undefined,
     week: detail?.week ?? undefined,
@@ -259,7 +258,7 @@ export default function InspectionDetailForm({
 
   const handleInputChange = (
     field: keyof IInspectionDetailFormData,
-    value: string | number | string[] | undefined
+    value: string | number | string[] | ISerialLotInput[] | undefined
   ) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -281,7 +280,7 @@ export default function InspectionDetailForm({
     [formData.start_time, formData.end_time]
   );
 
-  // Saved-mode serial number count, reported up by SerialNumbersInput - only
+  // Saved-mode serial/lot count, reported up by SerialNumbersInput - only
   // relevant when editing an existing detail (pending-mode count instead
   // comes straight from formData.serial_numbers).
   const [savedSerialNumbersCount, setSavedSerialNumbersCount] = useState(
@@ -289,7 +288,7 @@ export default function InspectionDetailForm({
   );
   const serialNumbersCount = detail
     ? savedSerialNumbersCount
-    : formData.serial_numbers?.length ?? 0;
+    : formData.serial_lots?.length ?? 0;
 
   const fieldErrors = useMemo(
     () => validateFormData(formData, serialNumbersCount),
@@ -302,6 +301,11 @@ export default function InspectionDetailForm({
     if (isReadOnly) return;
     setFormData((prev) => ({ ...prev, hours: computedHours ?? undefined }));
   }, [computedHours, isReadOnly]);
+
+  useEffect(() => {
+    if (isReadOnly) return;
+    setFormData((prev) => ({ ...prev, week: isoWeekFromDate(prev.inspection_date) }));
+  }, [formData.inspection_date, isReadOnly]);
 
   // Inspected pieces = accepted + rejected + reworked, for THIS box only
   // (never summed across boxes). The field itself stays read-only/computed.
@@ -322,7 +326,9 @@ export default function InspectionDetailForm({
   // rate (piezas/hora) configurado en la instrucción de trabajo, distinto de
   // "Horas Trabajadas" (horas REALES por hora_inicio/hora_fin). Se recalcula
   // solo cuando cambian las piezas inspeccionadas o el rate de la instrucción.
-  const inspectionRate = detail?.inspection_rate_per_hour ?? null;
+  const selectedReport = reports.find((r) => r.id === formData.inspection_report_id);
+  const inspectionMode = detail?.inspection_mode ?? selectedReport?.inspection_mode ?? "rate";
+  const inspectionRate = detail?.inspection_rate_per_hour ?? selectedReport?.inspection_rate_per_hour ?? null;
   const estimatedHoursByRate = useMemo(() => {
     if (inspectionRate == null || inspectionRate === 0) return null;
     return Math.round((computedInspectedPieces / inspectionRate) * 100) / 100;
@@ -430,7 +436,7 @@ export default function InspectionDetailForm({
       setFormData({
         inspection_report_id: detail?.inspection_report_id || 0,
         serial_numbers: [],
-        lot_number: detail?.lot_number ?? "",
+        serial_lots: [],
         inspector_id: detail?.inspector_id ?? undefined,
         hours: detail?.hours ?? undefined,
         week: detail?.week ?? undefined,
@@ -600,11 +606,10 @@ export default function InspectionDetailForm({
           <CardTitle className="text-sm font-medium">Identificación</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Serial Numbers - a box can relate to several, full width so the
-              tag list has room without cramping the rest of the section. */}
+          {/* Every serial is stored together with its corresponding lot. */}
           <div ref={setFieldRef("serial_numbers")} className="space-y-1.5">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Número de Serie *
+              Números de Serie y Lotes *
             </p>
             {isReadOnly ? (
               detail?.serial_numbers && detail.serial_numbers.length > 0 ? (
@@ -614,7 +619,7 @@ export default function InspectionDetailForm({
                       key={s.id}
                       className="rounded-full border bg-muted px-2.5 py-1 text-xs font-mono"
                     >
-                      {s.serial_number}
+                      {s.serial_number} · Lote {s.lot_number || detail.lot_number || "-"}
                     </span>
                   ))}
                 </div>
@@ -626,32 +631,12 @@ export default function InspectionDetailForm({
                 inspectionDetailId={detail?.id ?? null}
                 disabled={!canEdit}
                 error={showError("serial_numbers")}
-                pendingValues={formData.serial_numbers ?? []}
-                onPendingValuesChange={(values) => handleInputChange("serial_numbers", values)}
+                pendingValues={formData.serial_lots ?? []}
+                onPendingValuesChange={(values) => handleInputChange("serial_lots", values)}
                 initialSerialNumbers={detail?.serial_numbers ?? []}
                 onCountChange={setSavedSerialNumbersCount}
               />
             )}
-          </div>
-
-          {/* Lot Number */}
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            <FormField
-              label="Número de Lote *"
-              value={detail?.lot_number}
-              isReadOnly={isReadOnly}
-              error={showError("lot_number")}
-              fieldRef={setFieldRef("lot_number")}
-            >
-              <Input
-                value={formData.lot_number || ""}
-                onChange={(e) => handleInputChange("lot_number", e.target.value)}
-                onBlur={() => handleBlurField("lot_number")}
-                placeholder="Ej: LOT-2024-001-ABCD"
-                className="font-mono"
-                aria-invalid={!!showError("lot_number")}
-              />
-            </FormField>
           </div>
 
           {/* Inspector and Shift */}
@@ -757,15 +742,14 @@ export default function InspectionDetailForm({
             />
           </FormField>
 
-          <FormField label="Semana" value={detail?.week} isReadOnly={isReadOnly}>
+          <FormField label="Semana (automática)" value={detail?.week} isReadOnly={isReadOnly}>
             <Input
               type="number"
               min="1"
               value={formData.week ?? ""}
-              onChange={(e) =>
-                handleInputChange("week", e.target.value ? Number(e.target.value) : undefined)
-              }
-              placeholder="Ej: 1, 52, 104..."
+              readOnly
+              disabled
+              placeholder="Se calcula con la fecha"
             />
           </FormField>
 
@@ -893,13 +877,18 @@ export default function InspectionDetailForm({
       {/* Rate de Inspección: horas TEÓRICAS esperadas según el rate (piezas/hora)
           configurado en la instrucción de trabajo de esta pieza/servicio. No debe
           confundirse con "Horas Trabajadas" (horas reales de hora_inicio/hora_fin). */}
-      {detail && (
+      {(detail || formData.inspection_report_id > 0) && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Rate de Inspección</CardTitle>
+            <CardTitle className="text-sm font-medium">Modalidad de Inspección</CardTitle>
           </CardHeader>
           <CardContent>
-            {inspectionRate == null ? (
+            {inspectionMode === "full_time" ? (
+              <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+                <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Modalidad</p><p className="text-sm font-medium">Full time</p></div>
+                <div><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Horas calculadas</p><p className="text-sm font-medium">{(computedHours ?? 0).toFixed(2)} horas</p></div>
+              </div>
+            ) : inspectionRate == null ? (
               <p className="text-sm text-muted-foreground">Rate no configurado</p>
             ) : inspectionRate === 0 ? (
               <p className="text-sm text-muted-foreground">Rate no válido</p>
@@ -973,6 +962,7 @@ export default function InspectionDetailForm({
             ref={defectsSectionRef}
             inspectionDetailId={detail?.id ?? null}
             workInstructionId={workInstructionId}
+            rejectedPieces={rejectedPieces}
             disabled={isReadOnly || !canEdit}
             onTotalQuantityChange={setDefectsTotalQuantity}
           />

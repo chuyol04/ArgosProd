@@ -30,7 +30,8 @@ export interface IUserRole {
 export interface IUserWorkInstruction {
     id: number;
     description: string | null;
-    inspection_rate_per_hour: number;
+    inspection_mode: "rate" | "full_time";
+    inspection_rate_per_hour: number | null;
     part_name: string;
     service_name: string;
     client_name: string;

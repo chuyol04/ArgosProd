@@ -1,6 +1,8 @@
 export interface IWorkInstruction {
     id: number;
-    inspection_rate_per_hour: number;
+    inspection_mode: "rate" | "full_time";
+    inspection_rate_per_hour: number | null;
+    start_date: string | null;
     description: string | null;
     problem: string | null;
     part_id: number;
@@ -21,7 +23,9 @@ export interface CreateWorkInstructionData {
     /** Free-text part name/description - the backend finds or creates a
      * matching catalog row, so this no longer has to be a pre-existing part. */
     part_name: string;
-    inspection_rate_per_hour: number;
+    inspection_mode: "rate" | "full_time";
+    inspection_rate_per_hour?: number;
+    start_date: string;
     description?: string;
     problem?: string;
 }
@@ -29,7 +33,9 @@ export interface CreateWorkInstructionData {
 export interface UpdateWorkInstructionData {
     service_id?: number;
     part_name?: string;
-    inspection_rate_per_hour?: number;
+    inspection_mode?: "rate" | "full_time";
+    inspection_rate_per_hour?: number | null;
+    start_date?: string;
     description?: string;
     problem?: string;
 }
@@ -37,7 +43,9 @@ export interface UpdateWorkInstructionData {
 // Simplified version for service details modal
 export interface IWorkInstructionSummary {
     id: number;
-    inspection_rate_per_hour: number;
+    inspection_mode: "rate" | "full_time";
+    inspection_rate_per_hour: number | null;
+    start_date: string | null;
     description: string | null;
     part_id: number;
     part_name: string;
@@ -81,7 +89,9 @@ export interface IWorkInstructionDefect {
 export interface IWorkInstructionDetails {
     instruction: {
         id: number;
-        inspection_rate_per_hour: number;
+        inspection_mode: "rate" | "full_time";
+        inspection_rate_per_hour: number | null;
+        start_date: string | null;
         description: string | null;
         problem: string | null;
         part_id: number;

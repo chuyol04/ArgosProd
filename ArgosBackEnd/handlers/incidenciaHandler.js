@@ -67,7 +67,9 @@ export async function getIncidencias(req, res) {
              (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
               FROM inspection_detail_serial_numbers sn
               WHERE sn.inspection_detail_id = di.id) AS inspection_serial_number,
-             di.lot_number AS inspection_lot_number
+             COALESCE((SELECT GROUP_CONCAT(sn.lot_number ORDER BY sn.id SEPARATOR ', ')
+                       FROM inspection_detail_serial_numbers sn
+                       WHERE sn.inspection_detail_id = di.id), di.lot_number) AS inspection_lot_number
       FROM incidents i
       LEFT JOIN defects d ON d.id = i.defect_id
       INNER JOIN inspection_details di ON di.id = i.inspection_detail_id
@@ -114,7 +116,9 @@ export async function getIncidenciaById(req, res) {
               (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
                FROM inspection_detail_serial_numbers sn
                WHERE sn.inspection_detail_id = di.id) AS inspection_serial_number,
-              di.lot_number AS inspection_lot_number,
+              COALESCE((SELECT GROUP_CONCAT(sn.lot_number ORDER BY sn.id SEPARATOR ', ')
+                        FROM inspection_detail_serial_numbers sn
+                        WHERE sn.inspection_detail_id = di.id), di.lot_number) AS inspection_lot_number,
               s.client_id AS client_id
        FROM incidents i
        LEFT JOIN defects d ON d.id = i.defect_id

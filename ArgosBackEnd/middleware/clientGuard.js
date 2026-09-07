@@ -6,7 +6,7 @@
 // truth; the frontend hiding buttons/menus is only a UX nicety, never the
 // actual access boundary.
 import userHelper from '../lib/helpers/userHelpers.js';
-import { isClientRole } from '../lib/constants/roles.js';
+import { isClientRole, isManagerOrAbove, hasRole, ROLES } from '../lib/constants/roles.js';
 
 async function getRequester(res) {
   const uid = res.locals.firebase_uid?.uid;
@@ -41,5 +41,14 @@ export async function blockClientWrites(req, res, next) {
     return res.status(403).json({ success: false, motive: 'Client-portal users have read-only access' });
   }
   res.locals.requester = requester;
+  return next();
+}
+
+/** Inspectors create reports/inspection data, not client or service catalogs. */
+export async function blockInspectorCatalogCreate(req, res, next) {
+  const requester = res.locals.requester || await getRequester(res);
+  if (requester && hasRole(requester.roles, ROLES.INSPECTOR) && !isManagerOrAbove(requester.roles)) {
+    return res.status(403).json({ success: false, motive: 'Los inspectores no pueden crear clientes ni servicios' });
+  }
   return next();
 }

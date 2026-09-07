@@ -122,7 +122,7 @@ export async function getServicioById(req, res) {
     const service = servRows[0];
 
     const [work_instructions] = await MysqlClient.execute(
-      `SELECT wi.id, wi.inspection_rate_per_hour, wi.description, wi.part_id, p.name AS part_name
+      `SELECT wi.id, wi.inspection_mode, wi.inspection_rate_per_hour, wi.start_date, wi.description, wi.part_id, p.name AS part_name
        FROM work_instructions wi
        INNER JOIN parts p ON p.id = wi.part_id
        WHERE wi.service_id = ?`,

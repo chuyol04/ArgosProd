@@ -44,6 +44,7 @@ import {
 } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
 import { WorkInstructionFiles } from "./WorkInstructionFiles";
 import { uploadFile } from "@/lib/storage/fileUpload";
+import { createDefect } from "@/app/(protected)/defects/actions/defects.actions";
 
 interface WorkInstructionModalProps {
   workInstructionId?: number | null; // null/undefined = create mode, number = edit mode
@@ -69,10 +70,14 @@ export default function WorkInstructionModal({
   const [defects, setDefects] = useState<IDefect[]>([]);
   const [selectedCollaborators, setSelectedCollaborators] = useState<number[]>([]);
   const [selectedDefects, setSelectedDefects] = useState<number[]>([]);
+  const [newDefectName, setNewDefectName] = useState("");
+  const [isAddingDefect, setIsAddingDefect] = useState(false);
   const [formData, setFormData] = useState({
     service_id: "",
     part_name: "",
     inspection_rate_per_hour: "",
+    inspection_mode: "rate" as "rate" | "full_time",
+    start_date: "",
     description: "",
     problem: "",
   });
@@ -91,11 +96,14 @@ export default function WorkInstructionModal({
         service_id: defaultServiceId ? String(defaultServiceId) : "",
         part_name: "",
         inspection_rate_per_hour: "",
+        inspection_mode: "rate",
+        start_date: "",
         description: "",
         problem: "",
       });
       setSelectedCollaborators([]);
       setSelectedDefects([]);
+      setNewDefectName("");
       setExistingFiles([]);
       setQueuedMainFile(null);
       setQueuedComplementaryFiles([]);
@@ -127,7 +135,9 @@ export default function WorkInstructionModal({
               setFormData({
                 service_id: String(instruction.service_id),
                 part_name: instruction.part_name || "",
-                inspection_rate_per_hour: String(instruction.inspection_rate_per_hour),
+                inspection_rate_per_hour: String(instruction.inspection_rate_per_hour ?? ""),
+                inspection_mode: instruction.inspection_mode || "rate",
+                start_date: instruction.start_date?.slice(0, 10) || "",
                 description: instruction.description || "",
                 problem: instruction.problem || "",
               });
@@ -192,11 +202,34 @@ export default function WorkInstructionModal({
     );
   };
 
+  const handleAddDefect = async () => {
+    const name = newDefectName.trim();
+    if (!name) return;
+    const existing = defects.find((defect) => defect.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setSelectedDefects((prev) => prev.includes(existing.id) ? prev : [...prev, existing.id]);
+      setNewDefectName("");
+      return;
+    }
+    setIsAddingDefect(true);
+    const result = await createDefect({ name });
+    setIsAddingDefect(false);
+    if (!result.success || !result.id) {
+      setError(result.error || "No se pudo agregar el defecto al catálogo");
+      return;
+    }
+    const created: IDefect = { id: result.id, name, description: null };
+    setDefects((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    setSelectedDefects((prev) => [...prev, created.id]);
+    setNewDefectName("");
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (!formData.service_id || !formData.part_name.trim() || !formData.inspection_rate_per_hour) {
+    if (!formData.service_id || !formData.part_name.trim() || !formData.start_date ||
+        (formData.inspection_mode === "rate" && !formData.inspection_rate_per_hour)) {
       setError("Por favor complete todos los campos requeridos");
       return;
     }
@@ -207,7 +240,11 @@ export default function WorkInstructionModal({
         const result = await updateWorkInstruction(workInstructionId, {
           service_id: Number(formData.service_id),
           part_name: formData.part_name.trim(),
-          inspection_rate_per_hour: Number(formData.inspection_rate_per_hour),
+          inspection_rate_per_hour: formData.inspection_mode === "rate"
+            ? Number(formData.inspection_rate_per_hour)
+            : null,
+          inspection_mode: formData.inspection_mode,
+          start_date: formData.start_date,
           description: formData.description || undefined,
           problem: formData.problem,
         });
@@ -242,7 +279,11 @@ export default function WorkInstructionModal({
         const result = await createWorkInstruction({
           service_id: Number(formData.service_id),
           part_name: formData.part_name.trim(),
-          inspection_rate_per_hour: Number(formData.inspection_rate_per_hour),
+          ...(formData.inspection_mode === "rate"
+            ? { inspection_rate_per_hour: Number(formData.inspection_rate_per_hour) }
+            : {}),
+          inspection_mode: formData.inspection_mode,
+          start_date: formData.start_date,
           description: formData.description || undefined,
           problem: formData.problem || undefined,
         });
@@ -402,13 +443,44 @@ export default function WorkInstructionModal({
                   </div>
 
                   <div className="grid gap-2">
-                    <Label htmlFor="inspection_rate_per_hour">Piezas por Hora *</Label>
+                    <Label>Modalidad de inspección *</Label>
+                    <div className="grid grid-cols-2 gap-2 rounded-lg border p-2">
+                      {(["rate", "full_time"] as const).map((mode) => (
+                        <label key={mode} className="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-muted">
+                          <input
+                            type="radio"
+                            name="inspection_mode"
+                            value={mode}
+                            checked={formData.inspection_mode === mode}
+                            onChange={() => handleChange("inspection_mode", mode)}
+                            disabled={isPending}
+                          />
+                          {mode === "rate" ? "Rate" : "Full time"}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {formData.inspection_mode === "rate" && <div className="grid gap-2">
+                    <Label htmlFor="inspection_rate_per_hour">Piezas por hora *</Label>
                     <Input
                       id="inspection_rate_per_hour"
                       type="number"
                       min="1"
                       value={formData.inspection_rate_per_hour}
                       onChange={(e) => handleChange("inspection_rate_per_hour", e.target.value)}
+                      disabled={isPending}
+                      required
+                    />
+                  </div>}
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="start_date">Fecha de inicio de la contención *</Label>
+                    <Input
+                      id="start_date"
+                      type="date"
+                      value={formData.start_date}
+                      onChange={(e) => handleChange("start_date", e.target.value)}
                       disabled={isPending}
                       required
                     />
@@ -492,8 +564,22 @@ export default function WorkInstructionModal({
                       ))
                     )}
                   </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newDefectName}
+                      onChange={(e) => setNewDefectName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") { e.preventDefault(); void handleAddDefect(); }
+                      }}
+                      placeholder="Escriba un defecto nuevo..."
+                      disabled={isPending || isAddingDefect}
+                    />
+                    <Button type="button" variant="outline" onClick={handleAddDefect} disabled={!newDefectName.trim() || isPending || isAddingDefect}>
+                      Agregar
+                    </Button>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    En la inspección también se podrán registrar defectos nuevos como texto libre.
+                    Los defectos nuevos se guardan en el catálogo y quedan asociados a esta IT.
                   </p>
                 </div>
 

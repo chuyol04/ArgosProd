@@ -54,6 +54,7 @@ import {
 interface DefectsSectionProps {
   inspectionDetailId: number | null;
   workInstructionId?: number;
+  rejectedPieces?: number;
   disabled?: boolean;
   /** Reports the sum of all defect quantities for this box, so the parent
    * form can warn when it doesn't match the rejected pieces count. Sourced
@@ -83,7 +84,7 @@ export interface DefectsSectionHandle {
 }
 
 export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionProps>(
-  function DefectsSection({ inspectionDetailId, workInstructionId, disabled = false, onTotalQuantityChange }, ref) {
+  function DefectsSection({ inspectionDetailId, workInstructionId, rejectedPieces = 0, disabled = false, onTotalQuantityChange }, ref) {
   const isPendingMode = inspectionDetailId == null;
 
   const [defects, setDefects] = useState<IDefect[]>([]);
@@ -141,6 +142,27 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     const total = source.reduce((sum, i) => sum + (i.quantity || 0), 0);
     onTotalQuantityChange?.(total);
   }, [incidents, pendingDefects, isPendingMode, onTotalQuantityChange]);
+
+  // When the IT has exactly one expected defect, use all rejected pieces as
+  // its quantity automatically. Choosing/adding another defect stops this sync.
+  useEffect(() => {
+    if (!isPendingMode || defects.length !== 1 || rejectedPieces <= 0) return;
+    const expected = defects[0];
+    setPendingDefects((prev) => {
+      if (prev.length === 0) {
+        return [{
+          tempId: `expected-${expected.id}`,
+          defect_id: expected.id,
+          defect_label: expected.name,
+          quantity: rejectedPieces,
+        }];
+      }
+      if (prev.length === 1 && prev[0].defect_id === expected.id) {
+        return [{ ...prev[0], quantity: rejectedPieces }];
+      }
+      return prev;
+    });
+  }, [defects, isPendingMode, rejectedPieces]);
 
   const resetModal = useCallback(() => {
     setSelectedDefectId("");
@@ -450,6 +472,10 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   }
 
   const entryCount = isPendingMode ? pendingDefects.length : incidents.length;
+  const automaticExpectedDefect = isPendingMode && defects.length === 1 &&
+    pendingDefects.length === 1 && pendingDefects[0].defect_id === defects[0].id
+      ? pendingDefects[0]
+      : null;
 
   return (
     <div className="space-y-3">
@@ -463,11 +489,13 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           type="button"
           variant="outline"
           size="sm"
-          onClick={handleOpenAddModal}
+          onClick={() => automaticExpectedDefect
+            ? handleOpenEditPending(automaticExpectedDefect)
+            : handleOpenAddModal()}
           disabled={disabled}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Agregar
+          {automaticExpectedDefect ? "Especificar otro" : "Agregar"}
         </Button>
       </div>
 
@@ -497,7 +525,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                   )}
 
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{pending.defect_label}</p>
+                    <p className="break-words text-sm font-medium">{pending.defect_label}</p>
                     <p className="text-xs text-muted-foreground">Cantidad: {pending.quantity}</p>
                   </div>
 
@@ -561,7 +589,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{incident.defect_name}</p>
+                    <p className="break-words text-sm font-medium">{incident.defect_name}</p>
                     {incident.quantity != null && (
                       <p className="text-xs text-muted-foreground">
                         Cantidad: {incident.quantity}

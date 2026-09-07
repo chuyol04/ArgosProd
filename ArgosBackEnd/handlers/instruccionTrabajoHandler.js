@@ -1,4 +1,5 @@
 import MysqlClient from '../connections/mysqldb.js';
+import { sanitizeDateField } from '../lib/helpers/dateTimeHelpers.js';
 
 // "Pieza" is captured as free text now - the parts catalog (table `parts`)
 // is kept for backward compatibility and reporting, but is no longer a
@@ -25,10 +26,19 @@ async function findOrCreatePartByName(rawName) {
 // CREATE
 export async function createInstruccionTrabajo(req, res) {
   try {
-    const { inspection_rate_per_hour, description, problem, service_id, part_id, part_name } = req.body || {};
+    const {
+      inspection_mode = 'rate', inspection_rate_per_hour, start_date,
+      description, problem, service_id, part_id, part_name
+    } = req.body || {};
 
-    if (!inspection_rate_per_hour || !service_id || (!part_id && !part_name)) {
-      return res.status(400).json({ success: false, motive: 'inspection_rate_per_hour, service_id, and part_id/part_name are required' });
+    if (!['rate', 'full_time'].includes(inspection_mode)) {
+      return res.status(400).json({ success: false, motive: 'inspection_mode must be rate or full_time' });
+    }
+    const safeStartDate = sanitizeDateField(start_date);
+    const safeRate = Number(inspection_rate_per_hour);
+    if (!service_id || !safeStartDate || (!part_id && !part_name) ||
+        (inspection_mode === 'rate' && (!Number.isFinite(safeRate) || safeRate <= 0))) {
+      return res.status(400).json({ success: false, motive: 'service_id, start_date, part_id/part_name and rate (when applicable) are required' });
     }
 
     // Validate if the service exists
@@ -50,8 +60,10 @@ export async function createInstruccionTrabajo(req, res) {
     }
 
     const [result] = await MysqlClient.execute(
-      'INSERT INTO work_instructions (inspection_rate_per_hour, description, problem, service_id, part_id) VALUES (?, ?, ?, ?, ?)',
-      [inspection_rate_per_hour, description || null, problem || null, service_id, resolvedPartId]
+      `INSERT INTO work_instructions
+       (inspection_mode, inspection_rate_per_hour, start_date, description, problem, service_id, part_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [inspection_mode, inspection_mode === 'rate' ? safeRate : null, safeStartDate, description || null, problem || null, service_id, resolvedPartId]
     );
 
     return res.status(201).json({
@@ -76,6 +88,8 @@ export async function getInstruccionesTrabajo(req, res) {
       SELECT
         wi.id,
         wi.inspection_rate_per_hour,
+        wi.inspection_mode,
+        wi.start_date,
         wi.description,
         wi.problem,
         wi.part_id,
@@ -153,6 +167,8 @@ export async function getInstruccionTrabajoById(req, res) {
       SELECT
         wi.id,
         wi.inspection_rate_per_hour,
+        wi.inspection_mode,
+        wi.start_date,
         wi.description,
         wi.problem,
         wi.part_id,
@@ -225,9 +241,9 @@ export async function getInstruccionTrabajoById(req, res) {
 export async function updateInstruccionTrabajo(req, res) {
   try {
     const { id } = req.params;
-    const { inspection_rate_per_hour, description, problem, service_id, part_id, part_name } = req.body || {};
+    const { inspection_mode, inspection_rate_per_hour, start_date, description, problem, service_id, part_id, part_name } = req.body || {};
 
-    const [exists] = await MysqlClient.execute('SELECT id FROM work_instructions WHERE id = ? LIMIT 1', [id]);
+    const [exists] = await MysqlClient.execute('SELECT id, inspection_rate_per_hour FROM work_instructions WHERE id = ? LIMIT 1', [id]);
     if (exists.length === 0) {
       return res.status(404).json({ success: false, motive: 'Work instruction not found' });
     }
@@ -256,12 +272,39 @@ export async function updateInstruccionTrabajo(req, res) {
     const params = [];
 
     if (inspection_rate_per_hour !== undefined) {
+      const safeRate = Number(inspection_rate_per_hour);
+      if (inspection_rate_per_hour !== null && (!Number.isFinite(safeRate) || safeRate <= 0)) {
+        return res.status(400).json({ success: false, motive: 'inspection_rate_per_hour must be greater than zero' });
+      }
       fields.push('inspection_rate_per_hour = ?');
-      params.push(inspection_rate_per_hour);
+      params.push(inspection_rate_per_hour === null ? null : safeRate);
     }
     if (description !== undefined) {
       fields.push('description = ?');
       params.push(description);
+    }
+    if (inspection_mode !== undefined) {
+      if (!['rate', 'full_time'].includes(inspection_mode)) {
+        return res.status(400).json({ success: false, motive: 'inspection_mode must be rate or full_time' });
+      }
+      if (inspection_mode === 'rate' &&
+          (inspection_rate_per_hour === null ||
+           (inspection_rate_per_hour === undefined && !exists[0].inspection_rate_per_hour))) {
+        return res.status(400).json({ success: false, motive: 'inspection_rate_per_hour is required for rate mode' });
+      }
+      fields.push('inspection_mode = ?');
+      params.push(inspection_mode);
+      if (inspection_mode === 'full_time' && inspection_rate_per_hour === undefined) {
+        fields.push('inspection_rate_per_hour = NULL');
+      }
+    }
+    if (start_date !== undefined) {
+      const safeStartDate = sanitizeDateField(start_date);
+      if (!safeStartDate) {
+        return res.status(400).json({ success: false, motive: 'start_date must be a valid date' });
+      }
+      fields.push('start_date = ?');
+      params.push(safeStartDate);
     }
     if (problem !== undefined) {
       fields.push('problem = ?');

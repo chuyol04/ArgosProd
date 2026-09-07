@@ -34,6 +34,7 @@ import {
 import ClientModal from "./ClientModal";
 import { deleteClient } from "@/app/(protected)/clients/actions/clients.actions";
 import PageContainer from "@/components/layout/PageContainer";
+import { useUser } from "@/contexts/users/userContext";
 
 type ModalMode = "create" | "edit";
 
@@ -43,6 +44,9 @@ type Props = {
 
 export default function ClientsTable({ initialData }: Props) {
   const router = useRouter();
+  const { user } = useUser();
+  const isInspectorOnly = user?.roles?.includes("Inspector") &&
+    !user.roles.some((role) => role === "Manager" || role === "Admin");
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -129,10 +133,10 @@ export default function ClientsTable({ initialData }: Props) {
         <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
           Clientes
         </h1>
-        <Button onClick={() => openModal("create")}>
+        {!isInspectorOnly && <Button onClick={() => openModal("create")}>
           <Plus className="mr-2 h-4 w-4" />
           Crear Cliente
-        </Button>
+        </Button>}
       </div>
 
       {/* Filters */}

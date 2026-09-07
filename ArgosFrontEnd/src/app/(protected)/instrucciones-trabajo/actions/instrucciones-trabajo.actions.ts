@@ -226,7 +226,9 @@ export async function getWorkInstructionById(
             success: true,
             data: {
                 id: instruction.id,
+                inspection_mode: instruction.inspection_mode,
                 inspection_rate_per_hour: instruction.inspection_rate_per_hour,
+                start_date: instruction.start_date,
                 description: instruction.description,
                 problem: instruction.problem,
                 part_id: instruction.part_id,

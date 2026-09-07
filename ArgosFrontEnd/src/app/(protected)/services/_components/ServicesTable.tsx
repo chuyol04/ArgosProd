@@ -40,6 +40,7 @@ import {
   todayLocalDateString,
   toDateInputValue,
 } from "@/lib/dateTimeUtils";
+import { useUser } from "@/contexts/users/userContext";
 
 type ModalMode = "create" | "edit";
 
@@ -63,6 +64,9 @@ function isEnCurso(startDate: string, endDate: string | null): boolean {
 const formatDate = formatDateDisplay;
 
 export default function ServicesTable({ initialData, clients }: Props) {
+  const { user } = useUser();
+  const isInspectorOnly = user?.roles?.includes("Inspector") &&
+    !user.roles.some((role) => role === "Manager" || role === "Admin");
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
@@ -150,10 +154,10 @@ export default function ServicesTable({ initialData, clients }: Props) {
         <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
           Servicios
         </h1>
-        <Button onClick={() => openModal("create")}>
+        {!isInspectorOnly && <Button onClick={() => openModal("create")}>
           <Plus className="mr-2 h-4 w-4" />
           Crear Servicio
-        </Button>
+        </Button>}
       </div>
 
       {/* Filters */}

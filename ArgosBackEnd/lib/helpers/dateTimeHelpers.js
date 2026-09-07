@@ -52,6 +52,18 @@ export function todayLocalDateString() {
   return `${y}-${m}-${d}`;
 }
 
+/** ISO-8601 week (1-53) for a DATE value, calculated in UTC to avoid shifts. */
+export function isoWeekFromDate(value) {
+  const safe = sanitizeDateField(value);
+  if (!safe) return null;
+  const [year, month, day] = safe.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+}
+
 /**
  * Formats a 'YYYY-MM-DD' string for human-readable output (e.g. Excel)
  * without ever constructing a JS Date object out of it.

@@ -157,7 +157,9 @@ export default function UserDetailsModal({
                                                         {wi.client_name}
                                                     </td>
                                                     <td className="px-3 py-2 text-right">
-                                                        {wi.inspection_rate_per_hour}
+                                                        {wi.inspection_mode === "full_time"
+                                                            ? "Full time"
+                                                            : `${wi.inspection_rate_per_hour ?? "-"} pzas/h`}
                                                     </td>
                                                 </tr>
                                             ))}

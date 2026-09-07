@@ -8,7 +8,10 @@ import {
   addSerialNumber,
   deleteSerialNumber,
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
-import { ISerialNumber } from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
+import {
+  ISerialNumber,
+  ISerialLotInput,
+} from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
 
 export const MAX_SERIAL_NUMBERS = 20;
 
@@ -22,8 +25,8 @@ interface SerialNumbersInputProps {
   // parent form - they get sent together with the rest of the create payload
   // in one request (no separate upload/commit step needed, unlike evidence
   // files elsewhere in this form).
-  pendingValues?: string[];
-  onPendingValuesChange?: (values: string[]) => void;
+  pendingValues?: ISerialLotInput[];
+  onPendingValuesChange?: (values: ISerialLotInput[]) => void;
   // Saved mode only (existing detail): initial list fetched with it. Adds/
   // removes hit the backend immediately, same as the Defectos section.
   initialSerialNumbers?: ISerialNumber[];
@@ -45,6 +48,7 @@ export function SerialNumbersInput({
   const isPendingMode = inspectionDetailId == null;
   const [savedSerials, setSavedSerials] = useState<ISerialNumber[]>(initialSerialNumbers);
   const [inputValue, setInputValue] = useState("");
+  const [lotValue, setLotValue] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -53,9 +57,9 @@ export function SerialNumbersInput({
     setSavedSerials(initialSerialNumbers);
   }, [initialSerialNumbers]);
 
-  const items: { key: string; label: string }[] = isPendingMode
-    ? pendingValues.map((v) => ({ key: v, label: v }))
-    : savedSerials.map((s) => ({ key: String(s.id), label: s.serial_number }));
+  const items: { key: string; serialNumber: string; lotNumber: string }[] = isPendingMode
+    ? pendingValues.map((v) => ({ key: v.serial_number, serialNumber: v.serial_number, lotNumber: v.lot_number }))
+    : savedSerials.map((s) => ({ key: String(s.id), serialNumber: s.serial_number, lotNumber: s.lot_number || "Sin lote" }));
 
   useEffect(() => {
     if (!isPendingMode) onCountChange?.(savedSerials.length);
@@ -63,10 +67,14 @@ export function SerialNumbersInput({
 
   const handleAdd = async () => {
     const trimmed = inputValue.trim().toUpperCase();
+    const trimmedLot = lotValue.trim().toUpperCase();
     setLocalError(null);
-    if (!trimmed) return;
+    if (!trimmed || !trimmedLot) {
+      setLocalError("Escribe el número de serie y su lote.");
+      return;
+    }
 
-    const existingLabels = items.map((i) => i.label);
+    const existingLabels = items.map((i) => i.serialNumber);
     if (existingLabels.includes(trimmed)) {
       setLocalError("Este número de serie ya fue agregado.");
       return;
@@ -77,21 +85,23 @@ export function SerialNumbersInput({
     }
 
     if (isPendingMode) {
-      onPendingValuesChange?.([...pendingValues, trimmed]);
+      onPendingValuesChange?.([...pendingValues, { serial_number: trimmed, lot_number: trimmedLot }]);
       setInputValue("");
+      setLotValue("");
       inputRef.current?.focus();
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const result = await addSerialNumber(inspectionDetailId, trimmed);
+      const result = await addSerialNumber(inspectionDetailId, trimmed, trimmedLot);
       if (result.success && result.id) {
         setSavedSerials((prev) => [
           ...prev,
-          { id: result.id!, serial_number: result.serial_number || trimmed },
+          { id: result.id!, serial_number: result.serial_number || trimmed, lot_number: result.lot_number || trimmedLot },
         ]);
         setInputValue("");
+        setLotValue("");
         inputRef.current?.focus();
       } else {
         setLocalError(result.error || "Error al agregar número de serie");
@@ -108,9 +118,9 @@ export function SerialNumbersInput({
     }
   };
 
-  const handleRemove = async (item: { key: string; label: string }) => {
+  const handleRemove = async (item: { key: string; serialNumber: string; lotNumber: string }) => {
     if (isPendingMode) {
-      onPendingValuesChange?.(pendingValues.filter((v) => v !== item.label));
+      onPendingValuesChange?.(pendingValues.filter((v) => v.serial_number !== item.serialNumber));
       return;
     }
 
@@ -130,7 +140,7 @@ export function SerialNumbersInput({
 
   return (
     <div className="space-y-2">
-      <div className="flex gap-2">
+      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
         <Input
           ref={inputRef}
           value={inputValue}
@@ -139,7 +149,19 @@ export function SerialNumbersInput({
             if (localError) setLocalError(null);
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Escriba un número de serie..."
+          placeholder="Número de serie..."
+          disabled={disabled || isSubmitting}
+          className="font-mono"
+          aria-invalid={!!(error || localError)}
+        />
+        <Input
+          value={lotValue}
+          onChange={(e) => {
+            setLotValue(e.target.value);
+            if (localError) setLocalError(null);
+          }}
+          onKeyDown={handleKeyDown}
+          placeholder="Lote correspondiente..."
           disabled={disabled || isSubmitting}
           className="font-mono"
           aria-invalid={!!(error || localError)}
@@ -148,7 +170,7 @@ export function SerialNumbersInput({
           type="button"
           variant="outline"
           onClick={handleAdd}
-          disabled={disabled || isSubmitting || !inputValue.trim()}
+          disabled={disabled || isSubmitting || !inputValue.trim() || !lotValue.trim()}
         >
           <Plus className="h-4 w-4 mr-1" />
           Agregar
@@ -157,7 +179,7 @@ export function SerialNumbersInput({
 
       {(error || localError) && <p className="text-xs text-destructive">{error || localError}</p>}
 
-      <p className="text-xs text-muted-foreground">Números de serie agregados: {items.length}</p>
+      <p className="text-xs text-muted-foreground">Pares serie/lote agregados: {items.length}</p>
 
       {items.length > 0 && (
         <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
@@ -166,7 +188,8 @@ export function SerialNumbersInput({
               key={item.key}
               className="inline-flex items-center gap-1 rounded-full border bg-muted px-2.5 py-1 text-xs font-mono"
             >
-              {item.label}
+              <span>{item.serialNumber}</span>
+              <span className="text-muted-foreground">· Lote {item.lotNumber}</span>
               {!disabled && (
                 <button
                   type="button"

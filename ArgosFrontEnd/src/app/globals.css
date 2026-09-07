@@ -149,6 +149,10 @@
   body {
     @apply bg-background text-foreground;
   }
+  td, th {
+    overflow-wrap: anywhere;
+    vertical-align: top;
+  }
 }
 
 /* Rich text editor & viewer prose styles */

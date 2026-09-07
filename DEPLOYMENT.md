@@ -440,6 +440,20 @@ docker compose logs frontend --since=10m | grep -i "error\|⨯\|warn"
 
 ## 8. Nginx
 
+Estado validado el 2026-09-06: `ozcabinspeccion.com` y `www` ya resuelven a
+`72.249.60.141`; HTTP llega a la app. HTTPS aún requiere emitir el certificado.
+
+Para que la IP directa no muestre la aplicación, agrega primero un servidor
+por defecto y conserva la aplicación únicamente en el bloque del dominio:
+
+```nginx
+server {
+    listen 80 default_server;
+    server_name _;
+    return 444;
+}
+```
+
 Configuración activa en `/etc/nginx/sites-available/argos`:
 ```nginx
 server {
@@ -466,12 +480,25 @@ Recargar Nginx tras cambios:
 nginx -t && systemctl reload nginx
 ```
 
+Emitir y configurar HTTPS (DNS debe resolver primero al VPS):
+
+```bash
+apt-get -o Acquire::ForceIPv4=true update
+apt-get -o Acquire::ForceIPv4=true install -y certbot python3-certbot-nginx
+certbot --nginx -d ozcabinspeccion.com -d www.ozcabinspeccion.com
+nginx -t && systemctl reload nginx
+curl -I https://ozcabinspeccion.com
+```
+
+Después de confirmar HTTPS, cambia `COOKIE_SECURE` a `"true"` en
+`docker-compose.yml` y reconstruye el frontend.
+
 ---
 
 ## 9. URLs de Acceso
 
-- **App por dominio**: http://ozcabinspeccion.com
-- **App por IP**: http://72.249.60.141
+- **App por dominio**: https://ozcabinspeccion.com (después de ejecutar Certbot)
+- **App por IP**: bloqueada por el `default_server` de Nginx
 - **Backend API**: http://72.249.60.141:3001
 
 > **Importante**: No acceder a `http://72.249.60.141:3000` directamente. El puerto 3000 está enlazado a `127.0.0.1` y no es accesible desde el exterior. Toda la app se accede vía Nginx en puerto 80, ya sea con dominio o con IP sin puerto.

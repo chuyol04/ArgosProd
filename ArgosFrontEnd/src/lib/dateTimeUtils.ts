@@ -66,6 +66,18 @@ export function isPastLocalDate(value: string | null | undefined): boolean {
   return toDateInputValue(value) < todayLocalDateString();
 }
 
+/** ISO-8601 week (1-53) for a YYYY-MM-DD value. */
+export function isoWeekFromDate(value: string | null | undefined): number | undefined {
+  const safe = toDateInputValue(value);
+  if (!safe) return undefined;
+  const [year, month, day] = safe.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  const weekday = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - weekday);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+}
+
 /**
  * Converts an empty string to `undefined` so payloads sent to the backend
  * either carry a valid value or omit the field — never `""`, which would

@@ -56,7 +56,9 @@ CREATE TABLE work_instructions (
     part_id INT NOT NULL,
     description TEXT,
     problem TEXT,
-    inspection_rate_per_hour INT NOT NULL, -- Number of pieces to be inspected per hour.
+    inspection_mode ENUM('rate', 'full_time') NOT NULL DEFAULT 'rate',
+    start_date DATE,
+    inspection_rate_per_hour INT, -- Required only when inspection_mode = 'rate'.
     FOREIGN KEY (service_id) REFERENCES services(id),
     FOREIGN KEY (part_id) REFERENCES parts(id)
 );
@@ -132,6 +134,7 @@ CREATE TABLE inspection_detail_serial_numbers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inspection_detail_id INT NOT NULL,
     serial_number VARCHAR(50) NOT NULL,
+    lot_number VARCHAR(50) NOT NULL,
     FOREIGN KEY (inspection_detail_id) REFERENCES inspection_details(id) ON DELETE CASCADE,
     UNIQUE KEY uq_inspection_detail_serial (inspection_detail_id, serial_number)
 );

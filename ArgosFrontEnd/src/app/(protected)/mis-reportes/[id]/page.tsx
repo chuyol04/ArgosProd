@@ -142,7 +142,11 @@ export default async function MisReporteDetallePage({ params }: Props) {
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs"># Lote</p>
-                      <p>{detail.lot_number || "-"}</p>
+                      <p>
+                        {detail.serial_numbers?.length
+                          ? detail.serial_numbers.map((serial) => serial.lot_number || detail.lot_number || "-").join(", ")
+                          : detail.lot_number || "-"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs">Fecha Manufactura</p>

@@ -152,6 +152,7 @@ export default function ReportModal({
   const handleWorkInstructionChange = (value: string) => {
     const workInstruction = workInstructions.find((wi) => String(wi.id) === value);
     setWorkInstructionId(value);
+    setStartDate(toDateInputValue(workInstruction?.start_date));
     setDescription(richTextToPlainText(workInstruction?.description ?? null));
     setProblem(workInstruction?.problem || "");
   };
@@ -457,7 +458,7 @@ export default function ReportModal({
                                   </td>
                                   <td className="text-card-foreground px-4 py-2 text-xs">
                                     {detail.serial_numbers.length > 0
-                                      ? detail.serial_numbers.map((s) => s.serial_number).join(", ")
+                                      ? detail.serial_numbers.map((s) => `${s.serial_number} / Lote ${s.lot_number || detail.lot_number || "-"}`).join(", ")
                                       : detail.lot_number || "-"}
                                   </td>
                                   <td className="text-card-foreground px-4 py-2 text-xs">

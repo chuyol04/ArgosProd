@@ -1,6 +1,12 @@
 export interface ISerialNumber {
   id: number;
   serial_number: string;
+  lot_number: string | null;
+}
+
+export interface ISerialLotInput {
+  serial_number: string;
+  lot_number: string;
 }
 
 // Base inspection detail fields (from DB)
@@ -44,6 +50,7 @@ export interface IInspectionDetailExtended extends IInspectionDetail {
    * esta pieza/servicio - usado para calcular las "Horas estimadas por rate".
    * null si la instrucción de trabajo no tiene un rate configurado. */
   inspection_rate_per_hour: number | null;
+  inspection_mode: "rate" | "full_time";
   service_name: string;
   client_name: string;
   inspector_name: string | null;
@@ -56,6 +63,7 @@ export interface IInspectionDetailFormData {
    * id yet, inserted together with the detail itself. Existing details add/
    * remove serial numbers one at a time via dedicated endpoints instead. */
   serial_numbers?: string[];
+  serial_lots?: ISerialLotInput[];
   lot_number?: string;
   inspector_id?: number;
   hours?: number;
@@ -101,4 +109,6 @@ export interface IReportOption {
   /** "Problema / Condición Revisada" - shown to the inspector before they
    * pick this report, so they know what to look for in each box. */
   problem: string | null;
+  inspection_mode: "rate" | "full_time";
+  inspection_rate_per_hour: number | null;
 }

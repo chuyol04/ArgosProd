@@ -8,6 +8,8 @@ export interface IInspectionReport {
   photo_url: string | null;
   work_instruction_id: number;
   work_instruction_description: string | null;
+  inspection_mode: "rate" | "full_time";
+  inspection_rate_per_hour: number | null;
   part_id: number;
   part_name: string;
   service_id: number;
@@ -53,7 +55,7 @@ export interface UpdateInspectionReportData {
 export interface IInspectionDetail {
   id: number;
   /** A box can relate to several serial numbers. */
-  serial_numbers: { id: number; serial_number: string }[];
+  serial_numbers: { id: number; serial_number: string; lot_number: string | null }[];
   lot_number: string | null;
   inspector_id: number;
   inspector_name: string;
@@ -76,6 +78,8 @@ export interface IInspectionReportDetails {
 // Work instruction option for select dropdown
 export interface IWorkInstructionOption {
   id: number;
+  start_date: string | null;
+  inspection_mode: "rate" | "full_time";
   description: string | null;
   problem: string | null;
   part_name: string;

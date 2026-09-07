@@ -1,11 +1,12 @@
 import express from 'express';
 
 import * as clienteHandlers from '../handlers/clientehandler.js'; // 👈 remember the .js extension
+import { blockInspectorCatalogCreate } from '../middleware/clientGuard.js';
 
 const router = express.Router();
 
 // POST /clients/create
-router.post('/create', async (req, res) => {
+router.post('/create', blockInspectorCatalogCreate, async (req, res) => {
   try {
     await clienteHandlers.createCliente(req, res);
   } catch (error) {
