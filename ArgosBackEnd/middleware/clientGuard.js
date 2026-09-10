@@ -6,7 +6,7 @@
 // truth; the frontend hiding buttons/menus is only a UX nicety, never the
 // actual access boundary.
 import userHelper from '../lib/helpers/userHelpers.js';
-import { isClientRole, isManagerOrAbove, hasRole, ROLES } from '../lib/constants/roles.js';
+import { isClientRole, isInspectorOnly } from '../lib/constants/roles.js';
 
 async function getRequester(res) {
   const uid = res.locals.firebase_uid?.uid;
@@ -44,11 +44,26 @@ export async function blockClientWrites(req, res, next) {
   return next();
 }
 
-/** Inspectors create reports/inspection data, not client or service catalogs. */
-export async function blockInspectorCatalogCreate(req, res, next) {
+/** Inspectors may create and update inspection data, but never delete records. */
+export async function blockInspectorDeletes(req, res, next) {
+  if (req.method !== 'DELETE') return next();
+
   const requester = res.locals.requester || await getRequester(res);
-  if (requester && hasRole(requester.roles, ROLES.INSPECTOR) && !isManagerOrAbove(requester.roles)) {
-    return res.status(403).json({ success: false, motive: 'Los inspectores no pueden crear clientes ni servicios' });
+  if (requester && isInspectorOnly(requester.roles)) {
+    return res.status(403).json({ success: false, motive: 'Los inspectores no pueden eliminar información' });
   }
+  res.locals.requester = requester;
+  return next();
+}
+
+/** Inspectors create reports/inspection data, not administrative catalogs. */
+export async function blockInspectorCatalogWrites(req, res, next) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+
+  const requester = res.locals.requester || await getRequester(res);
+  if (requester && isInspectorOnly(requester.roles)) {
+    return res.status(403).json({ success: false, motive: 'Los inspectores no pueden modificar información administrativa' });
+  }
+  res.locals.requester = requester;
   return next();
 }

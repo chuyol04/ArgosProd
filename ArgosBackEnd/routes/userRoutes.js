@@ -1,7 +1,7 @@
 import express from 'express';
 
 import * as userHandlers from '../handlers/userHandler.js'; // named exports
-import { blockClientsEntirely } from '../middleware/clientGuard.js';
+import { blockClientsEntirely, blockInspectorCatalogWrites } from '../middleware/clientGuard.js';
 
 const router = express.Router();
 
@@ -29,7 +29,7 @@ router.get('/:id', blockClientsEntirely, async (req, res) => {
     }
 });
 
-router.put('/:id', blockClientsEntirely, async (req, res) => {
+router.put('/:id', blockInspectorCatalogWrites, blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.updateUser(req, res);
     } catch (error) {
@@ -38,7 +38,7 @@ router.put('/:id', blockClientsEntirely, async (req, res) => {
     }
 });
 
-router.post('/create', blockClientsEntirely, async (req, res) => {
+router.post('/create', blockInspectorCatalogWrites, blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.createUser(req, res);
     } catch (error) {
@@ -56,7 +56,7 @@ router.post('/change-password', async (req, res) => {
     }
 });
 
-router.post('/:id/reset-password', blockClientsEntirely, async (req, res) => {
+router.post('/:id/reset-password', blockInspectorCatalogWrites, blockClientsEntirely, async (req, res) => {
     try {
         await userHandlers.resetUserPassword(req, res);
     } catch (error) {

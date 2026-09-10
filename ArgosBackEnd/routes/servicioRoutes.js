@@ -1,11 +1,10 @@
 import express from 'express';
 import * as servicioHandlers from '../handlers/servicioHandler.js'; // named exports
-import { blockInspectorCatalogCreate } from '../middleware/clientGuard.js';
 
 const router = express.Router();
 
 // POST /services/create
-router.post('/create', blockInspectorCatalogCreate, servicioHandlers.createServicio);
+router.post('/create', servicioHandlers.createServicio);
 
 // GET /services
 router.get('/', servicioHandlers.getServicios);

@@ -263,10 +263,9 @@ export default function InspectionDetailForm({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Accepted/rejected/reworked are the only manually-captured piece counts -
-  // never let them go negative.
+  // All four piece counts are captured manually; never let them go negative.
   const handlePieceCountChange = (
-    field: "accepted_pieces" | "rejected_pieces" | "reworked_pieces",
+    field: "inspected_pieces" | "accepted_pieces" | "rejected_pieces" | "reworked_pieces",
     rawValue: string
   ) => {
     handleInputChange(field, rawValue ? Math.max(0, Number(rawValue)) : undefined);
@@ -307,21 +306,6 @@ export default function InspectionDetailForm({
     setFormData((prev) => ({ ...prev, week: isoWeekFromDate(prev.inspection_date) }));
   }, [formData.inspection_date, isReadOnly]);
 
-  // Inspected pieces = accepted + rejected + reworked, for THIS box only
-  // (never summed across boxes). The field itself stays read-only/computed.
-  const computedInspectedPieces = useMemo(
-    () =>
-      (formData.accepted_pieces || 0) +
-      (formData.rejected_pieces || 0) +
-      (formData.reworked_pieces || 0),
-    [formData.accepted_pieces, formData.rejected_pieces, formData.reworked_pieces]
-  );
-
-  useEffect(() => {
-    if (isReadOnly) return;
-    setFormData((prev) => ({ ...prev, inspected_pieces: computedInspectedPieces }));
-  }, [computedInspectedPieces, isReadOnly]);
-
   // "Rate de Inspección": horas TEÓRICAS que debería tomar la caja según el
   // rate (piezas/hora) configurado en la instrucción de trabajo, distinto de
   // "Horas Trabajadas" (horas REALES por hora_inicio/hora_fin). Se recalcula
@@ -331,8 +315,8 @@ export default function InspectionDetailForm({
   const inspectionRate = detail?.inspection_rate_per_hour ?? selectedReport?.inspection_rate_per_hour ?? null;
   const estimatedHoursByRate = useMemo(() => {
     if (inspectionRate == null || inspectionRate === 0) return null;
-    return Math.round((computedInspectedPieces / inspectionRate) * 100) / 100;
-  }, [computedInspectedPieces, inspectionRate]);
+    return Math.round(((formData.inspected_pieces || 0) / inspectionRate) * 100) / 100;
+  }, [formData.inspected_pieces, inspectionRate]);
 
   // "Problema / Condición Revisada": inherited from the parent report - what
   // is being inspected/looked for (e.g. "Golpe / Falta de ranura"). For an
@@ -811,6 +795,21 @@ export default function InspectionDetailForm({
         </CardHeader>
         <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           <FormField
+            label="Inspeccionadas"
+            value={detail?.inspected_pieces}
+            isReadOnly={isReadOnly}
+            valueClassName="text-base"
+          >
+            <Input
+              type="number"
+              min="0"
+              value={formData.inspected_pieces ?? ""}
+              onChange={(e) => handlePieceCountChange("inspected_pieces", e.target.value)}
+              placeholder="0"
+            />
+          </FormField>
+
+          <FormField
             label="Aceptadas"
             value={detail?.accepted_pieces}
             isReadOnly={isReadOnly}
@@ -857,20 +856,6 @@ export default function InspectionDetailForm({
             />
           </FormField>
 
-          <FormField
-            label="Inspeccionadas"
-            value={detail?.inspected_pieces}
-            isReadOnly={isReadOnly}
-            valueClassName="text-base"
-          >
-            <Input
-              type="text"
-              value={computedInspectedPieces}
-              readOnly
-              disabled
-              placeholder="Acept. + Rech. + Retrab."
-            />
-          </FormField>
         </CardContent>
       </Card>
 
@@ -906,7 +891,7 @@ export default function InspectionDetailForm({
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     Piezas Inspeccionadas
                   </p>
-                  <p className="text-sm font-medium text-foreground">{computedInspectedPieces}</p>
+                  <p className="text-sm font-medium text-foreground">{formData.inspected_pieces ?? 0}</p>
                 </div>
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

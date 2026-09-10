@@ -47,6 +47,10 @@ export function isManagerOrAbove(userRoles: string[]): boolean {
     return hasAnyRole(userRoles, [ROLES.MANAGER, ROLES.ADMIN]);
 }
 
+export function isInspectorOnly(userRoles: string[]): boolean {
+    return hasRole(userRoles, ROLES.INSPECTOR) && !isManagerOrAbove(userRoles);
+}
+
 /**
  * Check if user has the read-only client-portal role
  */

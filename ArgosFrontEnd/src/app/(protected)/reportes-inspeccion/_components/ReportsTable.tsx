@@ -33,6 +33,8 @@ import {
 import ReportModal from "./ReportModal";
 import { deleteInspectionReport } from "@/app/(protected)/reportes-inspeccion/actions/reportes-inspeccion.actions";
 import PageContainer from "@/components/layout/PageContainer";
+import { useUser } from "@/contexts/users/userContext";
+import { isInspectorOnly } from "@/lib/constants/roles";
 
 type ModalMode = "create" | "edit" | "view";
 
@@ -41,6 +43,8 @@ type Props = {
 };
 
 export default function ReportsTable({ initialData }: Props) {
+  const { user } = useUser();
+  const canDelete = !isInspectorOnly(user?.roles ?? []);
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
@@ -204,13 +208,15 @@ export default function ReportsTable({ initialData }: Props) {
                             <Pencil className="mr-2 h-4 w-4" />
                             Actualizar
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(record.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Borrar
-                          </DropdownMenuItem>
+                          {canDelete && (
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(record.id)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Borrar
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </td>
@@ -265,13 +271,15 @@ export default function ReportsTable({ initialData }: Props) {
                       <Pencil className="mr-2 h-4 w-4" />
                       Actualizar
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleDelete(record.id)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Borrar
-                    </DropdownMenuItem>
+                    {canDelete && (
+                      <DropdownMenuItem
+                        onClick={() => handleDelete(record.id)}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Borrar
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

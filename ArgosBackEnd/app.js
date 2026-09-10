@@ -12,7 +12,12 @@ import servicioRouter from './routes/servicioRoutes.js';
 // import inspectionRouter from './routes/inspectionRoutes.js'; // Removed
 import loginRouter from './routes/loginRoutes.js';
 import { verifySession } from './middleware/middlewareHandlers.js';
-import { blockClientsEntirely, blockClientWrites } from './middleware/clientGuard.js';
+import {
+  blockClientsEntirely,
+  blockClientWrites,
+  blockInspectorCatalogWrites,
+  blockInspectorDeletes,
+} from './middleware/clientGuard.js';
 
 import piezaRouter from './routes/piezaRoutes.js';
 import defectoRouter from './routes/defectoRoutes.js';
@@ -51,18 +56,18 @@ app.use('/login', loginRouter);
 // '/users' is NOT gated by blockClientsEntirely here - '/users/details' and
 // '/users/change-password' must stay reachable by every role (see userRoutes.js
 // for the per-route gating of the actual admin-only user management endpoints).
-app.use('/users', verifySession, userRouter);
-app.use('/clients', verifySession, blockClientsEntirely, clienteRouter);
-app.use('/roles', verifySession, blockClientsEntirely, rolRouter);
-app.use('/parts', verifySession, blockClientsEntirely, piezaRouter);
-app.use('/defects', verifySession, blockClientsEntirely, defectoRouter);
-app.use('/work-instructions', verifySession, blockClientsEntirely, instruccionTrabajoRouter);
-app.use('/reports', verifySession, blockClientWrites, reporteRouter);
-app.use('/inspection-details', verifySession, blockClientWrites, detalleRouter);
-app.use('/incidents', verifySession, blockClientWrites, incidenciaRouter);
-app.use('/user-roles', verifySession, blockClientsEntirely, rolesUsuariosRouter);
-app.use('/favorite-routes', verifySession, blockClientsEntirely, rutasFavoritasRouter);
-app.use('/services', verifySession, blockClientsEntirely, servicioRouter);
-app.use('/media', verifySession, blockClientsEntirely, mediaRouter);
+app.use('/users', verifySession, blockInspectorDeletes, userRouter);
+app.use('/clients', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, clienteRouter);
+app.use('/roles', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, rolRouter);
+app.use('/parts', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, piezaRouter);
+app.use('/defects', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, defectoRouter);
+app.use('/work-instructions', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, instruccionTrabajoRouter);
+app.use('/reports', verifySession, blockInspectorDeletes, blockClientWrites, reporteRouter);
+app.use('/inspection-details', verifySession, blockInspectorDeletes, blockClientWrites, detalleRouter);
+app.use('/incidents', verifySession, blockInspectorDeletes, blockClientWrites, incidenciaRouter);
+app.use('/user-roles', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, rolesUsuariosRouter);
+app.use('/favorite-routes', verifySession, blockInspectorDeletes, blockClientsEntirely, rutasFavoritasRouter);
+app.use('/services', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, servicioRouter);
+app.use('/media', verifySession, blockInspectorDeletes, blockInspectorCatalogWrites, blockClientsEntirely, mediaRouter);
 
 export default app;

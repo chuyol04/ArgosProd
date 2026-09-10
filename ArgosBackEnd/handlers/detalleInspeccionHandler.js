@@ -84,8 +84,8 @@ export async function createDetalleInspeccion(req, res) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         inspection_report_id, lot_number || null, inspector_id || null, hours || null, isoWeekFromDate(safeInspectionDate),
-        safeInspectionDate, safeManufactureDate, comments || null, inspected_pieces || null,
-        accepted_pieces || null, rejected_pieces || null, reworked_pieces || null,
+        safeInspectionDate, safeManufactureDate, comments || null, inspected_pieces ?? null,
+        accepted_pieces ?? null, rejected_pieces ?? null, reworked_pieces ?? null,
         safeStartTime, safeEndTime, shift || null
       ]
     );

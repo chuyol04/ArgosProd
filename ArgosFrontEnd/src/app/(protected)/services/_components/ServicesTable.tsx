@@ -41,6 +41,7 @@ import {
   toDateInputValue,
 } from "@/lib/dateTimeUtils";
 import { useUser } from "@/contexts/users/userContext";
+import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
 
 type ModalMode = "create" | "edit";
 
@@ -65,8 +66,7 @@ const formatDate = formatDateDisplay;
 
 export default function ServicesTable({ initialData, clients }: Props) {
   const { user } = useUser();
-  const isInspectorOnly = user?.roles?.includes("Inspector") &&
-    !user.roles.some((role) => role === "Manager" || role === "Admin");
+  const isInspectorOnly = hasOnlyInspectorRole(user?.roles ?? []);
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
@@ -259,13 +259,15 @@ export default function ServicesTable({ initialData, clients }: Props) {
                           <Pencil className="mr-2 h-4 w-4" />
                           Actualizar
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(record.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Borrar
-                        </DropdownMenuItem>
+                        {!isInspectorOnly && (
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(record.id)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Borrar
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
@@ -331,13 +333,15 @@ export default function ServicesTable({ initialData, clients }: Props) {
                     <Pencil className="mr-2 h-4 w-4" />
                     Actualizar
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleDelete(record.id)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Borrar
-                  </DropdownMenuItem>
+                  {!isInspectorOnly && (
+                    <DropdownMenuItem
+                      onClick={() => handleDelete(record.id)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Borrar
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

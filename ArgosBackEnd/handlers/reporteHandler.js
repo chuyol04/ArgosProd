@@ -1,6 +1,7 @@
 import MysqlClient from '../connections/mysqldb.js';
 import ExcelJS from 'exceljs';
 import { sanitizeDateField, formatDateOnlyEs, formatTimeOnly } from '../lib/helpers/dateTimeHelpers.js';
+import { expandSerialAndDefectRows, getExportHours } from '../lib/helpers/reportExcelHelpers.js';
 import { isClientRole } from '../lib/constants/roles.js';
 
 // po_hours: optional integer between 1 and 9999.
@@ -327,7 +328,7 @@ export async function exportReporteToExcel(req, res) {
       SELECT
         ir.*,
         wi.description AS work_instruction_description,
-        wi.inspection_rate_per_hour,
+        wi.inspection_mode, wi.inspection_rate_per_hour,
         wi.part_id, p.name AS part_name, p.description AS part_description,
         s.id AS service_id, s.name AS service_name,
         c.id AS client_id, c.name AS client_name, c.email AS client_email
@@ -349,17 +350,14 @@ export async function exportReporteToExcel(req, res) {
       return res.status(404).json({ success: false, motive: 'Report not found' });
     }
 
+    const inspectionMode = report.inspection_mode === 'full_time' ? 'full_time' : 'rate';
+    const isRateReport = inspectionMode === 'rate';
+
     // Get associated inspections with inspector names
     const [inspections] = await MysqlClient.execute(`
       SELECT
         idt.*,
-        u.name AS inspector_name,
-        (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
-         FROM inspection_detail_serial_numbers sn
-         WHERE sn.inspection_detail_id = idt.id) AS serial_numbers_list,
-        (SELECT GROUP_CONCAT(COALESCE(sn.lot_number, idt.lot_number) ORDER BY sn.id SEPARATOR ', ')
-         FROM inspection_detail_serial_numbers sn
-         WHERE sn.inspection_detail_id = idt.id) AS lot_numbers_list
+        u.name AS inspector_name
       FROM inspection_details idt
       LEFT JOIN users u ON u.id = idt.inspector_id
       WHERE idt.inspection_report_id = ?
@@ -369,23 +367,40 @@ export async function exportReporteToExcel(req, res) {
     // Get defects (incidents) for every box/detail above, grouped by detail.
     // Free-text defects (no catalog entry) are covered by COALESCE(d.name, i.defect_label).
     const incidentsByDetail = new Map();
+    const serialLotsByDetail = new Map();
     if (inspections.length > 0) {
       const detailIds = inspections.map((d) => d.id);
       const placeholders = detailIds.map(() => '?').join(',');
-      const [incidentRows] = await MysqlClient.execute(`
-        SELECT i.inspection_detail_id, i.quantity, i.evidence_url,
-               COALESCE(d.name, i.defect_label) AS defect_name
-        FROM incidents i
-        LEFT JOIN defects d ON d.id = i.defect_id
-        WHERE i.inspection_detail_id IN (${placeholders})
-        ORDER BY i.inspection_detail_id ASC, i.id ASC
-      `, detailIds);
+      const [[incidentRows], [serialRows]] = await Promise.all([
+        MysqlClient.execute(`
+          SELECT i.inspection_detail_id, i.quantity, i.evidence_url,
+                 COALESCE(d.name, i.defect_label) AS defect_name
+          FROM incidents i
+          LEFT JOIN defects d ON d.id = i.defect_id
+          WHERE i.inspection_detail_id IN (${placeholders})
+          ORDER BY i.inspection_detail_id ASC, i.id ASC
+        `, detailIds),
+        MysqlClient.execute(`
+          SELECT sn.inspection_detail_id, sn.serial_number,
+                 COALESCE(sn.lot_number, idt.lot_number) AS lot_number
+          FROM inspection_detail_serial_numbers sn
+          INNER JOIN inspection_details idt ON idt.id = sn.inspection_detail_id
+          WHERE sn.inspection_detail_id IN (${placeholders})
+          ORDER BY sn.inspection_detail_id ASC, sn.id ASC
+        `, detailIds),
+      ]);
 
       for (const incident of incidentRows) {
         if (!incidentsByDetail.has(incident.inspection_detail_id)) {
           incidentsByDetail.set(incident.inspection_detail_id, []);
         }
         incidentsByDetail.get(incident.inspection_detail_id).push(incident);
+      }
+      for (const serial of serialRows) {
+        if (!serialLotsByDetail.has(serial.inspection_detail_id)) {
+          serialLotsByDetail.set(serial.inspection_detail_id, []);
+        }
+        serialLotsByDetail.get(serial.inspection_detail_id).push(serial);
       }
     }
 
@@ -419,7 +434,8 @@ export async function exportReporteToExcel(req, res) {
       ['Número de PO', report.po_number || '-'],
       ['Fecha de Inicio', formatDateOnlyEs(report.start_date)],
       ['Horas de PO', report.po_hours || '-'],
-      ['Tasa de Inspección/Hora', report.inspection_rate_per_hour || '-'],
+      ['Modalidad', isRateReport ? 'RATE' : 'FULL TIME'],
+      ['Rate (piezas por hora)', isRateReport ? (report.inspection_rate_per_hour || '-') : '-'],
       ['Descripción', report.description || '-'],
       ['Problema', report.problem || '-'],
     ];
@@ -441,7 +457,8 @@ export async function exportReporteToExcel(req, res) {
 
     // Headers
     const headers = [
-      'Cliente', 'Servicio', 'Inspector', 'Fecha Inspección', 'Hora Inicio', 'Hora Fin', 'Horas Trabajadas',
+      'Cliente', 'Servicio', 'Inspector', 'Fecha Inspección', 'Hora Inicio', 'Hora Fin',
+      isRateReport ? 'Total horas con rate' : 'Horas Trabajadas',
       'Pieza', '# Serie', '# Lote', 'Fecha Manufactura', 'Caja',
       'Piezas Inspeccionadas', 'Piezas Aceptadas', 'Piezas Rechazadas', 'Piezas Retrabajadas',
       'Problema / Condición Revisada',
@@ -461,14 +478,20 @@ export async function exportReporteToExcel(req, res) {
       };
     });
 
-    // Add data rows: each box (inspection detail) contributes one row per
-    // defect it has, or a single row with empty defect columns if it has none.
+    // Keep one row per defect as before, adding rows only when there are more
+    // serial/lot pairs. Each serial and lot gets its own cell and row.
     inspections.forEach((detail, index) => {
       const boxLabel = `Caja ${index + 1}`;
       const defectsForBox = incidentsByDetail.get(detail.id) || [];
-      const defectRows = defectsForBox.length > 0 ? defectsForBox : [null];
+      const serialLotsForBox = serialLotsByDetail.get(detail.id) || (
+        detail.lot_number ? [{ serial_number: null, lot_number: detail.lot_number }] : []
+      );
+      const exportRows = expandSerialAndDefectRows(serialLotsForBox, defectsForBox);
 
-      defectRows.forEach((incident) => {
+      exportRows.forEach(({ serialLot, incident, carriesMetrics }) => {
+        const hours = carriesMetrics
+          ? getExportHours(inspectionMode, detail.inspected_pieces, report.inspection_rate_per_hour, detail.hours)
+          : '';
         const row = detailsSheet.addRow([
           report.client_name,
           report.service_name,
@@ -476,16 +499,16 @@ export async function exportReporteToExcel(req, res) {
           formatDateOnlyEs(detail.inspection_date),
           formatTimeOnly(detail.start_time),
           formatTimeOnly(detail.end_time),
-          detail.hours ?? '-',
+          hours ?? '-',
           report.part_name,
-          detail.serial_numbers_list || '-',
-          detail.lot_numbers_list || detail.lot_number || '-',
+          serialLot?.serial_number || '-',
+          serialLot?.lot_number || '-',
           formatDateOnlyEs(detail.manufacture_date),
           boxLabel,
-          detail.inspected_pieces ?? '-',
-          detail.accepted_pieces ?? '-',
-          detail.rejected_pieces ?? '-',
-          detail.reworked_pieces ?? '-',
+          carriesMetrics ? (detail.inspected_pieces ?? '-') : '',
+          carriesMetrics ? (detail.accepted_pieces ?? '-') : '',
+          carriesMetrics ? (detail.rejected_pieces ?? '-') : '',
+          carriesMetrics ? (detail.reworked_pieces ?? '-') : '',
           report.problem || '-',
           incident ? incident.defect_name : '-',
           incident ? (incident.quantity ?? '-') : '-',
@@ -508,6 +531,7 @@ export async function exportReporteToExcel(req, res) {
     columnWidths.forEach((width, index) => {
       detailsSheet.getColumn(index + 1).width = width;
     });
+    detailsSheet.getColumn(7).numFmt = '0.00';
 
     // Add totals row if there are inspections. Piece/hour totals are summed
     // once per box (not once per defect row) to avoid double-counting boxes
@@ -519,15 +543,19 @@ export async function exportReporteToExcel(req, res) {
         accepted: acc.accepted + (d.accepted_pieces || 0),
         rejected: acc.rejected + (d.rejected_pieces || 0),
         reworked: acc.reworked + (d.reworked_pieces || 0),
-        hours: acc.hours + (d.hours || 0)
-      }), { inspected: 0, accepted: 0, rejected: 0, reworked: 0, hours: 0 });
+        workedHours: acc.workedHours + Number(d.hours || 0)
+      }), { inspected: 0, accepted: 0, rejected: 0, reworked: 0, workedHours: 0 });
+
+      const totalHours = isRateReport
+        ? getExportHours(inspectionMode, totals.inspected, report.inspection_rate_per_hour, null)
+        : totals.workedHours;
 
       const totalDefectQuantity = Array.from(incidentsByDetail.values())
         .flat()
         .reduce((sum, incident) => sum + (incident.quantity || 0), 0);
 
       const totalsRow = detailsSheet.addRow([
-        '', '', '', '', '', '', totals.hours,
+        '', '', '', '', '', '', totalHours ?? '-',
         '', '', '', '', 'TOTALES:',
         totals.inspected, totals.accepted, totals.rejected, totals.reworked,
         '', '', totalDefectQuantity, ''

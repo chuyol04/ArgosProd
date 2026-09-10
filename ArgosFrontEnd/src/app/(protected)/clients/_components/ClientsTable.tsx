@@ -35,6 +35,7 @@ import ClientModal from "./ClientModal";
 import { deleteClient } from "@/app/(protected)/clients/actions/clients.actions";
 import PageContainer from "@/components/layout/PageContainer";
 import { useUser } from "@/contexts/users/userContext";
+import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
 
 type ModalMode = "create" | "edit";
 
@@ -45,8 +46,7 @@ type Props = {
 export default function ClientsTable({ initialData }: Props) {
   const router = useRouter();
   const { user } = useUser();
-  const isInspectorOnly = user?.roles?.includes("Inspector") &&
-    !user.roles.some((role) => role === "Manager" || role === "Admin");
+  const isInspectorOnly = hasOnlyInspectorRole(user?.roles ?? []);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -214,13 +214,15 @@ export default function ClientsTable({ initialData }: Props) {
                           <Pencil className="mr-2 h-4 w-4" />
                           Actualizar
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(record.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Borrar
-                        </DropdownMenuItem>
+                        {!isInspectorOnly && (
+                          <DropdownMenuItem
+                            onClick={() => handleDelete(record.id)}
+                            className="text-destructive"
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Borrar
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onClick={() => handleViewServices(record.name)}>
                           <Building2 className="mr-2 h-4 w-4" />
                           Ver Servicios
@@ -275,13 +277,15 @@ export default function ClientsTable({ initialData }: Props) {
                     <Pencil className="mr-2 h-4 w-4" />
                     Actualizar
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleDelete(record.id)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Borrar
-                  </DropdownMenuItem>
+                  {!isInspectorOnly && (
+                    <DropdownMenuItem
+                      onClick={() => handleDelete(record.id)}
+                      className="text-destructive"
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Borrar
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={() => handleViewServices(record.name)}>
                     <Building2 className="mr-2 h-4 w-4" />
                     Ver Servicios
