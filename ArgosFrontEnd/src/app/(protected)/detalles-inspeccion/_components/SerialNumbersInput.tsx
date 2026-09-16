@@ -58,9 +58,10 @@ export function SerialNumbersInput({ inspectionDetailId, disabled = false, canDe
   );
 
   useEffect(() => {
+    if (pendingMode) return;
     setSaved(initialSerialNumbers);
     setEdits(Object.fromEntries(initialSerialNumbers.map((item) => [item.id, toEditable(item)])));
-  }, [initialSerialNumbers]);
+  }, [initialSerialNumbers, pendingMode]);
 
   useEffect(() => {
     onCountChange?.(boxes.length);
