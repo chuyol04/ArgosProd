@@ -18,6 +18,9 @@ router.put('/:id', detalleHandlers.updateDetalleInspeccion);
 // POST /inspection-details/:id/serial-numbers → Add a serial number to an existing detail
 router.post('/:id/serial-numbers', detalleHandlers.addSerialNumber);
 
+// PUT /inspection-details/:id/serial-numbers/:serialId → Update a box/serial and its counts
+router.put('/:id/serial-numbers/:serialId', detalleHandlers.updateSerialNumber);
+
 // DELETE /inspection-details/:id/serial-numbers/:serialId → Remove a serial number
 router.delete('/:id/serial-numbers/:serialId', detalleHandlers.deleteSerialNumber);
 

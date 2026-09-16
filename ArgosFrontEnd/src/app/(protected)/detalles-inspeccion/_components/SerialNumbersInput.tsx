@@ -1,209 +1,158 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, X } from "lucide-react";
-import {
-  addSerialNumber,
-  deleteSerialNumber,
-} from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
-import {
-  ISerialNumber,
-  ISerialLotInput,
-} from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
+import { Plus, Save, X } from "lucide-react";
+import { addSerialNumber, deleteSerialNumber, updateSerialNumber } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
+import { ISerialNumber, ISerialLotInput } from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
 
 export const MAX_SERIAL_NUMBERS = 20;
+const EMPTY_BOX: ISerialLotInput = { serial_number: "", lot_number: "", inspected_pieces: 0, accepted_pieces: 0, rejected_pieces: 0, reworked_pieces: 0 };
+const COUNT_FIELDS = ["inspected_pieces", "accepted_pieces", "rejected_pieces", "reworked_pieces"] as const;
+type CountTotals = Pick<ISerialLotInput, (typeof COUNT_FIELDS)[number]>;
 
-interface SerialNumbersInputProps {
+interface Props {
   inspectionDetailId: number | null;
   disabled?: boolean;
-  /** Validation message from the parent form (e.g. "must add at least one"). */
+  canDelete?: boolean;
   error?: string;
-  // Pending mode only (inspectionDetailId === null, i.e. create screen): the
-  // box doesn't exist yet, so values are just plain strings owned by the
-  // parent form - they get sent together with the rest of the create payload
-  // in one request (no separate upload/commit step needed, unlike evidence
-  // files elsewhere in this form).
   pendingValues?: ISerialLotInput[];
   onPendingValuesChange?: (values: ISerialLotInput[]) => void;
-  // Saved mode only (existing detail): initial list fetched with it. Adds/
-  // removes hit the backend immediately, same as the Defectos section.
   initialSerialNumbers?: ISerialNumber[];
-  /** Reports the current item count up to the parent (needed in saved mode,
-   * where the list itself lives in this component's state, so the parent
-   * can still validate "at least one serial number" before allowing a save). */
   onCountChange?: (count: number) => void;
+  onTotalsChange?: (totals: CountTotals) => void;
+  onSerialsChange?: (serials: ISerialNumber[]) => void;
 }
 
-export function SerialNumbersInput({
-  inspectionDetailId,
-  disabled = false,
-  error,
-  pendingValues = [],
-  onPendingValuesChange,
-  initialSerialNumbers = [],
-  onCountChange,
-}: SerialNumbersInputProps) {
-  const isPendingMode = inspectionDetailId == null;
-  const [savedSerials, setSavedSerials] = useState<ISerialNumber[]>(initialSerialNumbers);
-  const [inputValue, setInputValue] = useState("");
-  const [lotValue, setLotValue] = useState("");
+function toEditable(value: ISerialNumber): ISerialLotInput {
+  return {
+    serial_number: value.serial_number,
+    lot_number: value.lot_number || "",
+    inspected_pieces: value.inspected_pieces ?? 0,
+    accepted_pieces: value.accepted_pieces ?? 0,
+    rejected_pieces: value.rejected_pieces ?? 0,
+    reworked_pieces: value.reworked_pieces ?? 0,
+  };
+}
+
+const labels = {
+  serial_number: "Serie",
+  lot_number: "Lote",
+  inspected_pieces: "Inspeccionadas",
+  accepted_pieces: "Aceptadas",
+  rejected_pieces: "Rechazadas",
+  reworked_pieces: "Retrabajadas",
+};
+
+export function SerialNumbersInput({ inspectionDetailId, disabled = false, canDelete = false, error, pendingValues = [], onPendingValuesChange, initialSerialNumbers = [], onCountChange, onTotalsChange, onSerialsChange }: Props) {
+  const pendingMode = inspectionDetailId == null;
+  const [draft, setDraft] = useState<ISerialLotInput>(EMPTY_BOX);
+  const [saved, setSaved] = useState<ISerialNumber[]>(initialSerialNumbers);
+  const [edits, setEdits] = useState<Record<number, ISerialLotInput>>({});
   const [localError, setLocalError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [busyId, setBusyId] = useState<number | "new" | null>(null);
+  const boxes = useMemo(
+    () => pendingMode ? pendingValues : saved.map(toEditable),
+    [pendingMode, pendingValues, saved]
+  );
 
   useEffect(() => {
-    setSavedSerials(initialSerialNumbers);
+    setSaved(initialSerialNumbers);
+    setEdits(Object.fromEntries(initialSerialNumbers.map((item) => [item.id, toEditable(item)])));
   }, [initialSerialNumbers]);
 
-  const items: { key: string; serialNumber: string; lotNumber: string }[] = isPendingMode
-    ? pendingValues.map((v) => ({ key: v.serial_number, serialNumber: v.serial_number, lotNumber: v.lot_number }))
-    : savedSerials.map((s) => ({ key: String(s.id), serialNumber: s.serial_number, lotNumber: s.lot_number || "Sin lote" }));
-
   useEffect(() => {
-    if (!isPendingMode) onCountChange?.(savedSerials.length);
-  }, [isPendingMode, savedSerials.length, onCountChange]);
+    onCountChange?.(boxes.length);
+    const hasCompleteCounts = pendingMode || saved.every((box) => COUNT_FIELDS.every((field) => box[field] != null));
+    if (hasCompleteCounts) {
+      const totals = COUNT_FIELDS.reduce((result, field) => {
+        result[field] = boxes.reduce((sum, box) => sum + Number(box[field] || 0), 0);
+        return result;
+      }, {} as CountTotals);
+      onTotalsChange?.(totals);
+    }
+    if (!pendingMode) onSerialsChange?.(saved);
+  }, [boxes, pendingMode, saved, onCountChange, onTotalsChange, onSerialsChange]);
 
-  const handleAdd = async () => {
-    const trimmed = inputValue.trim().toUpperCase();
-    const trimmedLot = lotValue.trim().toUpperCase();
+  const setValue = (field: keyof ISerialLotInput, raw: string) => {
+    const isCount = COUNT_FIELDS.includes(field as (typeof COUNT_FIELDS)[number]);
     setLocalError(null);
-    if (!trimmed || !trimmedLot) {
-      setLocalError("Escribe el número de serie y su lote.");
-      return;
-    }
-
-    const existingLabels = items.map((i) => i.serialNumber);
-    if (existingLabels.includes(trimmed)) {
-      setLocalError("Este número de serie ya fue agregado.");
-      return;
-    }
-    if (existingLabels.length >= MAX_SERIAL_NUMBERS) {
-      setLocalError(`Se permite un máximo de ${MAX_SERIAL_NUMBERS} números de serie.`);
-      return;
-    }
-
-    if (isPendingMode) {
-      onPendingValuesChange?.([...pendingValues, { serial_number: trimmed, lot_number: trimmedLot }]);
-      setInputValue("");
-      setLotValue("");
-      inputRef.current?.focus();
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const result = await addSerialNumber(inspectionDetailId, trimmed, trimmedLot);
-      if (result.success && result.id) {
-        setSavedSerials((prev) => [
-          ...prev,
-          { id: result.id!, serial_number: result.serial_number || trimmed, lot_number: result.lot_number || trimmedLot },
-        ]);
-        setInputValue("");
-        setLotValue("");
-        inputRef.current?.focus();
-      } else {
-        setLocalError(result.error || "Error al agregar número de serie");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+    setDraft((current) => ({ ...current, [field]: isCount ? Math.max(0, Number(raw || 0)) : raw }));
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleAdd();
+  const addBox = async () => {
+    const value = { ...draft, serial_number: draft.serial_number.trim().toUpperCase(), lot_number: draft.lot_number.trim().toUpperCase() };
+    if (!value.serial_number || !value.lot_number) return setLocalError("Escribe la serie y el lote.");
+    if (boxes.some((box) => box.serial_number === value.serial_number)) return setLocalError("Este número de serie ya fue agregado.");
+    if (boxes.length >= MAX_SERIAL_NUMBERS) return setLocalError(`Se permite un máximo de ${MAX_SERIAL_NUMBERS} cajas.`);
+    if (pendingMode) onPendingValuesChange?.([...pendingValues, value]);
+    else {
+      setBusyId("new");
+      const result = await addSerialNumber(inspectionDetailId, value);
+      setBusyId(null);
+      if (!result.success || !result.data) return setLocalError(result.error || "No se pudo agregar la caja.");
+      setSaved((current) => [...current, result.data!]);
     }
+    setDraft(EMPTY_BOX);
   };
 
-  const handleRemove = async (item: { key: string; serialNumber: string; lotNumber: string }) => {
-    if (isPendingMode) {
-      onPendingValuesChange?.(pendingValues.filter((v) => v.serial_number !== item.serialNumber));
-      return;
-    }
+  const removeBox = async (index: number) => {
+    if (pendingMode) return onPendingValuesChange?.(pendingValues.filter((_, itemIndex) => itemIndex !== index));
+    const item = saved[index];
+    if (!item || !canDelete) return;
+    setBusyId(item.id);
+    const result = await deleteSerialNumber(inspectionDetailId!, item.id);
+    setBusyId(null);
+    if (result.success) setSaved((current) => current.filter((row) => row.id !== item.id));
+    else setLocalError(result.error || "No se pudo eliminar la caja.");
+  };
 
-    const serialId = Number(item.key);
-    setIsSubmitting(true);
-    try {
-      const result = await deleteSerialNumber(inspectionDetailId!, serialId);
-      if (result.success) {
-        setSavedSerials((prev) => prev.filter((s) => s.id !== serialId));
-      } else {
-        alert(result.error || "Error al eliminar número de serie");
-      }
-    } finally {
-      setIsSubmitting(false);
-    }
+  const saveBox = async (item: ISerialNumber) => {
+    const value = edits[item.id];
+    setBusyId(item.id);
+    const result = await updateSerialNumber(inspectionDetailId!, item.id, value);
+    setBusyId(null);
+    if (result.success && result.data) setSaved((current) => current.map((row) => row.id === item.id ? result.data! : row));
+    else setLocalError(result.error || "No se pudo actualizar la caja.");
   };
 
   return (
-    <div className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-        <Input
-          ref={inputRef}
-          value={inputValue}
-          onChange={(e) => {
-            setInputValue(e.target.value);
-            if (localError) setLocalError(null);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="Número de serie..."
-          disabled={disabled || isSubmitting}
-          className="font-mono"
-          aria-invalid={!!(error || localError)}
-        />
-        <Input
-          value={lotValue}
-          onChange={(e) => {
-            setLotValue(e.target.value);
-            if (localError) setLocalError(null);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder="Lote correspondiente..."
-          disabled={disabled || isSubmitting}
-          className="font-mono"
-          aria-invalid={!!(error || localError)}
-        />
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleAdd}
-          disabled={disabled || isSubmitting || !inputValue.trim() || !lotValue.trim()}
-        >
-          <Plus className="h-4 w-4 mr-1" />
-          Agregar
-        </Button>
-      </div>
-
-      {(error || localError) && <p className="text-xs text-destructive">{error || localError}</p>}
-
-      <p className="text-xs text-muted-foreground">Pares serie/lote agregados: {items.length}</p>
-
-      {items.length > 0 && (
-        <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border p-2">
-          {items.map((item) => (
-            <span
-              key={item.key}
-              className="inline-flex items-center gap-1 rounded-full border bg-muted px-2.5 py-1 text-xs font-mono"
-            >
-              <span>{item.serialNumber}</span>
-              <span className="text-muted-foreground">· Lote {item.lotNumber}</span>
-              {!disabled && (
-                <button
-                  type="button"
-                  onClick={() => handleRemove(item)}
-                  disabled={isSubmitting}
-                  className="text-muted-foreground hover:text-destructive"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </span>
-          ))}
+    <div className="space-y-4">
+      {!disabled && (
+        <div className="space-y-3 rounded-lg border p-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input value={draft.serial_number} onChange={(event) => setValue("serial_number", event.target.value)} placeholder="Número de serie" className="font-mono" />
+            <Input value={draft.lot_number} onChange={(event) => setValue("lot_number", event.target.value)} placeholder="Lote correspondiente" className="font-mono" />
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {COUNT_FIELDS.map((field) => <label key={field} className="text-xs text-muted-foreground">{labels[field]}<Input type="number" min="0" value={draft[field]} onChange={(event) => setValue(field, event.target.value)} className="mt-1" /></label>)}
+          </div>
+          <Button type="button" variant="outline" onClick={addBox} disabled={busyId !== null || !draft.serial_number.trim() || !draft.lot_number.trim()}><Plus className="mr-1 h-4 w-4" />Agregar caja</Button>
         </div>
       )}
+
+      {(error || localError) && <p className="text-xs text-destructive">{error || localError}</p>}
+      <p className="text-xs text-muted-foreground">Cajas/series agregadas: {boxes.length}</p>
+
+      <div className="space-y-2">
+        {boxes.map((box, index) => {
+          const persisted = pendingMode ? null : saved[index];
+          const value = persisted ? edits[persisted.id] || toEditable(persisted) : box;
+          return (
+            <div key={persisted?.id ?? `${box.serial_number}-${index}`} className="rounded-lg border p-3">
+              <div className="mb-2 flex items-center justify-between"><strong className="text-sm">Caja {index + 1}</strong>{!disabled && (pendingMode || canDelete) && <Button type="button" variant="ghost" size="icon" onClick={() => removeBox(index)} disabled={busyId !== null}><X className="h-4 w-4" /></Button>}</div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+                {(["serial_number", "lot_number", ...COUNT_FIELDS] as const).map((field) => {
+                  const isCount = COUNT_FIELDS.includes(field as (typeof COUNT_FIELDS)[number]);
+                  return <label key={field} className="text-xs text-muted-foreground">{labels[field]}<Input type={isCount ? "number" : "text"} min={isCount ? 0 : undefined} value={value[field]} disabled={disabled || pendingMode} onChange={(event) => persisted && setEdits((current) => ({ ...current, [persisted.id]: { ...value, [field]: isCount ? Math.max(0, Number(event.target.value || 0)) : event.target.value } }))} className="mt-1" /></label>;
+                })}
+              </div>
+              {persisted && !disabled && <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => saveBox(persisted)} disabled={busyId !== null}><Save className="mr-1 h-3.5 w-3.5" />Guardar caja</Button>}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

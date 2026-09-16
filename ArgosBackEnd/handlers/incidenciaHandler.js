@@ -6,7 +6,7 @@ import { isClientRole } from '../lib/constants/roles.js';
 // free text (defect_label) instead. At least one of the two is required.
 export async function createIncidencia(req, res) {
   try {
-    const { defect_id, defect_label, inspection_detail_id, quantity, evidence_url } = req.body || {};
+    const { defect_id, defect_label, inspection_detail_id, inspection_detail_serial_number_id, quantity, evidence_url } = req.body || {};
     const trimmedLabel = typeof defect_label === 'string' ? defect_label.trim() : '';
 
     if (!inspection_detail_id) {
@@ -31,10 +31,19 @@ export async function createIncidencia(req, res) {
       [inspection_detail_id]
     );
     if (det.length === 0) return res.status(404).json({ success: false, motive: 'Inspection detail not found' });
+    if (inspection_detail_serial_number_id) {
+      const [box] = await MysqlClient.execute(
+        'SELECT id FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ? LIMIT 1',
+        [inspection_detail_serial_number_id, inspection_detail_id]
+      );
+      if (box.length === 0) return res.status(400).json({ success: false, motive: 'The selected serial/box does not belong to this inspection detail' });
+    }
 
     const [result] = await MysqlClient.execute(
-      'INSERT INTO incidents (defect_id, defect_label, inspection_detail_id, quantity, evidence_url) VALUES (?, ?, ?, ?, ?)',
-      [defect_id || null, trimmedLabel || null, inspection_detail_id, quantity || null, evidence_url || null]
+      `INSERT INTO incidents
+        (defect_id, defect_label, inspection_detail_id, inspection_detail_serial_number_id, quantity, evidence_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [defect_id || null, trimmedLabel || null, inspection_detail_id, inspection_detail_serial_number_id || null, quantity || null, evidence_url || null]
     );
 
     return res.status(201).json({
@@ -64,14 +73,11 @@ export async function getIncidencias(req, res) {
       SELECT i.*,
              COALESCE(d.name, i.defect_label) AS defect_name,
              d.description AS defect_description,
-             (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
-              FROM inspection_detail_serial_numbers sn
-              WHERE sn.inspection_detail_id = di.id) AS inspection_serial_number,
-             COALESCE((SELECT GROUP_CONCAT(sn.lot_number ORDER BY sn.id SEPARATOR ', ')
-                       FROM inspection_detail_serial_numbers sn
-                       WHERE sn.inspection_detail_id = di.id), di.lot_number) AS inspection_lot_number
+             selected_box.serial_number AS inspection_serial_number,
+             COALESCE(selected_box.lot_number, di.lot_number) AS inspection_lot_number
       FROM incidents i
       LEFT JOIN defects d ON d.id = i.defect_id
+      LEFT JOIN inspection_detail_serial_numbers selected_box ON selected_box.id = i.inspection_detail_serial_number_id
       INNER JOIN inspection_details di ON di.id = i.inspection_detail_id
     `;
     const params = [];
@@ -113,15 +119,12 @@ export async function getIncidenciaById(req, res) {
     const [rows] = await MysqlClient.execute(
       `SELECT i.*,
               COALESCE(d.name, i.defect_label) AS defect_name,
-              (SELECT GROUP_CONCAT(sn.serial_number ORDER BY sn.id SEPARATOR ', ')
-               FROM inspection_detail_serial_numbers sn
-               WHERE sn.inspection_detail_id = di.id) AS inspection_serial_number,
-              COALESCE((SELECT GROUP_CONCAT(sn.lot_number ORDER BY sn.id SEPARATOR ', ')
-                        FROM inspection_detail_serial_numbers sn
-                        WHERE sn.inspection_detail_id = di.id), di.lot_number) AS inspection_lot_number,
+              selected_box.serial_number AS inspection_serial_number,
+              COALESCE(selected_box.lot_number, di.lot_number) AS inspection_lot_number,
               s.client_id AS client_id
        FROM incidents i
        LEFT JOIN defects d ON d.id = i.defect_id
+       LEFT JOIN inspection_detail_serial_numbers selected_box ON selected_box.id = i.inspection_detail_serial_number_id
        INNER JOIN inspection_details di ON di.id = i.inspection_detail_id
        INNER JOIN inspection_reports ir ON ir.id = di.inspection_report_id
        INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
@@ -151,7 +154,7 @@ export async function updateIncidencia(req, res) {
 
     // Check existence
     const [ex] = await MysqlClient.execute(
-      'SELECT id FROM incidents WHERE id = ? LIMIT 1',
+      'SELECT id, inspection_detail_id FROM incidents WHERE id = ? LIMIT 1',
       [id]
     );
     if (ex.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
@@ -165,9 +168,17 @@ export async function updateIncidencia(req, res) {
       const [di] = await MysqlClient.execute('SELECT id FROM inspection_details WHERE id = ? LIMIT 1', [payload.inspection_detail_id]);
       if (di.length === 0) return res.status(404).json({ success: false, motive: 'Inspection Detail (new) not found' });
     }
+    if (payload.inspection_detail_serial_number_id !== undefined && payload.inspection_detail_serial_number_id !== null) {
+      const detailId = payload.inspection_detail_id ?? ex[0].inspection_detail_id;
+      const [box] = await MysqlClient.execute(
+        'SELECT id FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ? LIMIT 1',
+        [payload.inspection_detail_serial_number_id, detailId]
+      );
+      if (box.length === 0) return res.status(400).json({ success: false, motive: 'The selected serial/box does not belong to this inspection detail' });
+    }
 
     // Build dynamic SET clause
-    const fields = ['defect_id','defect_label','inspection_detail_id','quantity','evidence_url'];
+    const fields = ['defect_id','defect_label','inspection_detail_id','inspection_detail_serial_number_id','quantity','evidence_url'];
     const sets = [];
     const params = [];
     for (const f of fields) {

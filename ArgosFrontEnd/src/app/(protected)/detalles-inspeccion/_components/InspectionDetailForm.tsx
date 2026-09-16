@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useEffect, useMemo, useRef } from "react";
+import { useState, useTransition, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -263,13 +263,18 @@ export default function InspectionDetailForm({
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  // All four piece counts are captured manually; never let them go negative.
-  const handlePieceCountChange = (
-    field: "inspected_pieces" | "accepted_pieces" | "rejected_pieces" | "reworked_pieces",
-    rawValue: string
-  ) => {
-    handleInputChange(field, rawValue ? Math.max(0, Number(rawValue)) : undefined);
-  };
+  const [serialBoxes, setSerialBoxes] = useState(detail?.serial_numbers ?? []);
+  const handlePendingSerialsChange = useCallback((values: ISerialLotInput[]) => {
+    setFormData((previous) => ({ ...previous, serial_lots: values }));
+  }, []);
+  const handleSerialTotalsChange = useCallback((totals: {
+    inspected_pieces: number;
+    accepted_pieces: number;
+    rejected_pieces: number;
+    reworked_pieces: number;
+  }) => {
+    setFormData((previous) => ({ ...previous, ...totals }));
+  }, []);
 
   // Worked hours = end_time - start_time for THIS inspector's own entry only
   // (never summed across inspectors, never multiplied by headcount). Always
@@ -375,7 +380,8 @@ export default function InspectionDetailForm({
         const result = await createInspectionDetail(payload);
         if (result.success && result.id) {
           const failedDefects = await defectsSectionRef.current?.commitPendingDefects(
-            result.id
+            result.id,
+            result.serial_numbers ?? []
           );
           if (failedDefects && failedDefects.length > 0) {
             alert(
@@ -595,32 +601,18 @@ export default function InspectionDetailForm({
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Números de Serie y Lotes *
             </p>
-            {isReadOnly ? (
-              detail?.serial_numbers && detail.serial_numbers.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {detail.serial_numbers.map((s) => (
-                    <span
-                      key={s.id}
-                      className="rounded-full border bg-muted px-2.5 py-1 text-xs font-mono"
-                    >
-                      {s.serial_number} · Lote {s.lot_number || detail.lot_number || "-"}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm font-medium text-foreground">-</p>
-              )
-            ) : (
-              <SerialNumbersInput
-                inspectionDetailId={detail?.id ?? null}
-                disabled={!canEdit}
-                error={showError("serial_numbers")}
-                pendingValues={formData.serial_lots ?? []}
-                onPendingValuesChange={(values) => handleInputChange("serial_lots", values)}
-                initialSerialNumbers={detail?.serial_numbers ?? []}
-                onCountChange={setSavedSerialNumbersCount}
-              />
-            )}
+            <SerialNumbersInput
+              inspectionDetailId={detail?.id ?? null}
+              disabled={isReadOnly || !canEdit}
+              canDelete={canDelete}
+              error={showError("serial_numbers")}
+              pendingValues={formData.serial_lots ?? []}
+              onPendingValuesChange={handlePendingSerialsChange}
+              initialSerialNumbers={detail?.serial_numbers ?? []}
+              onCountChange={setSavedSerialNumbersCount}
+              onTotalsChange={handleSerialTotalsChange}
+              onSerialsChange={setSerialBoxes}
+            />
           </div>
 
           {/* Inspector and Shift */}
@@ -788,7 +780,7 @@ export default function InspectionDetailForm({
         </CardContent>
       </Card>
 
-      {/* Pieces Count Section */}
+      {/* Totals are derived from the manually captured values of each box. */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium">Conteo de Piezas</CardTitle>
@@ -796,64 +788,34 @@ export default function InspectionDetailForm({
         <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
           <FormField
             label="Inspeccionadas"
-            value={detail?.inspected_pieces}
-            isReadOnly={isReadOnly}
+            value={formData.inspected_pieces ?? 0}
+            isReadOnly
             valueClassName="text-base"
           >
-            <Input
-              type="number"
-              min="0"
-              value={formData.inspected_pieces ?? ""}
-              onChange={(e) => handlePieceCountChange("inspected_pieces", e.target.value)}
-              placeholder="0"
-            />
           </FormField>
 
           <FormField
             label="Aceptadas"
-            value={detail?.accepted_pieces}
-            isReadOnly={isReadOnly}
+            value={formData.accepted_pieces ?? 0}
+            isReadOnly
             valueClassName="text-base text-green-600"
           >
-            <Input
-              type="number"
-              min="0"
-              value={formData.accepted_pieces ?? ""}
-              onChange={(e) => handlePieceCountChange("accepted_pieces", e.target.value)}
-              placeholder="0"
-            />
           </FormField>
 
           <FormField
             label="Rechazadas"
-            value={detail?.rejected_pieces}
-            isReadOnly={isReadOnly}
+            value={formData.rejected_pieces ?? 0}
+            isReadOnly
             valueClassName="text-base text-red-600"
           >
-            <Input
-              type="number"
-              min="0"
-              value={formData.rejected_pieces ?? ""}
-              onChange={(e) => handlePieceCountChange("rejected_pieces", e.target.value)}
-              placeholder="0"
-            />
           </FormField>
 
           <FormField
             label="Retrabajadas"
-            value={detail?.reworked_pieces}
-            isReadOnly={isReadOnly}
+            value={formData.reworked_pieces ?? 0}
+            isReadOnly
             valueClassName="text-base text-yellow-600"
           >
-            <Input
-              type="number"
-              min="0"
-              value={formData.reworked_pieces ?? ""}
-              onChange={(e) =>
-                handlePieceCountChange("reworked_pieces", e.target.value)
-              }
-              placeholder="0"
-            />
           </FormField>
 
         </CardContent>
@@ -950,6 +912,8 @@ export default function InspectionDetailForm({
             rejectedPieces={rejectedPieces}
             disabled={isReadOnly || !canEdit}
             onTotalQuantityChange={setDefectsTotalQuantity}
+            serialBoxes={serialBoxes}
+            pendingSerialBoxes={formData.serial_lots ?? []}
           />
         </CardContent>
       </Card>

@@ -5,6 +5,41 @@ import { sanitizeDateField, sanitizeTimeField, todayLocalDateString, isoWeekFrom
 
 const MAX_SERIAL_NUMBERS = 20;
 
+const PIECE_FIELDS = ['inspected_pieces', 'accepted_pieces', 'rejected_pieces', 'reworked_pieces'];
+
+function sanitizePieceCount(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 0 ? number : null;
+}
+
+function hasCompletePieceCounts(serial) {
+  return PIECE_FIELDS.every((field) => serial[field] !== null);
+}
+
+async function recalculateDetailTotals(detailId) {
+  const [rows] = await MysqlClient.execute(
+    `SELECT COUNT(*) AS total_boxes,
+            SUM(CASE WHEN inspected_pieces IS NOT NULL AND accepted_pieces IS NOT NULL
+                      AND rejected_pieces IS NOT NULL AND reworked_pieces IS NOT NULL THEN 1 ELSE 0 END) AS complete_boxes,
+            COALESCE(SUM(inspected_pieces), 0) AS inspected_pieces,
+            COALESCE(SUM(accepted_pieces), 0) AS accepted_pieces,
+            COALESCE(SUM(rejected_pieces), 0) AS rejected_pieces,
+            COALESCE(SUM(reworked_pieces), 0) AS reworked_pieces
+       FROM inspection_detail_serial_numbers
+      WHERE inspection_detail_id = ?`,
+    [detailId]
+  );
+  const totals = rows[0];
+  if (Number(totals.total_boxes) === 0 || Number(totals.total_boxes) !== Number(totals.complete_boxes)) return;
+  await MysqlClient.execute(
+    `UPDATE inspection_details
+        SET inspected_pieces = ?, accepted_pieces = ?, rejected_pieces = ?, reworked_pieces = ?
+      WHERE id = ?`,
+    [totals.inspected_pieces, totals.accepted_pieces, totals.rejected_pieces, totals.reworked_pieces, detailId]
+  );
+}
+
 // Trims, uppercases and de-duplicates a raw list of serial numbers, dropping
 // empty entries and capping at MAX_SERIAL_NUMBERS - used by both `create`
 // (bulk insert) and `addSerialNumber` (single insert, dedup against existing).
@@ -21,7 +56,14 @@ function sanitizeSerialLots(rawList, fallbackLot = '') {
       : String(raw?.lot_number || fallbackLot || '').trim().toUpperCase();
     if (serialNumber && lotNumber && !seen.has(serialNumber)) {
       seen.add(serialNumber);
-      result.push({ serial_number: serialNumber, lot_number: lotNumber });
+      result.push({
+        serial_number: serialNumber,
+        lot_number: lotNumber,
+        inspected_pieces: sanitizePieceCount(raw?.inspected_pieces),
+        accepted_pieces: sanitizePieceCount(raw?.accepted_pieces),
+        rejected_pieces: sanitizePieceCount(raw?.rejected_pieces),
+        reworked_pieces: sanitizePieceCount(raw?.reworked_pieces),
+      });
     }
     if (result.length >= MAX_SERIAL_NUMBERS) break;
   }
@@ -74,6 +116,13 @@ export async function createDetalleInspeccion(req, res) {
     if (cleanSerials.length === 0) {
       return res.status(400).json({ success: false, motive: 'At least one serial number with its lot is required' });
     }
+    if (!cleanSerials.every(hasCompletePieceCounts)) {
+      return res.status(400).json({ success: false, motive: 'Piece counts are required for every serial/lot' });
+    }
+    const totals = cleanSerials.reduce((sum, serial) => {
+      for (const field of PIECE_FIELDS) sum[field] += serial[field];
+      return sum;
+    }, { inspected_pieces: 0, accepted_pieces: 0, rejected_pieces: 0, reworked_pieces: 0 });
 
     const [result] = await MysqlClient.execute(
       `INSERT INTO inspection_details (
@@ -84,22 +133,27 @@ export async function createDetalleInspeccion(req, res) {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         inspection_report_id, lot_number || null, inspector_id || null, hours || null, isoWeekFromDate(safeInspectionDate),
-        safeInspectionDate, safeManufactureDate, comments || null, inspected_pieces ?? null,
-        accepted_pieces ?? null, rejected_pieces ?? null, reworked_pieces ?? null,
+        safeInspectionDate, safeManufactureDate, comments || null, totals.inspected_pieces,
+        totals.accepted_pieces, totals.rejected_pieces, totals.reworked_pieces,
         safeStartTime, safeEndTime, shift || null
       ]
     );
 
-    // A box can relate to several serial numbers - inserted together with the
-    // detail itself so the create screen never needs a save-then-edit round trip.
+    // Each serial/lot is one box with its own counts. Insert them together
+    // with the detail so create mode needs no save-then-edit round trip.
+    const createdSerials = [];
     for (const serial of cleanSerials) {
-      await MysqlClient.execute(
-        'INSERT IGNORE INTO inspection_detail_serial_numbers (inspection_detail_id, serial_number, lot_number) VALUES (?, ?, ?)',
-        [result.insertId, serial.serial_number, serial.lot_number]
+      const [serialResult] = await MysqlClient.execute(
+        `INSERT INTO inspection_detail_serial_numbers
+          (inspection_detail_id, serial_number, lot_number, inspected_pieces, accepted_pieces, rejected_pieces, reworked_pieces)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [result.insertId, serial.serial_number, serial.lot_number, serial.inspected_pieces,
+          serial.accepted_pieces, serial.rejected_pieces, serial.reworked_pieces]
       );
+      createdSerials.push({ id: serialResult.insertId, ...serial });
     }
 
-    return res.status(201).json({ success: true, id: result.insertId, motive: 'Inspection detail created' });
+    return res.status(201).json({ success: true, id: result.insertId, serial_numbers: createdSerials, motive: 'Inspection detail created' });
   } catch (error) {
     console.error('Error creating Inspection Detail:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
@@ -117,6 +171,10 @@ export async function addSerialNumber(req, res) {
 
     if (!trimmed || !trimmedLot) {
       return res.status(400).json({ success: false, motive: 'serial_number and lot_number are required' });
+    }
+    const counts = Object.fromEntries(PIECE_FIELDS.map((field) => [field, sanitizePieceCount(req.body?.[field])]));
+    if (!hasCompletePieceCounts(counts)) {
+      return res.status(400).json({ success: false, motive: 'All piece counts are required' });
     }
 
     const [detailRows] = await MysqlClient.execute(
@@ -147,13 +205,41 @@ export async function addSerialNumber(req, res) {
     }
 
     const [result] = await MysqlClient.execute(
-      'INSERT INTO inspection_detail_serial_numbers (inspection_detail_id, serial_number, lot_number) VALUES (?, ?, ?)',
-      [id, trimmed, trimmedLot]
+      `INSERT INTO inspection_detail_serial_numbers
+        (inspection_detail_id, serial_number, lot_number, inspected_pieces, accepted_pieces, rejected_pieces, reworked_pieces)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, trimmed, trimmedLot, ...PIECE_FIELDS.map((field) => counts[field])]
     );
+    await recalculateDetailTotals(id);
 
-    return res.status(201).json({ success: true, id: result.insertId, serial_number: trimmed, lot_number: trimmedLot });
+    return res.status(201).json({ success: true, id: result.insertId, serial_number: trimmed, lot_number: trimmedLot, ...counts });
   } catch (error) {
     console.error('Error adding serial number:', error);
+    return res.status(500).json({ success: false, motive: 'Server Error' });
+  }
+}
+
+export async function updateSerialNumber(req, res) {
+  try {
+    const { id, serialId } = req.params;
+    const serialNumber = String(req.body?.serial_number || '').trim().toUpperCase();
+    const lotNumber = String(req.body?.lot_number || '').trim().toUpperCase();
+    const counts = Object.fromEntries(PIECE_FIELDS.map((field) => [field, sanitizePieceCount(req.body?.[field])]));
+    if (!serialNumber || !lotNumber || !hasCompletePieceCounts(counts)) {
+      return res.status(400).json({ success: false, motive: 'Serial, lot and all piece counts are required' });
+    }
+    const [result] = await MysqlClient.execute(
+      `UPDATE inspection_detail_serial_numbers
+          SET serial_number = ?, lot_number = ?, inspected_pieces = ?, accepted_pieces = ?, rejected_pieces = ?, reworked_pieces = ?
+        WHERE id = ? AND inspection_detail_id = ?`,
+      [serialNumber, lotNumber, ...PIECE_FIELDS.map((field) => counts[field]), serialId, id]
+    );
+    if (result.affectedRows === 0) return res.status(404).json({ success: false, motive: 'Serial number not found' });
+    await recalculateDetailTotals(id);
+    return res.status(200).json({ success: true, id: Number(serialId), serial_number: serialNumber, lot_number: lotNumber, ...counts });
+  } catch (error) {
+    if (error?.code === 'ER_DUP_ENTRY') return res.status(409).json({ success: false, motive: 'Este número de serie ya fue agregado' });
+    console.error('Error updating serial number:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
   }
 }
@@ -169,6 +255,7 @@ export async function deleteSerialNumber(req, res) {
     if (result.affectedRows === 0) {
       return res.status(404).json({ success: false, motive: 'Serial number not found' });
     }
+    await recalculateDetailTotals(id);
     return res.status(200).json({ success: true, motive: 'Serial number deleted' });
   } catch (error) {
     console.error('Error deleting serial number:', error);
@@ -231,7 +318,8 @@ export async function getDetallesInspeccion(req, res) {
       const detailIds = rows.map((r) => r.id);
       const placeholders = detailIds.map(() => '?').join(',');
       const [serialRows] = await MysqlClient.execute(
-        `SELECT inspection_detail_id, id, serial_number, lot_number
+        `SELECT inspection_detail_id, id, serial_number, lot_number,
+                inspected_pieces, accepted_pieces, rejected_pieces, reworked_pieces
          FROM inspection_detail_serial_numbers
          WHERE inspection_detail_id IN (${placeholders})
          ORDER BY id ASC`,
@@ -240,7 +328,7 @@ export async function getDetallesInspeccion(req, res) {
       const serialsByDetail = new Map();
       for (const s of serialRows) {
         if (!serialsByDetail.has(s.inspection_detail_id)) serialsByDetail.set(s.inspection_detail_id, []);
-        serialsByDetail.get(s.inspection_detail_id).push({ id: s.id, serial_number: s.serial_number, lot_number: s.lot_number });
+        serialsByDetail.get(s.inspection_detail_id).push(s);
       }
       for (const row of rows) {
         row.serial_numbers = serialsByDetail.get(row.id) || [];
@@ -292,7 +380,8 @@ export async function getDetalleInspeccionById(req, res) {
     }
 
     const [serialRows] = await MysqlClient.execute(
-      'SELECT id, serial_number, lot_number FROM inspection_detail_serial_numbers WHERE inspection_detail_id = ? ORDER BY id ASC',
+      `SELECT id, serial_number, lot_number, inspected_pieces, accepted_pieces, rejected_pieces, reworked_pieces
+         FROM inspection_detail_serial_numbers WHERE inspection_detail_id = ? ORDER BY id ASC`,
       [id]
     );
 

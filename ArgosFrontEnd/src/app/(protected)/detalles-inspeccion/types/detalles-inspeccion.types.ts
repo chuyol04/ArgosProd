@@ -2,11 +2,19 @@ export interface ISerialNumber {
   id: number;
   serial_number: string;
   lot_number: string | null;
+  inspected_pieces: number | null;
+  accepted_pieces: number | null;
+  rejected_pieces: number | null;
+  reworked_pieces: number | null;
 }
 
 export interface ISerialLotInput {
   serial_number: string;
   lot_number: string;
+  inspected_pieces: number;
+  accepted_pieces: number;
+  rejected_pieces: number;
+  reworked_pieces: number;
 }
 
 // Base inspection detail fields (from DB)

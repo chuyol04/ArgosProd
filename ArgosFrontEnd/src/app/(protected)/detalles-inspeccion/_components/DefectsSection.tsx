@@ -39,6 +39,7 @@ import {
 import { deleteMediaIfExists } from "@/lib/storage/deleteMedia";
 import { uploadFile, getFileCategory } from "@/lib/storage/fileUpload";
 import { MediaItem } from "@/components/ui/media-item";
+import { ISerialLotInput, ISerialNumber } from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
 import {
   Plus,
   Pencil,
@@ -61,6 +62,8 @@ interface DefectsSectionProps {
    * from saved incidents when the detail already exists, or from the
    * not-yet-saved pending defects while creating one. */
   onTotalQuantityChange?: (total: number) => void;
+  serialBoxes?: ISerialNumber[];
+  pendingSerialBoxes?: ISerialLotInput[];
 }
 
 // A defect captured before the inspection detail itself has been saved.
@@ -73,6 +76,8 @@ interface IPendingDefect {
   quantity: number;
   evidenceFile?: File;
   evidencePreview?: string | null;
+  boxSerialNumber: string;
+  autoExpected?: boolean;
 }
 
 export interface DefectsSectionHandle {
@@ -80,11 +85,11 @@ export interface DefectsSectionHandle {
    * relating them to the just-created inspection detail. Returns the labels
    * of any defects that failed, so the caller can surface them without
    * blocking navigation to the record that was already created. */
-  commitPendingDefects: (inspectionDetailId: number) => Promise<string[]>;
+  commitPendingDefects: (inspectionDetailId: number, createdSerials: ISerialNumber[]) => Promise<string[]>;
 }
 
 export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionProps>(
-  function DefectsSection({ inspectionDetailId, workInstructionId, rejectedPieces = 0, disabled = false, onTotalQuantityChange }, ref) {
+  function DefectsSection({ inspectionDetailId, workInstructionId, disabled = false, onTotalQuantityChange, serialBoxes = [], pendingSerialBoxes = [] }, ref) {
   const isPendingMode = inspectionDetailId == null;
 
   const [defects, setDefects] = useState<IDefect[]>([]);
@@ -100,6 +105,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   const [selectedDefectId, setSelectedDefectId] = useState<string>("");
   const [defectLabel, setDefectLabel] = useState("");
   const [quantity, setQuantity] = useState("");
+  const [selectedBox, setSelectedBox] = useState("");
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -143,31 +149,32 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     onTotalQuantityChange?.(total);
   }, [incidents, pendingDefects, isPendingMode, onTotalQuantityChange]);
 
-  // When the IT has exactly one expected defect, use all rejected pieces as
-  // its quantity automatically. Choosing/adding another defect stops this sync.
+  // When the IT has exactly one expected defect, keep one automatic entry per
+  // box that has rejected pieces. Manual defects remain untouched.
   useEffect(() => {
-    if (!isPendingMode || defects.length !== 1 || rejectedPieces <= 0) return;
+    if (!isPendingMode || defects.length !== 1) return;
     const expected = defects[0];
     setPendingDefects((prev) => {
-      if (prev.length === 0) {
-        return [{
-          tempId: `expected-${expected.id}`,
+      const manual = prev.filter((item) => !item.autoExpected);
+      const automatic = pendingSerialBoxes
+        .filter((box) => box.rejected_pieces > 0)
+        .map((box) => ({
+          tempId: `expected-${expected.id}-${box.serial_number}`,
           defect_id: expected.id,
           defect_label: expected.name,
-          quantity: rejectedPieces,
-        }];
-      }
-      if (prev.length === 1 && prev[0].defect_id === expected.id) {
-        return [{ ...prev[0], quantity: rejectedPieces }];
-      }
-      return prev;
+          quantity: box.rejected_pieces,
+          boxSerialNumber: box.serial_number,
+          autoExpected: true,
+        }));
+      return [...manual, ...automatic];
     });
-  }, [defects, isPendingMode, rejectedPieces]);
+  }, [defects, isPendingMode, pendingSerialBoxes]);
 
   const resetModal = useCallback(() => {
     setSelectedDefectId("");
     setDefectLabel("");
     setQuantity("");
+    setSelectedBox("");
     setEvidenceFile(null);
     setEvidencePreview(null);
     setUploadProgress(0);
@@ -198,6 +205,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     setSelectedDefectId(incident.defect_id ? String(incident.defect_id) : "");
     setDefectLabel(incident.defect_label || incident.defect_name);
     setQuantity(incident.quantity != null ? String(incident.quantity) : "");
+    setSelectedBox(incident.inspection_detail_serial_number_id ? String(incident.inspection_detail_serial_number_id) : "");
     setEvidenceFile(null);
     setEvidencePreview(null);
     setUploadProgress(0);
@@ -210,6 +218,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     setSelectedDefectId(pending.defect_id ? String(pending.defect_id) : "");
     setDefectLabel(pending.defect_label);
     setQuantity(String(pending.quantity));
+    setSelectedBox(pending.boxSerialNumber);
     setEvidenceFile(pending.evidenceFile ?? null);
     // Use a fresh object URL for the modal preview so removing/replacing the
     // file while editing never revokes the URL the list thumbnail relies on.
@@ -264,6 +273,10 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
       alert("La cantidad debe ser mayor que cero");
       return;
     }
+    if (!selectedBox) {
+      alert("Selecciona la caja/serie a la que pertenece el defecto");
+      return;
+    }
 
     setIsSubmitting(true);
     setUploadProgress(0);
@@ -285,6 +298,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           defect_id: selectedDefectId ? Number(selectedDefectId) : null,
           defect_label: trimmedLabel,
           quantity: parsedQuantity,
+          inspection_detail_serial_number_id: Number(selectedBox),
           ...(newEvidenceUrl ? { evidence_url: newEvidenceUrl } : {}),
         });
 
@@ -312,6 +326,8 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                   defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
                   defect_label: trimmedLabel,
                   quantity: parsedQuantity,
+                  boxSerialNumber: selectedBox,
+                  autoExpected: false,
                   evidenceFile: evidenceFile ?? undefined,
                   evidencePreview,
                 }
@@ -337,6 +353,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
             defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
             defect_label: trimmedLabel,
             quantity: parsedQuantity,
+            boxSerialNumber: selectedBox,
             evidenceFile: evidenceFile ?? undefined,
             evidencePreview,
           },
@@ -361,6 +378,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
         defect_label: trimmedLabel,
         inspection_detail_id: inspectionDetailId!,
         quantity: parsedQuantity,
+        inspection_detail_serial_number_id: Number(selectedBox),
         evidence_url: evidenceUrl,
       });
 
@@ -436,10 +454,15 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   // uploads evidence and creates an incident for every defect gathered while
   // the detail didn't exist yet.
   const commitPendingDefects = useCallback(
-    async (newDetailId: number): Promise<string[]> => {
+    async (newDetailId: number, createdSerials: ISerialNumber[]): Promise<string[]> => {
       const failed: string[] = [];
       for (const pending of pendingDefects) {
         try {
+          const serialId = createdSerials.find((serial) => serial.serial_number === pending.boxSerialNumber)?.id;
+          if (!serialId) {
+            failed.push(`${pending.defect_label} (${pending.boxSerialNumber})`);
+            continue;
+          }
           let evidenceUrl: string | undefined;
           if (pending.evidenceFile) {
             evidenceUrl = await uploadFile(pending.evidenceFile, `defects/${newDetailId}`);
@@ -448,6 +471,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
             defect_id: pending.defect_id,
             defect_label: pending.defect_label,
             inspection_detail_id: newDetailId,
+            inspection_detail_serial_number_id: serialId,
             quantity: pending.quantity,
             evidence_url: evidenceUrl,
           });
@@ -472,11 +496,6 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   }
 
   const entryCount = isPendingMode ? pendingDefects.length : incidents.length;
-  const automaticExpectedDefect = isPendingMode && defects.length === 1 &&
-    pendingDefects.length === 1 && pendingDefects[0].defect_id === defects[0].id
-      ? pendingDefects[0]
-      : null;
-
   return (
     <div className="space-y-3">
       {/* Header */}
@@ -489,13 +508,11 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => automaticExpectedDefect
-            ? handleOpenEditPending(automaticExpectedDefect)
-            : handleOpenAddModal()}
+          onClick={handleOpenAddModal}
           disabled={disabled}
         >
           <Plus className="h-4 w-4 mr-1" />
-          {automaticExpectedDefect ? "Especificar otro" : "Agregar"}
+          Agregar
         </Button>
       </div>
 
@@ -527,6 +544,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                   <div className="flex-1 min-w-0">
                     <p className="break-words text-sm font-medium">{pending.defect_label}</p>
                     <p className="text-xs text-muted-foreground">Cantidad: {pending.quantity}</p>
+                    <p className="text-xs text-muted-foreground">Caja/serie: {pending.boxSerialNumber}</p>
                   </div>
 
                   {!disabled && (
@@ -595,6 +613,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                         Cantidad: {incident.quantity}
                       </p>
                     )}
+                    <p className="text-xs text-muted-foreground">Caja/serie: {incident.inspection_serial_number || "Sin asignar"}</p>
                   </div>
 
                   {/* Edit / Delete buttons */}
@@ -638,6 +657,19 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="defect-box">Caja / número de serie *</Label>
+              <Select value={selectedBox} onValueChange={setSelectedBox} disabled={isSubmitting}>
+                <SelectTrigger id="defect-box"><SelectValue placeholder="Selecciona una caja..." /></SelectTrigger>
+                <SelectContent>
+                  {(isPendingMode ? pendingSerialBoxes : serialBoxes).map((box, index) => (
+                    <SelectItem key={isPendingMode ? box.serial_number : (box as ISerialNumber).id} value={isPendingMode ? box.serial_number : String((box as ISerialNumber).id)}>
+                      Caja {index + 1} · {box.serial_number} · Lote {box.lot_number || "-"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             {/* Catalog shortcut - optional, only pre-fills the free-text field below */}
             {defects.length > 0 && (
               <div className="space-y-2">
@@ -759,7 +791,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={isSubmitting || !defectLabel.trim()}
+              disabled={isSubmitting || !defectLabel.trim() || !selectedBox}
             >
               {isSubmitting ? (
                 <>

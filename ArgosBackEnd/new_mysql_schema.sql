@@ -135,6 +135,10 @@ CREATE TABLE inspection_detail_serial_numbers (
     inspection_detail_id INT NOT NULL,
     serial_number VARCHAR(50) NOT NULL,
     lot_number VARCHAR(50) NOT NULL,
+    inspected_pieces INT,
+    accepted_pieces INT,
+    rejected_pieces INT,
+    reworked_pieces INT,
     FOREIGN KEY (inspection_detail_id) REFERENCES inspection_details(id) ON DELETE CASCADE,
     UNIQUE KEY uq_inspection_detail_serial (inspection_detail_id, serial_number)
 );
@@ -146,11 +150,13 @@ CREATE TABLE inspection_detail_serial_numbers (
 CREATE TABLE incidents (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inspection_detail_id INT NOT NULL,
+    inspection_detail_serial_number_id INT,
     defect_id INT, -- Optional: catalog reference. NULL when captured as free text.
     defect_label VARCHAR(150), -- Free-text defect description, independent of the catalog.
     quantity INT,
     evidence_url TEXT,
     FOREIGN KEY (inspection_detail_id) REFERENCES inspection_details(id),
+    FOREIGN KEY (inspection_detail_serial_number_id) REFERENCES inspection_detail_serial_numbers(id) ON DELETE SET NULL,
     FOREIGN KEY (defect_id) REFERENCES defects(id)
 );
 

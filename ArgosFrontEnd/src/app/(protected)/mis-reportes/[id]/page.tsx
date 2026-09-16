@@ -1,214 +1,106 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Download } from "lucide-react";
 import { getInspectionReportDetails } from "@/app/(protected)/reportes-inspeccion/actions/reportes-inspeccion.actions";
-import { fetchIncidentsByDetail } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
+import { fetchIncidentsByDetail, IIncident } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
+import { IInspectionDetail } from "@/app/(protected)/reportes-inspeccion/types/reportes-inspeccion.types";
 import PageContainer from "@/components/layout/PageContainer";
 import { MediaItem } from "@/components/ui/media-item";
 import { formatDateDisplay } from "@/lib/dateTimeUtils";
 
 export const dynamic = "force-dynamic";
+type Props = { params: Promise<{ id: string }> };
 
-type Props = {
-  params: Promise<{ id: string }>;
-};
+const addCounts = (items: IInspectionDetail[]) => items.reduce((sum, item) => ({
+  inspected: sum.inspected + Number(item.inspected_pieces || 0),
+  accepted: sum.accepted + Number(item.accepted_pieces || 0),
+  rejected: sum.rejected + Number(item.rejected_pieces || 0),
+  reworked: sum.reworked + Number(item.reworked_pieces || 0),
+}), { inspected: 0, accepted: 0, rejected: 0, reworked: 0 });
 
-// Read-only report detail for the client portal. getInspectionReportDetails
-// already 404s (via the backend) if this report doesn't belong to the
-// requester's own client, even if they type the ID directly in the URL.
 export default async function MisReporteDetallePage({ params }: Props) {
-  const { id } = await params;
-  const reportId = Number(id);
+  const reportId = Number((await params).id);
   if (!Number.isInteger(reportId)) notFound();
-
   const result = await getInspectionReportDetails(reportId);
   if (!result.success || !result.data) notFound();
 
   const { report, inspections } = result.data;
-  const defectsByDetail = await Promise.all(
-    inspections.map((detail) => fetchIncidentsByDetail(detail.id))
-  );
-
-  const totals = inspections.reduce(
-    (acc, d) => ({
-      inspected: acc.inspected + (d.inspected_pieces || 0),
-      accepted: acc.accepted + (d.accepted_pieces || 0),
-      rejected: acc.rejected + (d.rejected_pieces || 0),
-      reworked: acc.reworked + (d.reworked_pieces || 0),
-    }),
-    { inspected: 0, accepted: 0, rejected: 0, reworked: 0 }
-  );
-  const totalDefects = defectsByDetail.flat().reduce((sum, d) => sum + (d.quantity || 0), 0);
+  const incidentLists = await Promise.all(inspections.map((detail) => fetchIncidentsByDetail(detail.id)));
+  const incidentsByDetail = new Map<number, IIncident[]>(inspections.map((detail, index) => [detail.id, incidentLists[index] || []]));
+  const shiftGroups = Array.from(inspections.reduce((map, detail) => {
+    const key = `${String(detail.inspection_date || "sin-fecha").slice(0, 10)}::${detail.shift || "Sin turno"}`;
+    map.set(key, [...(map.get(key) || []), detail]);
+    return map;
+  }, new Map<string, IInspectionDetail[]>()).entries());
+  const totals = addCounts(inspections);
+  const totalBoxes = inspections.reduce((sum, detail) => sum + Math.max(detail.serial_numbers.length, 1), 0);
 
   return (
     <PageContainer>
-      <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center gap-3">
-          <Link href="/mis-reportes" className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-5 w-5" />
+      <div className="flex flex-col gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link href="/mis-reportes" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="h-5 w-5" /></Link>
+            <h1 className="text-xl font-bold lg:text-2xl">Reporte #{report.id}</h1>
+          </div>
+          <Link href={`/api/reports/${report.id}/export`} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+            <Download className="mr-2 h-4 w-4" />Exportar Excel
           </Link>
-          <h1 className="text-foreground text-xl font-bold lg:text-2xl">Reporte #{report.id}</h1>
         </div>
 
-        {/* Report summary */}
-        <div className="border-border bg-card grid grid-cols-2 gap-4 rounded-lg border p-4 sm:grid-cols-3">
-          <div>
-            <p className="text-muted-foreground text-xs">Cliente</p>
-            <p className="text-sm font-medium">{report.client_name}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs">Servicio</p>
-            <p className="text-sm font-medium">{report.service_name}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs">Pieza</p>
-            <p className="text-sm font-medium">{report.part_name}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs">Fecha de Inicio</p>
-            <p className="text-sm font-medium">{formatDateDisplay(report.start_date)}</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground text-xs">Número de PO</p>
-            <p className="text-sm font-medium">{report.po_number || "-"}</p>
-          </div>
-          {report.description && (
-            <div className="col-span-full">
-              <p className="text-muted-foreground text-xs">Descripción</p>
-              <p className="text-sm whitespace-pre-wrap">{report.description}</p>
-            </div>
-          )}
+        <div className="grid grid-cols-2 gap-4 rounded-lg border bg-card p-4 sm:grid-cols-3">
+          {[["Cliente", report.client_name], ["Servicio", report.service_name], ["Pieza", report.part_name], ["Fecha de Inicio", formatDateDisplay(report.start_date)], ["Número de PO", report.po_number || "-"], ["Modalidad", report.inspection_mode === "rate" ? "RATE" : "FULL TIME"]].map(([label, value]) => <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>)}
         </div>
 
-        {/* Totals summary - the "at a glance" version of the Excel export */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-          <div className="border-border bg-card rounded-lg border p-3 text-center">
-            <p className="text-xl font-bold">{inspections.length}</p>
-            <p className="text-muted-foreground text-xs uppercase">Cajas</p>
-          </div>
-          <div className="border-border bg-card rounded-lg border p-3 text-center">
-            <p className="text-xl font-bold">{totals.inspected}</p>
-            <p className="text-muted-foreground text-xs uppercase">Inspeccionadas</p>
-          </div>
-          <div className="border-border bg-card rounded-lg border p-3 text-center">
-            <p className="text-xl font-bold text-green-600">{totals.accepted}</p>
-            <p className="text-muted-foreground text-xs uppercase">Aceptadas</p>
-          </div>
-          <div className="border-border bg-card rounded-lg border p-3 text-center">
-            <p className="text-xl font-bold text-red-600">{totals.rejected}</p>
-            <p className="text-muted-foreground text-xs uppercase">Rechazadas</p>
-          </div>
-          <div className="border-border bg-card rounded-lg border p-3 text-center">
-            <p className="text-xl font-bold text-yellow-600">{totals.reworked}</p>
-            <p className="text-muted-foreground text-xs uppercase">Retrabajadas</p>
-          </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+          {[[shiftGroups.length, "Turnos/día", ""], [totalBoxes, "Cajas", ""], [totals.inspected, "Inspeccionadas", ""], [totals.accepted, "Aceptadas", "text-green-600"], [totals.rejected, "Rechazadas", "text-red-600"], [totals.reworked, "Retrabajadas", "text-amber-600"]].map(([value, label, color]) => <div key={String(label)} className="rounded-lg border bg-card p-3 text-center"><p className={`text-xl font-bold ${color}`}>{value}</p><p className="text-xs uppercase text-muted-foreground">{label}</p></div>)}
         </div>
-        {totalDefects > 0 && (
-          <p className="text-muted-foreground text-sm">
-            Defectos totales encontrados: <span className="font-semibold">{totalDefects}</span>
-          </p>
-        )}
 
-        {/* Boxes */}
-        <div className="space-y-3">
-          <h2 className="text-muted-foreground text-sm font-semibold uppercase tracking-wide">
-            Detalles por Caja ({inspections.length})
-          </h2>
+        <section className="rounded-lg border bg-card p-4">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resultado por turno</h2>
+          <div className="space-y-4">
+            {shiftGroups.map(([groupKey, details]) => {
+              const shift = details[0]?.shift || "Sin turno";
+              const counts = addCounts(details);
+              const denominator = Math.max(counts.inspected, counts.accepted + counts.rejected + counts.reworked, 1);
+              return <div key={groupKey} className="space-y-2"><div className="flex justify-between text-sm"><strong>{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</strong><span className="text-muted-foreground">{counts.inspected} inspeccionadas</span></div><div className="flex h-5 overflow-hidden rounded-full bg-muted" aria-label={`Turno ${shift}: ${counts.accepted} aceptadas, ${counts.rejected} rechazadas, ${counts.reworked} retrabajadas`}><div className="bg-green-500" style={{ width: `${counts.accepted / denominator * 100}%` }} /><div className="bg-red-500" style={{ width: `${counts.rejected / denominator * 100}%` }} /><div className="bg-amber-500" style={{ width: `${counts.reworked / denominator * 100}%` }} /></div><div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="text-green-600">Aceptadas {counts.accepted}</span><span className="text-red-600">Rechazadas {counts.rejected}</span><span className="text-amber-600">Retrabajadas {counts.reworked}</span></div></div>;
+            })}
+          </div>
+        </section>
 
-          {inspections.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              Este reporte no tiene cajas registradas todavía.
-            </p>
-          ) : (
-            inspections.map((detail, index) => {
-              const defects = defectsByDetail[index] || [];
-              return (
-                <div key={detail.id} className="border-border bg-card space-y-3 rounded-lg border p-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium">Caja {index + 1}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {formatDateDisplay(detail.inspection_date)}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                    <div>
-                      <p className="text-muted-foreground text-xs"># Serie</p>
-                      <p>
-                        {detail.serial_numbers.length > 0
-                          ? detail.serial_numbers.map((s) => s.serial_number).join(", ")
-                          : "-"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs"># Lote</p>
-                      <p>
-                        {detail.serial_numbers?.length
-                          ? detail.serial_numbers.map((serial) => serial.lot_number || detail.lot_number || "-").join(", ")
-                          : detail.lot_number || "-"}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Fecha Manufactura</p>
-                      <p>{formatDateDisplay(detail.manufacture_date ?? null)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Inspector</p>
-                      <p>{detail.inspector_name || "-"}</p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                    <div>
-                      <p className="text-muted-foreground text-xs">Inspeccionadas</p>
-                      <p className="font-medium">{detail.inspected_pieces ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Aceptadas</p>
-                      <p className="font-medium text-green-600">{detail.accepted_pieces ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Rechazadas</p>
-                      <p className="font-medium text-red-600">{detail.rejected_pieces ?? 0}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground text-xs">Retrabajadas</p>
-                      <p className="font-medium text-yellow-600">{detail.reworked_pieces ?? 0}</p>
-                    </div>
-                  </div>
-
-                  {defects.length > 0 && (
-                    <div className="space-y-2 border-t pt-3">
-                      <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                        Defectos
-                      </p>
-                      <div className="space-y-2">
-                        {defects.map((incident) => (
-                          <div
-                            key={incident.id}
-                            className="flex items-center gap-3 rounded-lg border p-2"
-                          >
-                            {incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) && (
-                              <MediaItem mediaId={incident.evidence_url} size="sm" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium">{incident.defect_name}</p>
-                              {incident.quantity != null && (
-                                <p className="text-muted-foreground text-xs">
-                                  Cantidad: {incident.quantity}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
+        <section className="space-y-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Detalles por turno y día ({shiftGroups.length})</h2>
+          {shiftGroups.length === 0 ? <p className="text-sm text-muted-foreground">Este reporte todavía no tiene inspecciones.</p> : shiftGroups.map(([groupKey, details]) => {
+            const shift = details[0]?.shift || "Sin turno";
+            const shiftCounts = addCounts(details);
+            const rateHours = report.inspection_mode === "rate" && report.inspection_rate_per_hour ? shiftCounts.inspected / report.inspection_rate_per_hour : null;
+            const shiftHours = rateHours ?? details.reduce((sum, item) => sum + Number(item.hours || 0), 0);
+            return <div key={groupKey} className="space-y-3 rounded-lg border bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</h3><p className="text-xs text-muted-foreground">{details.map((item) => item.inspector_name).filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(", ") || "Sin inspector"}</p></div><p className="text-sm font-medium">{shiftHours.toFixed(2)} horas del día</p></div>
+              <div className="space-y-2">
+                {details.flatMap((detail) => {
+                  const serials = detail.serial_numbers.length ? detail.serial_numbers : [{ id: 0, serial_number: "-", lot_number: detail.lot_number, inspected_pieces: detail.inspected_pieces, accepted_pieces: detail.accepted_pieces, rejected_pieces: detail.rejected_pieces, reworked_pieces: detail.reworked_pieces }];
+                  const incidents = incidentsByDetail.get(detail.id) || [];
+                  return serials.map((serial, serialIndex) => {
+                    const boxIncidents = incidents.filter((incident) => incident.inspection_detail_serial_number_id === serial.id || (!incident.inspection_detail_serial_number_id && serialIndex === 0));
+                    const legacyCounts = serial.inspected_pieces == null && serialIndex === 0;
+                    const counts = legacyCounts ? {
+                      inspected_pieces: detail.inspected_pieces,
+                      accepted_pieces: detail.accepted_pieces,
+                      rejected_pieces: detail.rejected_pieces,
+                      reworked_pieces: detail.reworked_pieces,
+                    } : serial;
+                    return <div key={`${detail.id}-${serial.id}-${serialIndex}`} className="rounded-md border p-3">
+                      <div className="grid gap-3 text-sm sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">Serie</p><p className="font-mono">{serial.serial_number}</p></div><div><p className="text-xs text-muted-foreground">Lote</p><p className="font-mono">{serial.lot_number || "-"}</p></div><div><p className="text-xs text-muted-foreground">Fecha inspección</p><p>{formatDateDisplay(detail.inspection_date)}</p></div><div><p className="text-xs text-muted-foreground">Fecha manufactura</p><p>{formatDateDisplay(detail.manufacture_date ?? null)}</p></div></div>
+                      <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"><span>Inspeccionadas <b>{counts.inspected_pieces ?? 0}</b></span><span className="text-green-600">Aceptadas <b>{counts.accepted_pieces ?? 0}</b></span><span className="text-red-600">Rechazadas <b>{counts.rejected_pieces ?? 0}</b></span><span className="text-amber-600">Retrabajadas <b>{counts.reworked_pieces ?? 0}</b></span></div>
+                      {boxIncidents.length > 0 && <div className="mt-3 space-y-2 border-t pt-3">{boxIncidents.map((incident) => <div key={incident.id} className="flex items-center gap-3 rounded-md bg-muted/40 p-2">{incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) && <MediaItem mediaId={incident.evidence_url} size="sm" />}<p className="text-sm"><b>{incident.defect_name}</b> · {incident.quantity ?? 0}</p></div>)}</div>}
+                    </div>;
+                  });
+                })}
+              </div>
+            </div>;
+          })}
+        </section>
       </div>
     </PageContainer>
   );

@@ -7,6 +7,8 @@ import {
   IInspectionDetailFormData,
   IInspector,
   IReportOption,
+  ISerialLotInput,
+  ISerialNumber,
 } from "@/app/(protected)/detalles-inspeccion/types/detalles-inspeccion.types";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
@@ -52,7 +54,7 @@ export async function getInspectionDetailById(
 
 export async function createInspectionDetail(
   data: IInspectionDetailFormData
-): Promise<{ success: boolean; id?: number; error?: string }> {
+): Promise<{ success: boolean; id?: number; serial_numbers?: ISerialNumber[]; error?: string }> {
   try {
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
@@ -82,7 +84,7 @@ export async function createInspectionDetail(
 
     revalidatePath("/detalles-inspeccion");
     revalidatePath("/reportes-inspeccion");
-    return { success: true, id: json.id };
+    return { success: true, id: json.id, serial_numbers: json.serial_numbers };
   } catch (err) {
     console.error("Create inspection detail error:", err);
     return {
@@ -177,9 +179,8 @@ export async function deleteInspectionDetail(
 
 export async function addSerialNumber(
   inspectionDetailId: number,
-  serialNumber: string,
-  lotNumber: string
-): Promise<{ success: boolean; id?: number; serial_number?: string; lot_number?: string; error?: string }> {
+  value: ISerialLotInput
+): Promise<{ success: boolean; data?: ISerialNumber; error?: string }> {
   try {
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
@@ -200,7 +201,7 @@ export async function addSerialNumber(
           "Content-Type": "application/json",
           Cookie: `session=${session}`,
         },
-        body: JSON.stringify({ serial_number: serialNumber, lot_number: lotNumber }),
+        body: JSON.stringify(value),
       }
     );
 
@@ -211,13 +212,40 @@ export async function addSerialNumber(
     }
 
     revalidatePath("/detalles-inspeccion");
-    return { success: true, id: json.id, serial_number: json.serial_number, lot_number: json.lot_number };
+    return { success: true, data: json as ISerialNumber };
   } catch (err) {
     console.error("Add serial number error:", err);
     return {
       success: false,
       error: err instanceof Error ? err.message : "Unknown error",
     };
+  }
+}
+
+export async function updateSerialNumber(
+  inspectionDetailId: number,
+  serialId: number,
+  value: ISerialLotInput
+): Promise<{ success: boolean; data?: ISerialNumber; error?: string }> {
+  try {
+    if (!EXPRESS_BASE_URL) throw new Error("EXPRESS_BASE_URL is not defined");
+    const session = (await cookies()).get("session")?.value;
+    if (!session) throw new Error("No session cookie");
+    const res = await fetch(
+      `${EXPRESS_BASE_URL}/inspection-details/${inspectionDetailId}/serial-numbers/${serialId}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Cookie: `session=${session}` },
+        body: JSON.stringify(value),
+      }
+    );
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.motive || "Failed to update serial number");
+    revalidatePath("/detalles-inspeccion");
+    revalidatePath("/reportes-inspeccion");
+    return { success: true, data: json as ISerialNumber };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Unknown error" };
   }
 }
 

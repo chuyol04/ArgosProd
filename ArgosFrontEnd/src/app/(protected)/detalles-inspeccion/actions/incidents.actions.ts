@@ -17,11 +17,14 @@ export interface IIncident {
   defect_id: number | null;
   defect_label: string | null;
   inspection_detail_id: number;
+  inspection_detail_serial_number_id: number | null;
   quantity: number | null;
   evidence_url: string | null;
   /** Catalog name when defect_id is set, otherwise the free-text defect_label. */
   defect_name: string;
   defect_description: string | null;
+  inspection_serial_number: string | null;
+  inspection_lot_number: string | null;
 }
 
 export interface CreateIncidentData {
@@ -30,6 +33,7 @@ export interface CreateIncidentData {
   /** Free-text defect description. Required when defect_id is not provided. */
   defect_label?: string;
   inspection_detail_id: number;
+  inspection_detail_serial_number_id?: number;
   quantity?: number;
   evidence_url?: string;
 }
@@ -38,6 +42,7 @@ export interface UpdateIncidentData {
   defect_id?: number | null;
   defect_label?: string | null;
   inspection_detail_id?: number;
+  inspection_detail_serial_number_id?: number | null;
   quantity?: number | null;
   evidence_url?: string | null;
 }

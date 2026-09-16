@@ -12,12 +12,24 @@ export function getExportHours(inspectionMode, inspectedPieces, rate, workedHour
 
 export function expandSerialAndDefectRows(serialLots = [], incidents = []) {
   const serialRows = serialLots.length > 0 ? serialLots : [null];
-  const defectRows = incidents.length > 0 ? incidents : [null];
-  const rowCount = Math.max(serialRows.length, defectRows.length);
-
-  return Array.from({ length: rowCount }, (_, index) => ({
-    serialLot: serialRows[index] ?? null,
-    incident: defectRows[index] ?? null,
-    carriesMetrics: index < defectRows.length,
-  }));
+  const unassigned = incidents.filter((incident) => !incident.inspection_detail_serial_number_id);
+  const rows = [];
+  serialRows.forEach((serialLot, serialIndex) => {
+    const assigned = serialLot
+      ? incidents.filter((incident) => Number(incident.inspection_detail_serial_number_id) === Number(serialLot.id))
+      : incidents;
+    const defectRows = serialLot
+      ? [...assigned, ...(serialIndex === 0 ? unassigned : [])]
+      : assigned;
+    (defectRows.length > 0 ? defectRows : [null]).forEach((incident, defectIndex) => {
+      rows.push({
+        serialLot,
+        incident,
+        carriesMetrics: defectIndex === 0,
+        carriesHours: serialIndex === 0 && defectIndex === 0,
+        serialIndex,
+      });
+    });
+  });
+  return rows;
 }

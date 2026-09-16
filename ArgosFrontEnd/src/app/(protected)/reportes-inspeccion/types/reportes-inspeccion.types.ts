@@ -54,8 +54,16 @@ export interface UpdateInspectionReportData {
 // Inspection detail associated with a report
 export interface IInspectionDetail {
   id: number;
-  /** A box can relate to several serial numbers. */
-  serial_numbers: { id: number; serial_number: string; lot_number: string | null }[];
+  /** Each serial/lot is a box with its own manually captured piece counts. */
+  serial_numbers: {
+    id: number;
+    serial_number: string;
+    lot_number: string | null;
+    inspected_pieces: number | null;
+    accepted_pieces: number | null;
+    rejected_pieces: number | null;
+    reworked_pieces: number | null;
+  }[];
   lot_number: string | null;
   inspector_id: number;
   inspector_name: string;
