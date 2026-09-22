@@ -34,6 +34,27 @@ export default async function MisReporteDetallePage({ params }: Props) {
   }, new Map<string, IInspectionDetail[]>()).entries());
   const totals = addCounts(inspections);
   const totalBoxes = inspections.reduce((sum, detail) => sum + Math.max(detail.serial_numbers.length, 1), 0);
+  const outcomeTotal = totals.accepted + totals.rejected + totals.reworked;
+  const chartTotal = Math.max(totals.inspected, outcomeTotal, 1);
+  const unclassified = Math.max(chartTotal - outcomeTotal, 0);
+  const resultSegments = [
+    { label: "Aceptadas", value: totals.accepted, color: "#22c55e", textClass: "text-green-600" },
+    { label: "Rechazadas", value: totals.rejected, color: "#ef4444", textClass: "text-red-600" },
+    { label: "Retrabajadas", value: totals.reworked, color: "#f59e0b", textClass: "text-amber-600" },
+    ...(unclassified > 0 ? [{ label: "Sin clasificar", value: unclassified, color: "#d1d5db", textClass: "text-muted-foreground" }] : []),
+  ];
+  let segmentStart = 0;
+  const chartBackground = outcomeTotal || totals.inspected
+    ? `conic-gradient(${resultSegments.map((segment) => {
+        const segmentEnd = segmentStart + (segment.value / chartTotal) * 100;
+        const stop = `${segment.color} ${segmentStart}% ${segmentEnd}%`;
+        segmentStart = segmentEnd;
+        return stop;
+      }).join(", ")})`
+    : "#e5e7eb";
+  const totalHours = report.inspection_mode === "rate" && report.inspection_rate_per_hour
+    ? totals.inspected / report.inspection_rate_per_hour
+    : inspections.reduce((sum, detail) => sum + Number(detail.hours || 0), 0);
 
   return (
     <PageContainer>
@@ -53,18 +74,55 @@ export default async function MisReporteDetallePage({ params }: Props) {
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
-          {[[shiftGroups.length, "Turnos/día", ""], [totalBoxes, "Cajas", ""], [totals.inspected, "Inspeccionadas", ""], [totals.accepted, "Aceptadas", "text-green-600"], [totals.rejected, "Rechazadas", "text-red-600"], [totals.reworked, "Retrabajadas", "text-amber-600"]].map(([value, label, color]) => <div key={String(label)} className="rounded-lg border bg-card p-3 text-center"><p className={`text-xl font-bold ${color}`}>{value}</p><p className="text-xs uppercase text-muted-foreground">{label}</p></div>)}
+          {[[shiftGroups.length, "Turnos registrados", ""], [totalBoxes, "Cajas", ""], [totals.inspected, "Inspeccionadas", ""], [totals.accepted, "Aceptadas", "text-green-600"], [totals.rejected, "Rechazadas", "text-red-600"], [totals.reworked, "Retrabajadas", "text-amber-600"]].map(([value, label, color]) => <div key={String(label)} className="rounded-lg border bg-card p-3 text-center"><p className={`text-xl font-bold ${color}`}>{value}</p><p className="text-xs uppercase text-muted-foreground">{label}</p></div>)}
         </div>
 
-        <section className="rounded-lg border bg-card p-4">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resultado por turno</h2>
-          <div className="space-y-4">
-            {shiftGroups.map(([groupKey, details]) => {
-              const shift = details[0]?.shift || "Sin turno";
-              const counts = addCounts(details);
-              const denominator = Math.max(counts.inspected, counts.accepted + counts.rejected + counts.reworked, 1);
-              return <div key={groupKey} className="space-y-2"><div className="flex justify-between text-sm"><strong>{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</strong><span className="text-muted-foreground">{counts.inspected} inspeccionadas</span></div><div className="flex h-5 overflow-hidden rounded-full bg-muted" aria-label={`Turno ${shift}: ${counts.accepted} aceptadas, ${counts.rejected} rechazadas, ${counts.reworked} retrabajadas`}><div className="bg-green-500" style={{ width: `${counts.accepted / denominator * 100}%` }} /><div className="bg-red-500" style={{ width: `${counts.rejected / denominator * 100}%` }} /><div className="bg-amber-500" style={{ width: `${counts.reworked / denominator * 100}%` }} /></div><div className="flex flex-wrap gap-4 text-xs text-muted-foreground"><span className="text-green-600">Aceptadas {counts.accepted}</span><span className="text-red-600">Rechazadas {counts.rejected}</span><span className="text-amber-600">Retrabajadas {counts.reworked}</span></div></div>;
-            })}
+        <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
+          <div className="border-b px-5 py-4">
+            <h2 className="text-base font-semibold">Resultado general</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Distribución acumulada de todo el reporte</p>
+          </div>
+          <div className="grid items-center gap-8 p-5 md:grid-cols-[minmax(260px,360px)_1fr] md:p-8">
+            <div className="mx-auto w-full max-w-[300px]">
+              <div
+                className="relative aspect-square rounded-full p-[22px] shadow-lg ring-1 ring-black/5"
+                style={{ background: chartBackground }}
+                role="img"
+                aria-label={`Resultado total: ${totals.accepted} aceptadas, ${totals.rejected} rechazadas y ${totals.reworked} retrabajadas`}
+              >
+                <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-card text-center shadow-inner">
+                  <span className="text-4xl font-bold tracking-tight">{totals.inspected}</span>
+                  <span className="mt-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">Inspeccionadas</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <p className="text-sm font-medium">Distribución total</p>
+                <p className="text-sm text-muted-foreground">Resultados de todas las fechas, turnos y cajas</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {resultSegments.map((segment) => (
+                  <div key={segment.label} className="rounded-lg border bg-muted/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: segment.color }} />
+                        <span className="text-sm font-medium">{segment.label}</span>
+                      </div>
+                      <span className={`text-lg font-bold ${segment.textClass}`}>{segment.value}</span>
+                    </div>
+                    <p className="mt-2 text-right text-xs text-muted-foreground">
+                      {((segment.value / chartTotal) * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-x-8 gap-y-2 border-t pt-4 text-sm">
+                <span><span className="text-muted-foreground">Total revisado:</span> <b>{totals.inspected}</b></span>
+                <span><span className="text-muted-foreground">Horas totales:</span> <b>{totalHours.toFixed(2)}</b></span>
+              </div>
+            </div>
           </div>
         </section>
 
