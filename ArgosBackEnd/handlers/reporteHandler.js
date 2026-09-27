@@ -210,7 +210,7 @@ export async function getReporteById(req, res) {
       const detailIds = inspections.map((d) => d.id);
       const placeholders = detailIds.map(() => '?').join(',');
       const [serialRows] = await MysqlClient.execute(
-        `SELECT inspection_detail_id, id, serial_number, lot_number,
+        `SELECT inspection_detail_id, id, COALESCE(serial_number, '') AS serial_number, lot_number,
                 inspected_pieces, accepted_pieces, rejected_pieces, reworked_pieces
          FROM inspection_detail_serial_numbers
          WHERE inspection_detail_id IN (${placeholders})

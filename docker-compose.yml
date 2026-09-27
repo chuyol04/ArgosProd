@@ -12,7 +12,7 @@ services:
       MYSQL_USER: argos_user
       MYSQL_PASSWORD: argos_pass
     ports:
-      - "3307:3306"
+      - "127.0.0.1:3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
       - ./ArgosBackEnd/new_mysql_schema.sql:/docker-entrypoint-initdb.d/schema.sql
@@ -30,7 +30,7 @@ services:
       MONGO_INITDB_ROOT_USERNAME: argos_user
       MONGO_INITDB_ROOT_PASSWORD: argos_pass
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo_data:/data/db
     healthcheck:
@@ -53,7 +53,7 @@ services:
       mongo:
         condition: service_healthy
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     env_file:
       - ./ArgosBackEnd/.env        # carga FIREBASE_* y demás secretos
     environment:

@@ -1,12 +1,31 @@
 import MysqlClient from '../connections/mysqldb.js';
 import { isClientRole } from '../lib/constants/roles.js';
 
+// Never trust a manually supplied defect count: its source is the selected box.
+async function getBoxDefectQuantity(boxId, detailId) {
+  if (!boxId) {
+    throw Object.assign(new Error('Selecciona una caja/serie o lote'), { status: 400 });
+  }
+  const [boxes] = await MysqlClient.execute(
+    'SELECT rejected_pieces FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ? LIMIT 1',
+    [boxId, detailId]
+  );
+  if (!boxes.length) {
+    throw Object.assign(new Error('La caja seleccionada no pertenece a esta inspección'), { status: 400 });
+  }
+  const quantity = boxes[0].rejected_pieces;
+  if (!Number.isInteger(quantity) || quantity <= 0) {
+    throw Object.assign(new Error('La caja seleccionada debe tener piezas rechazadas registradas'), { status: 400 });
+  }
+  return quantity;
+}
+
 // CREATE
 // The defect catalog (defect_id) is optional - a defect can be captured as
 // free text (defect_label) instead. At least one of the two is required.
 export async function createIncidencia(req, res) {
   try {
-    const { defect_id, defect_label, inspection_detail_id, inspection_detail_serial_number_id, quantity, evidence_url } = req.body || {};
+    const { defect_id, defect_label, inspection_detail_id, inspection_detail_serial_number_id, evidence_url } = req.body || {};
     const trimmedLabel = typeof defect_label === 'string' ? defect_label.trim() : '';
 
     if (!inspection_detail_id) {
@@ -31,13 +50,7 @@ export async function createIncidencia(req, res) {
       [inspection_detail_id]
     );
     if (det.length === 0) return res.status(404).json({ success: false, motive: 'Inspection detail not found' });
-    if (inspection_detail_serial_number_id) {
-      const [box] = await MysqlClient.execute(
-        'SELECT id FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ? LIMIT 1',
-        [inspection_detail_serial_number_id, inspection_detail_id]
-      );
-      if (box.length === 0) return res.status(400).json({ success: false, motive: 'The selected serial/box does not belong to this inspection detail' });
-    }
+    const quantity = await getBoxDefectQuantity(inspection_detail_serial_number_id, inspection_detail_id);
 
     const [result] = await MysqlClient.execute(
       `INSERT INTO incidents
@@ -52,6 +65,7 @@ export async function createIncidencia(req, res) {
       motive: 'Incident created'
     });
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ success: false, motive: error.message });
     console.error('Error creating incident:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
   }
@@ -150,11 +164,11 @@ export async function getIncidenciaById(req, res) {
 export async function updateIncidencia(req, res) {
   try {
     const { id } = req.params;
-    const payload = req.body || {};
+    const payload = { ...req.body };
 
     // Check existence
     const [ex] = await MysqlClient.execute(
-      'SELECT id, inspection_detail_id FROM incidents WHERE id = ? LIMIT 1',
+      'SELECT id, inspection_detail_id, inspection_detail_serial_number_id FROM incidents WHERE id = ? LIMIT 1',
       [id]
     );
     if (ex.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
@@ -168,13 +182,13 @@ export async function updateIncidencia(req, res) {
       const [di] = await MysqlClient.execute('SELECT id FROM inspection_details WHERE id = ? LIMIT 1', [payload.inspection_detail_id]);
       if (di.length === 0) return res.status(404).json({ success: false, motive: 'Inspection Detail (new) not found' });
     }
-    if (payload.inspection_detail_serial_number_id !== undefined && payload.inspection_detail_serial_number_id !== null) {
+    // Evidence-only updates must not alter historical quantities or require a box.
+    if (['quantity', 'inspection_detail_serial_number_id', 'inspection_detail_id'].some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
       const detailId = payload.inspection_detail_id ?? ex[0].inspection_detail_id;
-      const [box] = await MysqlClient.execute(
-        'SELECT id FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ? LIMIT 1',
-        [payload.inspection_detail_serial_number_id, detailId]
-      );
-      if (box.length === 0) return res.status(400).json({ success: false, motive: 'The selected serial/box does not belong to this inspection detail' });
+      const boxId = Object.prototype.hasOwnProperty.call(payload, 'inspection_detail_serial_number_id')
+        ? payload.inspection_detail_serial_number_id
+        : ex[0].inspection_detail_serial_number_id;
+      payload.quantity = await getBoxDefectQuantity(boxId, detailId);
     }
 
     // Build dynamic SET clause
@@ -201,6 +215,7 @@ export async function updateIncidencia(req, res) {
 
     return res.status(200).json({ success: true, motive: 'Incident updated' });
   } catch (error) {
+    if (error.status === 400) return res.status(400).json({ success: false, motive: error.message });
     console.error('Error updating incident:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
   }

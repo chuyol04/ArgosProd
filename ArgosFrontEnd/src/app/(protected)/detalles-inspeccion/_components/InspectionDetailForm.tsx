@@ -30,6 +30,7 @@ import {
 } from "@/app/(protected)/detalles-inspeccion/actions/detalles-inspeccion.actions";
 import { DefectsSection, DefectsSectionHandle } from "./DefectsSection";
 import { SerialNumbersInput } from "./SerialNumbersInput";
+import { validateInspectionBox } from "@/lib/inspectionBox";
 import {
   toDateInputValue,
   toTimeInputValue,
@@ -74,7 +75,10 @@ function validateFormData(
   const REQUIRED_MESSAGE = "Este campo es obligatorio.";
 
   if (serialNumbersCount === 0) {
-    errors.serial_numbers = "Debe agregar al menos un número de serie.";
+    errors.serial_numbers = "Agrega al menos una caja con serie o lote.";
+  } else {
+    const invalidBox = data.serial_lots?.find((box) => validateInspectionBox(box));
+    if (invalidBox) errors.serial_numbers = validateInspectionBox(invalidBox)!;
   }
   if (!data.inspector_id) errors.inspector_id = REQUIRED_MESSAGE;
 
@@ -599,7 +603,7 @@ export default function InspectionDetailForm({
           {/* Every serial is stored together with its corresponding lot. */}
           <div ref={setFieldRef("serial_numbers")} className="space-y-1.5">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Números de Serie y Lotes *
+              Número de serie o lote *
             </p>
             <SerialNumbersInput
               inspectionDetailId={detail?.id ?? null}

@@ -140,6 +140,26 @@ Client ← (optional, 1:1 per user) ── User (role 'Cliente', via users.clien
 
 ## Current Implementation Status
 
+### Current rules (2026-09-27)
+
+These supersede historical descriptions below. Release/deploy checklist:
+[`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md), [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+- An inspection detail contains up to 20 boxes (`inspection_detail_serial_numbers`).
+  Each box needs **series OR lot**. Empty series are stored as SQL NULL; repeated
+  lot-only boxes keep distinct IDs. Apply `allow_lot_only_inspection_boxes.sql`
+  before deploying to an existing database.
+- Inspected, rejected and reworked are nonnegative integers entered per box;
+  accepted is read-only = inspected minus rejected. Rejected cannot exceed
+  inspected. Detail totals sum the boxes; creation uses one SQL transaction.
+- Defect quantity comes from the selected box's rejected count (read-only in UI,
+  derived again in API). Evidence supports separate native camera/gallery inputs.
+- Client report screen groups by date + shift, with totals and consolidated
+  defect descriptions. No per-box cards. Excel retains the individual boxes,
+  series, lots, counts and defects. Existing RATE/FULL TIME hours are preserved.
+- Regression commands: `node --test ArgosBackEnd/tests/*.test.js` and
+  `node --experimental-strip-types --test ArgosFrontEnd/tests/*.test.mjs`.
+
 ### Completed Features
 - Authentication flow (Firebase + session cookies)
 - Protected layout with Header/Sidebar navigation
@@ -160,7 +180,7 @@ Client ← (optional, 1:1 per user) ── User (role 'Cliente', via users.clien
 - **Excel export** (`exportReporteToExcel`) now emits one row per defect per box (repeating the box's data), with the columns described in the export's column-width config; boxes with zero defects still get exactly one row.
 - **Work instruction files** split into "IT Principal" (one signed file, `work_instruction_evidence.is_main_it`) and "Documentos Complementarios" (many, optional). Files can be attached during *creation* now (queued locally, uploaded+linked right after the record is created - no orphaned GridFS files if creation fails) instead of requiring a save-then-edit round trip.
 - **Client portal** ("Mis Reportes"): role `Cliente`, `users.client_id`, backend-enforced scoping in `middleware/clientGuard.js` + handler-level filtering - see Permission System above. `/users/details` and `/users/change-password` are intentionally **not** gated by `blockClientsEntirely` (every role, including Cliente, needs them to self-identify); only the admin-only user-management routes are gated, per-route, inside `userRoutes.js`.
-- **"Piezas Inspeccionadas"** in `InspectionDetailForm.tsx` is read-only/auto-computed as `Aceptadas + Rechazadas + Retrabajadas` for that single box (never summed across boxes, never negative). Capture order is Aceptadas → Rechazadas → Retrabajadas → Inspeccionadas (calculated). If the sum of defect quantities for a box doesn't match its `rejected_pieces`, a non-blocking amber warning is shown (`DefectsSection`'s `onTotalQuantityChange` reports the total up to the parent form).
+- **Piece counts**: `SerialNumbersInput.tsx` captures inspected/rejected/reworked per box; accepted is calculated, not inspected. `InspectionDetailForm.tsx` displays the summed box totals. A non-blocking amber warning remains when total defect quantities differ from rejected pieces.
 - **"Problema / Condición Revisada"**: `inspection_details` queries now also return `report_problem` (= `inspection_reports.problem`), shown read-only in `InspectionDetailForm.tsx` before the piece-count fields, and added as its own column in the Excel export (right after the piece counts, before the per-defect breakdown). It's distinct from a "Defecto" (what was actually found) - it's what the inspector is supposed to be looking for.
 - **Free-text "Pieza" in Work Instructions**: `WorkInstructionModal.tsx`'s part field is now a text input (with a `<datalist>` of existing catalog names as suggestions) instead of a mandatory `<Select>`. The backend (`findOrCreatePartByName` in `instruccionTrabajoHandler.js`) resolves the typed name to an existing `parts` row (case-insensitive match) or creates a new one - `work_instructions.part_id` stays a valid FK either way, no schema change needed.
 - **Home dashboard** (`(protected)/home/_components/Home.tsx`): the old "Favoritos" empty-state message ("No tienes rutas favoritas...") was replaced by an "Accesos Rápidos" section - numbered cards (1. Clientes → 7. Administración) covering the main flow in order, filtered the same way as `Sidebar.tsx` (Admin sees all 7 steps incl. Usuarios/Roles/Media; Manager/Inspector see everything except the admin-only cards). The Favoritos section itself is unchanged and still renders below it, just only when the user actually has starred routes. Role `Cliente` never reaches this page - `middleware.ts` redirects it to `/mis-reportes` before it renders.

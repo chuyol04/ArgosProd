@@ -133,7 +133,7 @@ CREATE TABLE inspection_details (
 CREATE TABLE inspection_detail_serial_numbers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inspection_detail_id INT NOT NULL,
-    serial_number VARCHAR(50) NOT NULL,
+    serial_number VARCHAR(50) NULL,
     lot_number VARCHAR(50) NOT NULL,
     inspected_pieces INT,
     accepted_pieces INT,

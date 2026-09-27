@@ -1122,6 +1122,15 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
 
 **Base Path:** `/inspection-details`
 
+**Current box contract (2026-09-27):** creation uses `serial_lots` (1–20 boxes).
+Every box must contain a nonblank `serial_number` **or** `lot_number`; series is
+not mandatory. `inspected_pieces`, `rejected_pieces`, `reworked_pieces` must be
+nonnegative integers, with rejected <= inspected. The server calculates
+`accepted_pieces = inspected_pieces - rejected_pieces` and sums detail totals.
+Empty series are stored as SQL NULL; serial rows returned to the frontend use
+an empty string. Box changes use the same validation. Historical single-series
+examples below are not the create payload; use `serial_lots` for current clients.
+
 #### 3.8.1 Create Inspection Detail
 
 *   **Route:** `/inspection-details/create`
@@ -1134,12 +1143,13 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
       "inspection_report_id": 1,
       "part_id": 1,
       "inspector_id": 1,
-      "serial_number": "SN001-A",
-      "lot_number": "LOT-XYZ",
-      "inspected_pieces": 50,
-      "accepted_pieces": 48,
-      "rejected_pieces": 2,
-      "reworked_pieces": 0,
+      "serial_lots": [{
+        "serial_number": "",
+        "lot_number": "7015256760",
+        "inspected_pieces": 50,
+        "rejected_pieces": 2,
+        "reworked_pieces": 0
+      }],
       "week": 1,
       "inspection_date": "2023-01-16",
       "manufacture_date": "2023-01-10",
@@ -1150,7 +1160,9 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
       "comments": "Inspected first batch of Part A"
     }
     ```
-*   **Required Parameters:** `part_id`, `inspection_report_id`
+*   **Required Parameters:** `inspection_report_id`, `inspector_id`, `shift`,
+    `inspection_date`, `manufacture_date`, `start_time`, `end_time`, `serial_lots`.
+    Creation returns `serial_numbers` with persisted IDs/counts in submission order.
 *   **Response (Success - 201 Created):**
     ```json
     {
@@ -1163,7 +1175,7 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
     ```json
     {
       "success": false,
-      "motive": "part_id and inspection_report_id are required"
+      "motive": "Captura una serie o un lote."
     }
     ```
 *   **Response (Error - 404 Not Found):**
@@ -1272,7 +1284,6 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
 *   **Request Body:**
     ```json
     {
-      "accepted_pieces": 98,
       "comments": "Reworked 3 pieces, now accepted"
     }
     ```
@@ -1326,6 +1337,13 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
 
 **Base Path:** `/incidents`
 
+**Current quantity contract (2026-09-27):** create requires a selected box ID
+belonging to the inspection detail, with a positive integer `rejected_pieces`.
+`quantity` is derived from that box in the database; a submitted quantity is
+not authoritative. Updating the box, detail or quantity recalculates it from
+the selected/current box. Evidence-only updates preserve historical counts.
+Missing/foreign boxes or boxes without positive rejected counts return 400.
+
 #### 3.9.1 Create Incident
 
 *   **Route:** `/incidents/create`
@@ -1338,11 +1356,11 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
       "defect_id": 1,
       "defect_label": "Golpe",
       "inspection_detail_id": 1,
-      "quantity": 2,
+      "inspection_detail_serial_number_id": 10,
       "evidence_url": "<gridfs_media_id>"
     }
     ```
-*   **Required Parameters:** `inspection_detail_id`, and at least one of `defect_id` / `defect_label`.
+*   **Required Parameters:** `inspection_detail_id`, `inspection_detail_serial_number_id`, and at least one of `defect_id` / `defect_label`.
 *   **Response (Success - 201 Created):**
     ```json
     {
@@ -1437,7 +1455,8 @@ Files attached to a work instruction live in `work_instruction_evidence`. Each r
 *   **Request Body:**
     ```json
     {
-      "quantity": 3
+      "inspection_detail_serial_number_id": 10,
+      "defect_label": "Rebaba"
     }
     ```
 *   **Response (Success - 200 OK):**

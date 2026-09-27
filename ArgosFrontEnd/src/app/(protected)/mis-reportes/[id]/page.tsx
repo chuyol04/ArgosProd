@@ -3,20 +3,12 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
 import { getInspectionReportDetails } from "@/app/(protected)/reportes-inspeccion/actions/reportes-inspeccion.actions";
 import { fetchIncidentsByDetail, IIncident } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
-import { IInspectionDetail } from "@/app/(protected)/reportes-inspeccion/types/reportes-inspeccion.types";
 import PageContainer from "@/components/layout/PageContainer";
-import { MediaItem } from "@/components/ui/media-item";
 import { formatDateDisplay } from "@/lib/dateTimeUtils";
+import { groupInspectionsByShift, summarizeInspectionDetails } from "@/lib/inspectionReportSummary";
 
 export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ id: string }> };
-
-const addCounts = (items: IInspectionDetail[]) => items.reduce((sum, item) => ({
-  inspected: sum.inspected + Number(item.inspected_pieces || 0),
-  accepted: sum.accepted + Number(item.accepted_pieces || 0),
-  rejected: sum.rejected + Number(item.rejected_pieces || 0),
-  reworked: sum.reworked + Number(item.reworked_pieces || 0),
-}), { inspected: 0, accepted: 0, rejected: 0, reworked: 0 });
 
 export default async function MisReporteDetallePage({ params }: Props) {
   const reportId = Number((await params).id);
@@ -27,12 +19,8 @@ export default async function MisReporteDetallePage({ params }: Props) {
   const { report, inspections } = result.data;
   const incidentLists = await Promise.all(inspections.map((detail) => fetchIncidentsByDetail(detail.id)));
   const incidentsByDetail = new Map<number, IIncident[]>(inspections.map((detail, index) => [detail.id, incidentLists[index] || []]));
-  const shiftGroups = Array.from(inspections.reduce((map, detail) => {
-    const key = `${String(detail.inspection_date || "sin-fecha").slice(0, 10)}::${detail.shift || "Sin turno"}`;
-    map.set(key, [...(map.get(key) || []), detail]);
-    return map;
-  }, new Map<string, IInspectionDetail[]>()).entries());
-  const totals = addCounts(inspections);
+  const shiftGroups = groupInspectionsByShift(inspections);
+  const totals = summarizeInspectionDetails(inspections, [], report);
   const totalBoxes = inspections.reduce((sum, detail) => sum + Math.max(detail.serial_numbers.length, 1), 0);
   const outcomeTotal = totals.accepted + totals.rejected + totals.reworked;
   const chartTotal = Math.max(totals.inspected, outcomeTotal, 1);
@@ -52,9 +40,6 @@ export default async function MisReporteDetallePage({ params }: Props) {
         return stop;
       }).join(", ")})`
     : "#e5e7eb";
-  const totalHours = report.inspection_mode === "rate" && report.inspection_rate_per_hour
-    ? totals.inspected / report.inspection_rate_per_hour
-    : inspections.reduce((sum, detail) => sum + Number(detail.hours || 0), 0);
 
   return (
     <PageContainer>
@@ -120,41 +105,35 @@ export default async function MisReporteDetallePage({ params }: Props) {
               </div>
               <div className="flex flex-wrap gap-x-8 gap-y-2 border-t pt-4 text-sm">
                 <span><span className="text-muted-foreground">Total revisado:</span> <b>{totals.inspected}</b></span>
-                <span><span className="text-muted-foreground">Horas totales:</span> <b>{totalHours.toFixed(2)}</b></span>
+                <span><span className="text-muted-foreground">Horas totales:</span> <b>{totals.hours.toFixed(2)}</b></span>
               </div>
             </div>
           </div>
         </section>
 
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Detalles por turno y día ({shiftGroups.length})</h2>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Resumen por turno y día ({shiftGroups.length})</h2>
+          <p className="text-sm text-muted-foreground">El desglose por caja, serie y lote está disponible en el Excel.</p>
           {shiftGroups.length === 0 ? <p className="text-sm text-muted-foreground">Este reporte todavía no tiene inspecciones.</p> : shiftGroups.map(([groupKey, details]) => {
             const shift = details[0]?.shift || "Sin turno";
-            const shiftCounts = addCounts(details);
-            const rateHours = report.inspection_mode === "rate" && report.inspection_rate_per_hour ? shiftCounts.inspected / report.inspection_rate_per_hour : null;
-            const shiftHours = rateHours ?? details.reduce((sum, item) => sum + Number(item.hours || 0), 0);
+            const summary = summarizeInspectionDetails(details, details.flatMap((detail) => incidentsByDetail.get(detail.id) || []), report);
             return <div key={groupKey} className="space-y-3 rounded-lg border bg-card p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</h3><p className="text-xs text-muted-foreground">{details.map((item) => item.inspector_name).filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(", ") || "Sin inspector"}</p></div><p className="text-sm font-medium">{shiftHours.toFixed(2)} horas del día</p></div>
-              <div className="space-y-2">
-                {details.flatMap((detail) => {
-                  const serials = detail.serial_numbers.length ? detail.serial_numbers : [{ id: 0, serial_number: "-", lot_number: detail.lot_number, inspected_pieces: detail.inspected_pieces, accepted_pieces: detail.accepted_pieces, rejected_pieces: detail.rejected_pieces, reworked_pieces: detail.reworked_pieces }];
-                  const incidents = incidentsByDetail.get(detail.id) || [];
-                  return serials.map((serial, serialIndex) => {
-                    const boxIncidents = incidents.filter((incident) => incident.inspection_detail_serial_number_id === serial.id || (!incident.inspection_detail_serial_number_id && serialIndex === 0));
-                    const legacyCounts = serial.inspected_pieces == null && serialIndex === 0;
-                    const counts = legacyCounts ? {
-                      inspected_pieces: detail.inspected_pieces,
-                      accepted_pieces: detail.accepted_pieces,
-                      rejected_pieces: detail.rejected_pieces,
-                      reworked_pieces: detail.reworked_pieces,
-                    } : serial;
-                    return <div key={`${detail.id}-${serial.id}-${serialIndex}`} className="rounded-md border p-3">
-                      <div className="grid gap-3 text-sm sm:grid-cols-4"><div><p className="text-xs text-muted-foreground">Serie</p><p className="font-mono">{serial.serial_number}</p></div><div><p className="text-xs text-muted-foreground">Lote</p><p className="font-mono">{serial.lot_number || "-"}</p></div><div><p className="text-xs text-muted-foreground">Fecha inspección</p><p>{formatDateDisplay(detail.inspection_date)}</p></div><div><p className="text-xs text-muted-foreground">Fecha manufactura</p><p>{formatDateDisplay(detail.manufacture_date ?? null)}</p></div></div>
-                      <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"><span>Inspeccionadas <b>{counts.inspected_pieces ?? 0}</b></span><span className="text-green-600">Aceptadas <b>{counts.accepted_pieces ?? 0}</b></span><span className="text-red-600">Rechazadas <b>{counts.rejected_pieces ?? 0}</b></span><span className="text-amber-600">Retrabajadas <b>{counts.reworked_pieces ?? 0}</b></span></div>
-                      {boxIncidents.length > 0 && <div className="mt-3 space-y-2 border-t pt-3">{boxIncidents.map((incident) => <div key={incident.id} className="flex items-center gap-3 rounded-md bg-muted/40 p-2">{incident.evidence_url && /^[a-f0-9]{24}$/.test(incident.evidence_url) && <MediaItem mediaId={incident.evidence_url} size="sm" />}<p className="text-sm"><b>{incident.defect_name}</b> · {incident.quantity ?? 0}</p></div>)}</div>}
-                    </div>;
-                  });
-                })}
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</h3><p className="text-xs text-muted-foreground">{details.map((item) => item.inspector_name).filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(", ") || "Sin inspector"}</p></div><p className="text-sm font-medium">{summary.hours.toFixed(2)} horas totales del turno</p></div>
+              <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[["Inspeccionadas", summary.inspected, ""], ["Aceptadas", summary.accepted, "text-green-600"], ["Rechazadas", summary.rejected, "text-red-600"], ["Retrabajadas", summary.reworked, "text-amber-600"]].map(([label, value, color]) => (
+                  <div key={String(label)} className="rounded-md bg-muted/30 p-3">
+                    <dt className="text-xs text-muted-foreground">{label}</dt>
+                    <dd className={`text-lg font-semibold ${color}`}>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div className="space-y-2 border-t pt-3">
+                <h4 className="text-sm font-medium">Defectos encontrados</h4>
+                {summary.defects.length === 0 ? <p className="text-sm text-muted-foreground">Sin defectos registrados.</p> : (
+                  <ul className="space-y-2">
+                    {summary.defects.map((defect) => <li key={defect.name} className="flex items-start justify-between gap-3 rounded-md bg-muted/40 p-3 text-sm"><span className="min-w-0 break-words">{defect.name}</span><span className="shrink-0 font-semibold">{defect.quantity}</span></li>)}
+                  </ul>
+                )}
               </div>
             </div>;
           })}

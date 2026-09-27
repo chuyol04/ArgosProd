@@ -9,6 +9,7 @@ export interface ISerialNumber {
 }
 
 export interface ISerialLotInput {
+  client_id?: string;
   serial_number: string;
   lot_number: string;
   inspected_pieces: number;

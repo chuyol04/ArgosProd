@@ -1,450 +1,172 @@
-# Argos — Documentación de Despliegue VPS
+# Argos — Guía de despliegue y operación
 
-## 1. Resumen del Proyecto
+Documento vigente para los dos despliegues previstos:
 
-Sistema de gestión de inspecciones (Argos) desplegado en VPS Neubox.
-Monorepo unificado con frontend (Next.js) + backend (Express) + bases de datos.
+Última actualización: **27 de septiembre de 2026**. Cambios y pruebas de esta
+entrega: [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md). Publicar en Git no
+ejecuta el despliegue ni las migraciones en ninguna VPS.
 
-- **Repositorio**: https://github.com/chuyol04/ArgosProd
-- **Frontend**: Next.js 15 + TypeScript + Tailwind
-- **Backend**: Express.js + MySQL 8 + MongoDB 7
+- Neubox: `ozcabinspeccion.com`, instalación existente en `/opt/argos`.
+- Hostinger: instalación nueva, base de datos vacía y dominio pendiente.
 
----
+El repositorio es la fuente de verdad del código:
+`https://github.com/chuyol04/ArgosProd`.
 
-## 2. Infraestructura
+## 1. Arquitectura
 
-| Componente | Valor              |
-|------------|--------------------|
-| Proveedor  | Neubox             |
-| OS         | Ubuntu 24 LTS      |
-| CPU        | 3 Cores            |
-| RAM        | 4 GB               |
-| IP         | 72.249.60.141      |
-| Dominio    | ozcabinspeccion.com |
-| Docker     | 29.3.0             |
+El `docker-compose.yml` raíz ejecuta:
 
----
+| Servicio | Contenedor | Acceso desde el host |
+|---|---|---|
+| Next.js | `argos_frontend` | `127.0.0.1:3000` |
+| Express | `argos_backend` | `127.0.0.1:3001` |
+| MySQL 8 | `argos_mysql` | `127.0.0.1:3307` |
+| MongoDB 7 / GridFS | `argos_mongo` | `127.0.0.1:27017` |
+| Respaldos | `argos_backup` | Sin puerto público |
 
-## 3. Arquitectura de Contenedores
+Solo Nginx debe recibir tráfico público en 80/443. Los puertos 3000, 3001,
+3307 y 27017 nunca deben publicarse en `0.0.0.0`.
 
-5 contenedores orquestados con un único `docker-compose.yml` en `/opt/argos`:
+## 2. Archivos que no están en Git
 
-| Contenedor      | Imagen         | Puerto      |
-|-----------------|----------------|-------------|
-| argos_frontend  | Next.js        | 3000        |
-| argos_backend   | Express.js     | 3001        |
-| argos_mysql     | mysql:8.0      | 3307→3306   |
-| argos_mongo     | mongo:7.0      | 27017       |
-| argos_backup    | debian:bookworm| (sin puerto)|
+| Archivo | Contenido |
+|---|---|
+| `/opt/argos/.env` | Variables públicas de Firebase usadas durante el build y `COOKIE_SECURE` |
+| `/opt/argos/ArgosBackEnd/.env` | Firebase Admin y secretos del backend |
+| `/opt/argos/argos-backup/rclone.conf` | Credenciales OAuth para respaldos en Google Drive |
+| `/etc/nginx/sites-available/argos` | Proxy inverso y dominio de esa VPS |
 
-Todos tienen `restart: unless-stopped`. El servicio systemd `argos.service` los levanta al reiniciar la VPS.
+Nunca colocar contraseñas, service accounts ni `rclone.conf` en Git.
 
----
+### `.env` de la raíz
 
-## 4. Archivos Clave
-
-### `/opt/argos/ArgosBackEnd/.env`
-Contiene todas las variables de entorno sensibles (Firebase, DB, etc.).
-**No está en git** — debe configurarse manualmente en la VPS.
-
-### `/opt/argos/argos-backup/rclone.conf`
-Credenciales OAuth de rclone para Google Drive.
-**No está en git** — se copia manualmente desde la PC local con:
-```powershell
-scp C:\Users\chuy_\AppData\Roaming\rclone\rclone.conf root@72.249.60.141:/opt/argos/argos-backup/rclone.conf
+```dotenv
+NEXT_PUBLIC_FIREBASE_API_KEY=<firebase-web-api-key>
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=<proyecto>.firebaseapp.com
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=<firebase-project-id>
+COOKIE_SECURE=true
 ```
 
-### `/etc/systemd/system/argos.service`
-Servicio systemd que levanta Docker Compose automáticamente al arrancar la VPS.
+### `ArgosBackEnd/.env`
 
-### `/etc/nginx/sites-available/argos`
-Proxy inverso Nginx activo apuntando al frontend en `127.0.0.1:3000`.
-Está habilitado con symlink:
-```bash
-/etc/nginx/sites-enabled/argos -> /etc/nginx/sites-available/argos
+```dotenv
+FIREBASE_API_KEY=<firebase-web-api-key>
+FIREBASE_PROJECT_ID=<firebase-project-id>
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
 ```
 
----
+`FIREBASE_SERVICE_ACCOUNT_JSON` debe estar en una sola línea. Las variables de
+MySQL, Mongo, puertos y URLs internas ya se establecen en `docker-compose.yml`.
 
-## 5. Fixes Importantes Realizados
+## 3. Perfiles de infraestructura
 
-### Cookie `Secure` en HTTP
-El login usa un Server Action (`login.action.ts`) que tenía:
-```typescript
-secure: process.env.NODE_ENV === "production"  // siempre true en Docker
-```
-**Fix**: Cambiado a `secure: process.env.COOKIE_SECURE !== "false"`.
-El `docker-compose.yml` tiene `COOKIE_SECURE: "false"` en el frontend.
+### Neubox actual
 
-### Error `returnNaN is not defined` — causa real: ataque de bots
+- Ruta: `/opt/argos`
+- Dominio: `ozcabinspeccion.com`
+- IP histórica: `72.249.60.141`
+- Actualización sobre bases existentes: aplicar únicamente migraciones nuevas.
 
-**Causa raíz:** bots atacando el puerto 3000 directamente (sin pasar por Nginx). Docker expone el puerto 3000 a la IP pública del servidor ignorando las reglas de UFW — UFW **no protege puertos de Docker**. Los bots generaban cientos de requests por minuto que saturaban el backlog de conexiones del socket, dejando el servidor inaccesible. El error `returnNaN is not defined` es un error interno de Next.js que se dispara bajo esas condiciones de carga.
+### Hostinger nuevo
 
-**Lo que NO era la causa:** no era un bug de bundling de nuqs. Se investigaron múltiples hipótesis (chunk splitting, transpilePackages, serverExternalPackages) y se hicieron varios intentos fallidos antes de identificar el problema real.
+- Recomendado: KVM 2, Ubuntu 24.04 con Docker, 2 vCPU, 8 GB RAM y 100 GB NVMe.
+- Ruta: `/opt/argos`
+- Dominio: `<HOSTINGER_DOMAIN>`
+- IP: `<HOSTINGER_IP>`
+- Inicio limpio: no importar MySQL, MongoDB, volúmenes ni evidencias de Neubox.
+- `new_mysql_schema.sql` crea el esquema automáticamente cuando el volumen de
+  MySQL se inicia vacío.
 
-**Acciones tomadas (commit `ab2aaae`):**
-- `nuqs` eliminado completamente del proyecto y reemplazado con hooks nativos de Next.js (`useSearchParams`, `useRouter`, `usePathname`) en `src/lib/useUrlState.ts`
-- Todos los `parsers.client.ts` y `parsers.server.ts` de cada feature eliminados
-- Esto fue una mejora secundaria correcta, pero no resolvió los errores por sí sola
+El despliegue de Hostinger puede convivir con Neubox porque utilizará otro
+dominio y bases independientes.
 
-**Fix de seguridad real (commit `fix: bind frontend port to 127.0.0.1`):**
-En `docker-compose.yml`, el puerto del frontend cambió de:
-```yaml
-ports:
-  - "3000:3000"      # docker-proxy escucha en 0.0.0.0:3000 — expuesto al exterior
-```
-a:
-```yaml
-ports:
-  - "127.0.0.1:3000:3000"  # docker-proxy escucha solo en localhost — bots bloqueados
-```
+## 4. Despliegue limpio en Hostinger
 
-Con este cambio, los bots no pueden conectarse directamente a puerto 3000 desde internet. Nginx (que corre en el host) sigue pudiendo conectarse a `127.0.0.1:3000` sin problema.
+### 4.1 Preparar la VPS
 
-**Regla crítica — Docker y UFW:**
-- UFW **no bloquea puertos de Docker**. Docker inyecta reglas en iptables directamente, bypaseando UFW.
-- Para proteger un puerto de Docker, **no usar UFW** — cambiar el binding en `docker-compose.yml` a `127.0.0.1:PUERTO:PUERTO`.
-- Nunca exponer directamente los puertos 3000 o 3001 a la IP pública.
-
-**Regla para nuevas features (URL state en cliente):**
-```typescript
-import { useUrlString, useUrlInt } from "@/lib/useUrlState";
-const [qSearch, setQSearch] = useUrlString("search");
-const [qLimit, setQLimit] = useUrlInt("limit", 10);
-const [qPage, setQPage] = useUrlInt("page", 1);
-```
-
-### Build lento por contexto grande
-`node_modules` se incluía en el contexto de Docker.
-**Fix**: Creado `.dockerignore` en `ArgosFrontEnd/` con `node_modules`, `.next`, `.git`.
-
-### Pantalla blanca en login (VPS)
-Las variables `NEXT_PUBLIC_FIREBASE_*` son necesarias en **tiempo de build** (`npm run build`), no en runtime. Next.js las incrusta dentro del bundle JS. Si el build se hace sin ellas quedan `undefined` y la app crashea en el cliente mostrando pantalla blanca.
-**Fix**: Agregados `ARG`/`ENV` en `ArgosFrontEnd/Dockerfile` y `build.args` en `docker-compose.yml`. Los valores deben estar en `/opt/argos/.env` antes de hacer el build:
-```
-NEXT_PUBLIC_FIREBASE_API_KEY=AIzaSyDvVj7N94j5971XaIfEH6JlsSh_X_ozl6Q
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=inspeccion-cfdf1.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=inspeccion-cfdf1
-```
-
-### Logs repetidos `Response { status: 200 }` en `argos_frontend` (2026-04-20)
-
-**Síntoma observado en VPS:**
-```bash
-docker logs argos_frontend --since=10m 2>&1 | tail -30
-```
-mostraba repetidamente objetos `Response` completos para:
-```text
-url: 'http://backend:3001/users/details'
-status: 200
-statusText: 'OK'
-```
-
-El backend confirmaba que no era error:
-```bash
-docker logs argos_backend --since=10m 2>&1 | grep -i "details\|error\|401\|500" | tail -20
-```
-solo mostraba `POST /users/details` con respuesta exitosa.
-
-**Causa:** un `console.log(expressResp)` en la ruta BFF del frontend:
-```text
-ArgosFrontEnd/src/app/api/auth/getCurrentUser/route.ts
-```
-
-**Fix aplicado:** se eliminó el log del objeto `Response` y se reemplazó por logging compacto solo cuando `/users/details` falla (`status` + `motive/message`). También se eliminó la variable `firebase_uid` sin usar después de verificar la cookie de sesión.
-
-**Verificación local:** `npm run lint` en `ArgosFrontEnd` terminó correctamente. Quedan warnings existentes en otros archivos, pero `getCurrentUser/route.ts` ya no aparece con warning.
-
-**Verificación en VPS tras deploy:**
-```bash
-docker logs argos_frontend --since=10m 2>&1 | grep "Response {" | tail
-```
-no devuelve nada.
-
-### `/api/auth/getCurrentUser` devolvía 404 al entrar por IP (2026-04-20)
-
-**Síntoma:** después de iniciar sesión por `http://72.249.60.141`, el navegador llegaba a `/home` pero mostraba:
-```text
-Error al cargar usuario
-Failed to fetch user data
-```
-y en consola:
-```text
-Failed to load resource: 404 (Not Found)
-/api/auth/getCurrentUser
-```
-
-**Diagnóstico:**
-```bash
-curl -i http://127.0.0.1:3000/api/auth/getCurrentUser
-```
-respondía correctamente:
-```text
-HTTP/1.1 401 Unauthorized
-{"message":"No session"}
-```
-pero:
-```bash
-curl -i http://72.249.60.141/api/auth/getCurrentUser
-```
-respondía `404` con headers de Express. Eso confirmó que Nginx estaba mandando `/api` al backend Express en vez de dejar que Next.js manejara sus propias rutas API.
-
-**Causa:** el archivo activo `/etc/nginx/sites-available/argos` tenía este bloque incorrecto:
-```nginx
-location /api {
-    proxy_pass http://127.0.0.1:3001;
-}
-```
-
-**Fix aplicado en VPS:** se eliminó por completo el bloque `location /api`. La regla `location /` queda como único proxy y manda todo a Next.js (`127.0.0.1:3000`). Las llamadas del frontend al backend se hacen desde código Next usando `EXPRESS_BASE_URL=http://backend:3001`, no por Nginx público.
-
-**Verificación final:**
-```bash
-nginx -t
-systemctl reload nginx
-curl -i http://72.249.60.141/api/auth/getCurrentUser
-```
-resultado correcto:
-```text
-HTTP/1.1 401 Unauthorized
-{"message":"No session"}
-```
-
-Después de esto el sitio cargó correctamente al entrar por:
-```text
-http://72.249.60.141
-```
-
-### Validación de bloqueo del puerto 3000 público (2026-04-20)
-
-Después del deploy y reload de Nginx se validó:
-```bash
-docker ps --format "table {{.Names}}\t{{.Ports}}"
-```
-resultado importante:
-```text
-argos_frontend   127.0.0.1:3000->3000/tcp
-```
-
-También se validó que desde la IP pública el puerto 3000 ya no conecta:
-```bash
-curl -I http://72.249.60.141:3000
-```
-resultado:
-```text
-curl: (7) Failed to connect to 72.249.60.141 port 3000
-```
-
-Y no hay señales recientes del error anterior:
-```bash
-docker logs argos_frontend --since=30m 2>&1 | grep -i "returnNaN\|error\|failed\|uncaught" | tail -30
-```
-sin salida.
-
-### Incidente RCE en `argos_frontend` por Next.js 15.4.4 vulnerable (2026-04-20)
-
-**Síntoma:** después de la limpieza inicial se observaron logs graves en `argos_frontend`:
-```text
-NEXT_REDIRECT digest: 'xmrig-6.21.0/xmrig'
-NEXT_REDIRECT digest: './scanner_linux -t 1000'
-Command failed: ps aux | grep xmrig | grep -v grep
-```
-
-**Confirmación de compromiso:**
-```bash
-docker top argos_frontend
-```
-mostró un proceso malicioso dentro del contenedor:
-```text
-./scanner_linux -t 1000
-```
-
-El host no mostró el proceso fuera del contenedor:
-```bash
-ps aux | grep -E "scanner_linux|xmrig" | grep -v grep
-```
-sin salida.
-
-Otros contenedores (`argos_backend`, `argos_mongo`, `argos_mysql`) solo mostraron sus procesos esperados.
-
-**Archivos agregados al contenedor infectado:**
-```bash
-docker diff argos_frontend | grep -Ei "scanner|xmrig|tmp|tar|wget|curl|sh|bash|node_modules|app"
-```
-mostró:
-```text
-A /app/data.log
-A /app/monitor.log
-A /app/scanner_deployed.log
-A /app/scanner_linux
-A /app/xmrig-6.21.0
-A /app/xmrig-6.21.0/config.json
-A /app/xmrig-6.21.0/xmrig
-A /app/xmrig.tar.gz
-A /app/exploited.log
-A /app/failed.log
-```
-
-**Contención aplicada en VPS:**
-```bash
-docker stop argos_frontend
-mkdir -p /opt/argos/incident-2026-04-20
-docker cp argos_frontend:/app/exploited.log /opt/argos/incident-2026-04-20/exploited.log 2>/dev/null || true
-docker cp argos_frontend:/app/scanner_deployed.log /opt/argos/incident-2026-04-20/scanner_deployed.log 2>/dev/null || true
-docker cp argos_frontend:/app/monitor.log /opt/argos/incident-2026-04-20/monitor.log 2>/dev/null || true
-docker cp argos_frontend:/app/failed.log /opt/argos/incident-2026-04-20/failed.log 2>/dev/null || true
-docker rm argos_frontend
-```
-
-**Causa probable:** explotación remota de Next.js/React Server Components en Next `15.4.4`. Next publicó un advisory crítico para CVE-2025-66478 / React2Shell, indicando RCE en entornos sin parche y recomendando actualizar de inmediato. Para la rama `15.4.x`, los parches oficiales relevantes son `15.4.8` para RCE y `15.4.10` para fixes posteriores de RSC.
-
-Referencias oficiales:
-- https://nextjs.org/blog/CVE-2025-66478
-- https://nextjs.org/blog/security-update-2025-12-11
-
-**Fix aplicado en git (commit `6f79e46`):**
-```text
-Upgrade Next.js for RSC security fix
-```
-
-Cambios:
-```text
-next: 15.4.4 -> 15.4.10
-eslint-config-next: 15.4.4 -> 15.4.10
-```
-
-Verificación local:
-```bash
-npm ls next eslint-config-next
-```
-resultado:
-```text
-next@15.4.10
-eslint-config-next@15.4.10
-```
+Elegir la plantilla Ubuntu 24.04 con Docker. Después, por SSH:
 
 ```bash
-npm run lint
-npm audit --omit=dev
-```
-`npm run lint` pasó con warnings existentes. `npm audit --omit=dev` reportó `found 0 vulnerabilities`.
+apt-get update
+apt-get upgrade -y
+apt-get install -y git nginx certbot python3-certbot-nginx fail2ban ufw
+systemctl enable --now docker nginx fail2ban
 
-**Redeploy seguro requerido en VPS:** no volver a levantar la imagen vieja. Hacer pull del commit y reconstruir sin cache:
+ufw allow OpenSSH
+ufw allow 'Nginx Full'
+ufw --force enable
+```
+
+Configurar una llave SSH antes de deshabilitar autenticación por contraseña.
+
+### 4.2 Clonar el proyecto
+
+```bash
+git clone https://github.com/chuyol04/ArgosProd.git /opt/argos
+cd /opt/argos
+git branch --show-current
+git log -1 --oneline
+```
+
+Debe quedar en `main`. Crear manualmente los dos archivos `.env` descritos en
+la sección 2.
+
+### 4.3 Firebase
+
+Hay dos alternativas:
+
+- Mismo proyecto Firebase: agregar `<HOSTINGER_DOMAIN>` a Authentication →
+  Settings → Authorized domains.
+- Instalación totalmente independiente: crear otro proyecto Firebase, una Web
+  App y una service account; usar esos valores en ambos `.env`.
+
+No copiar usuarios desde MySQL. En un inicio limpio solamente se crea el
+administrador inicial.
+
+### 4.4 Levantar la aplicación sin el servicio de backup
+
 ```bash
 cd /opt/argos
-git pull
-docker compose build --no-cache frontend
-docker compose up -d frontend
+docker compose config --quiet
+docker compose up -d --build mysql mongo backend frontend
+docker compose ps
 ```
 
-**Verificación post-redeploy:**
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-docker exec argos_frontend node -e "console.log(require('next/package.json').version)"
-docker top argos_frontend
-docker logs argos_frontend --since=5m 2>&1 | tail -80
-curl -I http://72.249.60.141
-curl -I http://72.249.60.141:3000
-```
+No ejecutar manualmente `new_mysql_schema.sql`: Docker lo procesa solamente al
+crear por primera vez el volumen vacío de MySQL.
 
-Resultado esperado:
-```text
-Next.js: 15.4.10
-argos_frontend: 127.0.0.1:3000->3000/tcp
-docker top: solo next-server / node esperado; nunca scanner_linux ni xmrig
-http://72.249.60.141: responde 307 /login o 200
-http://72.249.60.141:3000: Failed to connect
-```
+### 4.5 Crear roles y administrador inicial
 
-**Acción pendiente importante:** rotar secretos después de estabilizar el redeploy. Next recomienda rotar secretos de aplicaciones que estuvieron online sin parche. Prioridad: Firebase service account JSON, credenciales MySQL, credenciales MongoDB, secretos de cookies/sesión si existen, y cualquier token OAuth/rclone que pueda haber estado disponible para el contenedor.
+El script crea los roles `Admin`, `Manager`, `Inspector` y `Cliente`; después
+crea o enlaza el administrador en Firebase y MySQL. No guarda la contraseña en
+el repositorio.
 
----
-
-## 6. Comandos de Referencia
-
-### Ver estado de contenedores
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-```
-
-### Ver logs
-```bash
-docker logs argos_frontend --tail 50
-docker logs argos_backend --tail 50
-docker logs argos_mysql --tail 50
-docker logs argos_backup --tail 50
-```
-
-### Ver log de backups
-```bash
-docker exec argos_backup cat /var/log/backup.log
-```
-
-### Reiniciar un contenedor
-```bash
-docker restart argos_frontend
-```
-
-### Reiniciar todo el stack
 ```bash
 cd /opt/argos
-docker compose down
-docker compose up -d
+read -rp 'Correo del administrador: ' ADMIN_EMAIL
+read -srp 'Contraseña (mínimo 12 caracteres): ' ADMIN_PASSWORD
+echo
+read -rp 'Nombre [Administrador]: ' ADMIN_NAME
+ADMIN_NAME=${ADMIN_NAME:-Administrador}
+
+docker compose exec \
+  -e ADMIN_EMAIL="$ADMIN_EMAIL" \
+  -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  -e ADMIN_NAME="$ADMIN_NAME" \
+  backend node scripts/create-admin.js --check
+
+docker compose exec \
+  -e ADMIN_EMAIL="$ADMIN_EMAIL" \
+  -e ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+  -e ADMIN_NAME="$ADMIN_NAME" \
+  backend node scripts/create-admin.js
+
+unset ADMIN_EMAIL ADMIN_PASSWORD ADMIN_NAME
 ```
 
-### Ver estado del servicio systemd
-```bash
-systemctl status argos
-```
+### 4.6 Nginx para el nuevo dominio
 
----
-
-## 7. Flujo para Subir Cambios
-
-### Paso 1 — Local: push a GitHub
-```bash
-cd /c/Argos
-git add .
-git commit -m "descripción del cambio"
-git push
-```
-
-### Paso 2 — VPS: pull y rebuild
-
-**Caso A — Solo cambios de código (sin tocar dependencias):**
-```bash
-cd /opt/argos
-git pull
-docker compose up --build -d frontend
-```
-
-**Caso B — Cambió `package.json` o `package-lock.json`:**
-```bash
-cd /opt/argos
-git pull
-docker compose build --no-cache frontend
-docker compose up -d frontend
-```
-
-> **Importante**: Si se cambia `package.json` o `package-lock.json`, siempre usar `--no-cache`. Sin él, Docker reutiliza el layer de `npm install` y la nueva versión de un paquete no se instala.
-
-> **Nunca hacer `docker system prune -af` en producción** — borra todas las imágenes y volúmenes del sistema. Solo hacerlo como último recurso en casos extremos de cache corrupta.
-
-### Paso 3 — Verificar
-```bash
-docker compose logs frontend --tail 20 --timestamps
-docker compose logs frontend --since=10m | grep -i "error\|⨯\|warn"
-```
-
----
-
-## 8. Nginx
-
-Estado validado el 2026-09-06: `ozcabinspeccion.com` y `www` ya resuelven a
-`72.249.60.141`; HTTP llega a la app. HTTPS aún requiere emitir el certificado.
-
-Para que la IP directa no muestre la aplicación, agrega primero un servidor
-por defecto y conserva la aplicación únicamente en el bloque del dominio:
+Crear `/etc/nginx/sites-available/argos` reemplazando los marcadores:
 
 ```nginx
 server {
@@ -452,13 +174,10 @@ server {
     server_name _;
     return 444;
 }
-```
 
-Configuración activa en `/etc/nginx/sites-available/argos`:
-```nginx
 server {
     listen 80;
-    server_name ozcabinspeccion.com www.ozcabinspeccion.com;
+    server_name <HOSTINGER_DOMAIN> www.<HOSTINGER_DOMAIN>;
 
     client_max_body_size 12M;
 
@@ -466,187 +185,240 @@ server {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
     }
 }
 ```
 
-**Nota crítica**: No redirigir `/api` al backend. El frontend Next.js maneja sus propias rutas `/api` internamente, por ejemplo `/api/auth/getCurrentUser`. Si Nginx manda `/api` a Express, el login llega a `/home` pero falla la carga de usuario con `404`.
+No crear un bloque `location /api`: Next.js maneja sus rutas `/api` y se
+comunica internamente con Express mediante `http://backend:3001`.
 
-Recargar Nginx tras cambios:
 ```bash
+ln -s /etc/nginx/sites-available/argos /etc/nginx/sites-enabled/argos
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl reload nginx
+```
+
+### 4.7 DNS y HTTPS
+
+En el registrador del dominio nuevo:
+
+- `A` para `@` → `<HOSTINGER_IP>`
+- `CNAME` para `www` → `<HOSTINGER_DOMAIN>`
+
+No tocar MX, SPF, DKIM o DMARC si el correo se aloja con otro proveedor.
+Cuando el DNS ya resuelva:
+
+```bash
+getent ahostsv4 <HOSTINGER_DOMAIN>
+certbot --nginx -d <HOSTINGER_DOMAIN> -d www.<HOSTINGER_DOMAIN>
 nginx -t && systemctl reload nginx
+curl -I https://<HOSTINGER_DOMAIN>
 ```
 
-Emitir y configurar HTTPS (DNS debe resolver primero al VPS):
+## 5. Actualizar una instalación existente
+
+### 5.1 Revisión previa
 
 ```bash
-apt-get -o Acquire::ForceIPv4=true update
-apt-get -o Acquire::ForceIPv4=true install -y certbot python3-certbot-nginx
-certbot --nginx -d ozcabinspeccion.com -d www.ozcabinspeccion.com
-nginx -t && systemctl reload nginx
-curl -I https://ozcabinspeccion.com
-```
-
-Después de confirmar HTTPS, agrega `COOKIE_SECURE=true` a `/opt/argos/.env`
-y reconstruye el frontend.
-
----
-
-## 9. URLs de Acceso
-
-- **App por dominio**: https://ozcabinspeccion.com (después de ejecutar Certbot)
-- **App por IP**: bloqueada por el `default_server` de Nginx
-- **Backend API**: http://72.249.60.141:3001
-
-> **Importante**: No acceder a `http://72.249.60.141:3000` directamente. El puerto 3000 está enlazado a `127.0.0.1` y no es accesible desde el exterior. Toda la app se accede vía Nginx en puerto 80, ya sea con dominio o con IP sin puerto.
-
----
-
-## 10. Sistema de Backups
-
-Contenedor `argos_backup` corre cron jobs cada 12 horas (00:00 y 12:00).
-
-**Archivos generados:**
-- `mysql_YYYYMMDD_HHMMSS.sql.gz` — dump completo de `argos_db`
-- `mongo_YYYYMMDD_HHMMSS.gz` — dump completo de MongoDB
-
-**Destino:** Google Drive, carpeta `ArgosBackups`
-**Retención:** 7 días (local y en Drive)
-**Cuenta Drive configurada:** cuenta Gmail del administrador
-
-**Probar backup manualmente:**
-```bash
-docker exec argos_backup /backup.sh
-```
-
-**Ver último log:**
-```bash
-docker exec argos_backup cat /var/log/backup.log
-```
-
-**Configuración rclone:**
-- Herramienta: `rclone` v1.73.4
-- Remote name: `gdrive`
-- Config: `/opt/argos/argos-backup/rclone.conf` (NO en git)
-- Para regenerar config: instalar rclone en PC local, correr `rclone config`, copiar con `scp`
-
----
-
-## 11. Seguridad
-
-### fail2ban (instalado 2026-04-17)
-Protege contra brute force SSH. Se instala con:
-```bash
-apt-get -o Acquire::ForceIPv4=true install -y fail2ban --fix-missing
-systemctl enable fail2ban && systemctl start fail2ban
-```
-> La VPS no tiene IPv6 — siempre usar `-o Acquire::ForceIPv4=true` con apt.
-
-Ver IPs baneadas:
-```bash
-fail2ban-client status sshd
-```
-
-### UFW Firewall (configurado 2026-04-17)
-Puertos abiertos: 22 (SSH), 80 (HTTP), 443 (HTTPS).
-
-> **Advertencia crítica:** UFW **no protege puertos de Docker**. Docker modifica iptables directamente y bypasea UFW. Agregar `ufw deny 3000` no tiene efecto sobre Docker.
-
-La protección correcta es el binding en `docker-compose.yml`:
-```yaml
-ports:
-  - "127.0.0.1:3000:3000"   # solo localhost puede conectarse
-```
-
-No usar `ufw allow 3000` ni `ufw deny 3000` para puertos de Docker — no funciona.
-
-### Intento de command injection detectado
-Se detectó en logs: `echo <base64> | base64 -d | bash` apuntando a `78.153.140.16/re.sh`.
-El comando falló (error registrado). El código frontend no tiene `exec/spawn/child_process`.
-
-### Actualizaciones de seguridad pendientes
-```bash
-apt-get -o Acquire::ForceIPv4=true update
-apt-get -o Acquire::ForceIPv4=true upgrade -y
-```
-
----
-
-### Incidente CSF Firewall por renovación de VPS (2026-05-20)
-
-**Causa:** Al renovar el VPS con Neubox, el proveedor instaló automáticamente **CSF (ConfigServer Security & Firewall) v14.20** con una configuración por defecto que bloqueaba:
-1. Puerto 80 en INPUT → browser veía `ERR_CONNECTION_TIMED_OUT`
-2. Tráfico OUTPUT del host hacia el bridge de Docker (`br-95e7441a32ad:3000`) → `curl 127.0.0.1:3000` daba `Connection reset by peer`
-3. DNS desde contenedores → `EAI_AGAIN` (Firebase Admin SDK timeout de 25s)
-
-**Diagnóstico clave:**
-- `nft list table ip filter` reveló cadena FORWARD con `policy drop` y OUTPUT bloqueando nuevas conexiones a puertos no listados
-- Container-to-container funcionaba; host→contenedor fallaba
-- `iptables --version` mostró `nf_tables` backend — conflicto con reglas Docker
-
-**Solución aplicada:**
-```bash
-# 1. Abrir puerto 80 en TCP_IN
-sed -i 's/^TCP_IN = "22,3306"/TCP_IN = "22,80,3306"/' /etc/csf/csf.conf
-
-# 2. Habilitar soporte Docker con red correcta
-sed -i 's/^DOCKER = "0"/DOCKER = "1"/' /etc/csf/csf.conf
-sed -i 's|^DOCKER_NETWORK4 = "172.17.0.0/16"|DOCKER_NETWORK4 = "172.18.0.0/16"|' /etc/csf/csf.conf
-
-# 3. Regla persistente OUTPUT al bridge (DOCKER_DEVICE="docker0" no coincide con br-95e7441a32ad)
-echo '/sbin/iptables -I OUTPUT -d 172.18.0.0/16 -j ACCEPT' >> /etc/csf/csfpost.sh
-chmod +x /etc/csf/csfpost.sh
-csf -r
-```
-
-**Problema persistente de DNS:** tras `csf -r`, Docker perdía sus reglas NAT y los contenedores no podían resolver DNS (`EAI_AGAIN`). Fix:
-```bash
-systemctl restart docker
 cd /opt/argos
-docker compose up -d
+git status --short
+git rev-parse --short HEAD
+docker compose ps
 ```
 
-**Solución definitiva — deshabilitar CSF y usar UFW:**
-CSF causaba demasiados conflictos con Docker. Se optó por desinstalarlo y volver a UFW (que no interfiere con Docker):
+No continuar si existen modificaciones locales en archivos controlados por
+Git. Los archivos `.env`, `rclone.conf` y respaldos no deben estar rastreados.
+
+### 5.2 Respaldo previo a cambios de base
+
 ```bash
-csf -x   # deshabilita CSF y limpia sus reglas
-apt-get install -y ufw
-ufw allow 22
-ufw allow 80
-ufw allow 443
-ufw enable
-systemctl restart docker
-docker compose up -d
+mkdir -p /opt/argos-db-backups
+umask 077
+BACKUP="/opt/argos-db-backups/argos_$(date +%Y%m%d_%H%M%S).sql"
+docker exec argos_mysql sh -c \
+  'mysqldump --single-transaction --no-tablespaces -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
+  > "$BACKUP" && test -s "$BACKUP" &&
+ls -lh "$BACKUP"
 ```
 
-**Regla crítica:** Si el VPS se renueva nuevamente y Neubox reinstala CSF, repetir el proceso de deshabilitar CSF e instalar UFW. UFW no afecta las reglas iptables de Docker.
+Si el respaldo falla o está vacío, detener la actualización y revisar el error.
 
----
+### 5.3 Descargar código (sin levantar todavía la nueva versión)
 
-### Subida de archivos fallaba a partir de ~1-2MB (2026-08-03)
-
-**Síntoma:** al subir un archivo de evidencia/IT en Instrucciones de Trabajo (`/api/media/upload`, `ArgosFrontEnd/src/app/api/media/upload/route.ts`), archivos mayores a ~1-2MB mostraban "Upload failed" en el modal.
-
-**Causa:** el bloque `server` de `/etc/nginx/sites-available/argos` no definía `client_max_body_size`. El valor por defecto de Nginx es **1MB**, así que cualquier request mayor recibía `413 Request Entity Too Large` antes de llegar a Next.js. No era un problema de espacio en disco ni de configuración del backend Express — el endpoint de subida vive en el frontend Next.js y sube por streaming a GridFS/MongoDB, sin límite propio.
-
-**Fix aplicado en VPS:**
 ```bash
-nano /etc/nginx/sites-available/argos   # agregar client_max_body_size 12M; dentro del bloque server
-nginx -t && systemctl reload nginx
+cd /opt/argos
+git pull --ff-only origin main
+docker compose config --quiet
 ```
 
-12M porque la UI (`WorkInstructionModal.tsx`) anuncia un máximo de 10MB por archivo; se deja margen para el overhead de multipart. Ver bloque de config actualizado en la sección 8 (Nginx).
+Continuar con las migraciones antes de reconstruir y levantar los servicios.
 
-**Verificado:** subida de archivo >2MB exitosa tras el reload.
+### 5.4 Migraciones
 
----
+- Base existente: ejecutar cada archivo nuevo de `ArgosBackEnd/migrations/`
+  una sola vez y conservar un respaldo previo.
+- Base nueva: no ejecutar migraciones históricas; el esquema inicial ya contiene
+  todos los cambios.
+- Nunca ejecutar `new_mysql_schema.sql` contra una base existente.
 
-## 12. Pendientes
+Migración requerida al pasar de `b04f6ee` a `85d44b2`:
 
-- [ ] Configurar HTTPS con Let's Encrypt (certbot)
-- [ ] Monitoreo de contenedores (uptime, alertas)
-- [ ] Rotar secretos tras incidente RCE: Firebase service account, MySQL, MongoDB, secretos de sesión/cookies y tokens auxiliares
-- [ ] Cerrar exposición pública innecesaria de backend `3001`, MySQL `3307` y MongoDB `27017` si no se requieren desde internet
+No repetirla si las columnas por caja y el vínculo del defecto ya existen.
+
+```bash
+docker exec -i argos_mysql sh -c \
+  'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
+  < ArgosBackEnd/migrations/add_counts_per_serial_and_incident_link.sql
+```
+
+**Entrega 2026-09-27 — permitir cajas solo con lote:** requiere la tabla y las
+columnas de cantidades por caja de la migración anterior. Con respaldo válido,
+ejecutar antes de desplegar el backend y frontend nuevos:
+
+```bash
+cd /opt/argos
+docker exec -i argos_mysql sh -c \
+  'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"' \
+  < ArgosBackEnd/migrations/allow_lot_only_inspection_boxes.sql
+docker exec argos_mysql sh -c \
+  'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "SHOW COLUMNS FROM inspection_detail_serial_numbers;"'
+```
+
+Verificar `Null = YES`. Esta migración conserva los datos y puede repetirse;
+no convierte series antiguas vacías ni modifica cantidades históricas. Las
+cajas nuevas sin serie se guardan con `NULL` en MySQL, permitiendo repetir un
+lote entre cajas. No se necesita migración para la cámara ni el resumen por turno.
+
+### 5.5 Reconstruir y levantar
+
+```bash
+cd /opt/argos
+docker compose build backend frontend &&
+docker compose up -d mysql mongo backend frontend &&
+docker compose ps
+```
+
+Actualizar **ambos** servicios: la validación y cantidad automática se aplican
+tanto en pantalla como en el backend. Un reinicio solo no reconstruye imágenes.
+Usar `docker compose build --no-cache backend frontend` únicamente si existe
+evidencia de una imagen obsoleta. No borrar volúmenes ni importar el esquema inicial.
+
+Esta entrega incluye los ajustes pendientes de Hostinger: puertos internos
+enlazados a localhost y administrador inicial mediante variables de entorno.
+No ejecutar el bootstrap de administrador al actualizar una instalación existente.
+
+## 6. Verificación posterior
+
+```bash
+cd /opt/argos
+docker compose ps
+docker compose logs --tail=100 backend frontend
+curl -I http://127.0.0.1:3000
+curl -I https://<DOMINIO_DE_ESTA_VPS>
+docker exec argos_frontend node -e "console.log(require('next/package.json').version)"
+```
+
+Verificar manualmente:
+
+1. Inicio y cierre de sesión.
+2. Creación de cliente, servicio, pieza e instrucción de trabajo.
+3. Crear detalle con solo lote `7015256760`, 840 inspeccionadas y 2 rechazadas:
+   mostrar 838 aceptadas, de solo lectura; también permitir solo serie.
+   Bloquear ambos identificadores vacíos, negativos y rechazadas > inspeccionadas.
+4. Agregar defecto: elegir cajas con 9 y 5 rechazadas y comprobar que Cantidad
+   cambie a 9 y 5, sin edición manual; probar Tomar foto y Seleccionar imagen
+   en un dispositivo real. Conservar el límite de 10 MB por archivo.
+5. Excel: conservar cada caja/serie/lote y sus cantidades, sin duplicar horas
+   ni piezas al expandir defectos; verificar RATE y FULL TIME.
+6. Portal del cliente: una tarjeta por fecha y turno con las cuatro cantidades,
+   horas y defectos sumados por descripción; sin tarjetas individuales por caja.
+   Confirmar el aislamiento entre clientes y entre días/turnos.
+
+Confirmar que los servicios internos no sean públicos:
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Ports}}'
+```
+
+Los bindings de 3000, 3001, 3307 y 27017 deben comenzar con `127.0.0.1:`.
+
+## 7. Respaldos nuevos
+
+Aunque Hostinger comience sin datos anteriores, habilitar respaldos después de
+validar el despliegue. Copiar `rclone.conf` y ejecutar:
+
+```bash
+cd /opt/argos
+chmod 600 argos-backup/rclone.conf
+docker compose up -d --build backup
+docker exec argos_backup /backup.sh
+docker exec argos_backup tail -100 /var/log/backup.log
+```
+
+El contenedor guarda MySQL y MongoDB/GridFS en Google Drive. Los snapshots del
+proveedor complementan este respaldo, pero no lo sustituyen.
+
+## 8. Operación y diagnóstico
+
+```bash
+docker compose ps
+docker compose logs --since=10m backend frontend
+docker stats --no-stream
+df -h
+free -h
+fail2ban-client status sshd
+certbot renew --dry-run
+```
+
+Reiniciar únicamente un servicio:
+
+```bash
+docker compose restart frontend
+```
+
+Evitar `docker compose down` durante una actualización normal. Nunca ejecutar
+`docker system prune --volumes` en producción.
+
+## 9. Reversión de código
+
+La reversión de código no revierte cambios de base de datos.
+
+```bash
+cd /opt/argos
+git log --oneline -10
+git switch --detach <COMMIT_ESTABLE>
+docker compose up -d --build backend frontend
+```
+
+Para volver a `main` después de resolver el incidente:
+
+```bash
+git switch main
+git pull --ff-only origin main
+docker compose up -d --build backend frontend
+```
+
+Si una migración produjo daño o incompatibilidad, restaurar el respaldo MySQL
+correspondiente antes de levantar la versión anterior.
+
+## 10. Reglas críticas
+
+- Nginx siempre apunta a `127.0.0.1:3000`.
+- Nginx no redirige `/api` directamente a Express.
+- `COOKIE_SECURE=true` cuando se usa HTTPS.
+- Las variables `NEXT_PUBLIC_FIREBASE_*` deben existir antes del build.
+- Los dominios deben estar autorizados en Firebase Authentication.
+- No exponer puertos de Docker públicamente.
+- No guardar secretos en Git ni pegarlos en tickets o chats.
+- Probar las migraciones y realizar respaldo antes de aplicarlas a una base con datos.
+- Mantener Next.js y dependencias de seguridad actualizadas.
+
+El resumen de incidentes anteriores y sus lecciones está en
+[`docs/OPERATIONS_HISTORY.md`](docs/OPERATIONS_HISTORY.md).

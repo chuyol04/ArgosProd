@@ -1,18 +1,32 @@
-import admin from 'firebase-admin';
-import mysql from 'mysql2/promise';
+const EMAIL = process.env.ADMIN_EMAIL?.trim();
+const PASSWORD = process.env.ADMIN_PASSWORD;
+const NAME = process.env.ADMIN_NAME?.trim() || 'Administrador';
 
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  projectId: process.env.FIREBASE_PROJECT_ID,
-});
-
-const EMAIL = 'admin@admin.com';
-const PASSWORD = 'adminadmin';
-const NAME = 'Admin';
+function validateConfiguration() {
+  const required = ['ADMIN_EMAIL', 'ADMIN_PASSWORD', 'FIREBASE_PROJECT_ID', 'FIREBASE_SERVICE_ACCOUNT_JSON'];
+  const missing = required.filter((name) => !process.env[name]);
+  if (missing.length > 0) throw new Error(`Missing required variables: ${missing.join(', ')}`);
+  if (PASSWORD.length < 12) throw new Error('ADMIN_PASSWORD must contain at least 12 characters');
+}
 
 async function main() {
+  validateConfiguration();
+  if (process.argv.includes('--check')) {
+    console.log('Bootstrap configuration is valid');
+    return;
+  }
+
+  const [{ default: admin }, { default: mysql }] = await Promise.all([
+    import('firebase-admin'),
+    import('mysql2/promise'),
+  ]);
+
+  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    projectId: process.env.FIREBASE_PROJECT_ID,
+  });
+
   // 1. Crear usuario en Firebase
   let firebaseUser;
   try {
@@ -35,6 +49,14 @@ async function main() {
     password: process.env.DBPASS,
     database: process.env.DBDB,
   });
+
+  await conn.execute(`
+    INSERT IGNORE INTO roles (name, description) VALUES
+      ('Admin', 'Acceso total al sistema'),
+      ('Manager', 'Administración operativa'),
+      ('Inspector', 'Captura de reportes de inspección'),
+      ('Cliente', 'Consulta de reportes del cliente')
+  `);
 
   const [existing] = await conn.execute('SELECT id FROM users WHERE email = ?', [EMAIL]);
   if (existing.length > 0) {
@@ -63,8 +85,7 @@ async function main() {
   }
 
   await conn.end();
-  console.log('\nDone. Login with:', EMAIL, '/', PASSWORD);
-  process.exit(0);
+  console.log('\nDone. Administrator created:', EMAIL);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });
