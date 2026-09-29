@@ -44,7 +44,8 @@ export async function middleware(req: NextRequest) {
 
     try {
         // Verify session is valid by calling the BFF route
-        const userApiUrl = new URL('/api/auth/getCurrentUser', req.nextUrl.origin);
+        const internalOrigin = process.env.INTERNAL_FRONTEND_URL || 'http://localhost:3000';
+        const userApiUrl = new URL('/api/auth/getCurrentUser', internalOrigin);
         const userRes = await fetch(userApiUrl, {
             headers: { cookie: `session=${session}` },
             cache: 'no-store',
