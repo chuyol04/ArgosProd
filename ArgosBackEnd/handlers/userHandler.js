@@ -17,9 +17,10 @@ export async function userLogin(req, res) {
     } else {
         try {
             const signedIn = await userHelper.firebaseSignIn(email, password);
-            if (signedIn.success) {
-                return res.status(200).json({ success: requestedUser.success, firebaseAccess: signedIn });
+            if (!signedIn.success) {
+                return res.status(401).json({ success: false, motive: 'Unsuccessful authentication.' });
             }
+            return res.status(200).json({ success: true, firebaseAccess: signedIn });
         } catch (e) {
             return res.status(401).json({ success: false, motive: 'Unsuccessful authentication.' });
         }
