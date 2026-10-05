@@ -1,10 +1,26 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { sitemapData } from "@/app/(protected)/sitemap/data/sitemapData";
 import { useUser } from "@/contexts/users/userContext";
-import { X, LogOut, KeyRound } from "lucide-react";
+import {
+    AlertTriangle,
+    BriefcaseBusiness,
+    ClipboardList,
+    FileImage,
+    FileText,
+    Home,
+    KeyRound,
+    LogOut,
+    PackageSearch,
+    ShieldCheck,
+    Users,
+    Wrench,
+    X,
+    type LucideIcon,
+} from "lucide-react";
 
 const ADMIN_ONLY_CATEGORIES = ["Administración"];
 
@@ -14,25 +30,39 @@ interface SidebarProps {
 }
 
 const CLIENT_PORTAL_CATEGORY = {
-    name: "Mi Cuenta",
-    routes: [{ name: "Mis Reportes", path: "/mis-reportes" }],
+    name: "Mi cuenta",
+    routes: [{ name: "Mis reportes", path: "/mis-reportes" }],
+};
+
+const ROUTE_ICONS: Record<string, LucideIcon> = {
+    "/reportes-inspeccion": FileText,
+    "/detalles-inspeccion/crear": ClipboardList,
+    "/clients": Users,
+    "/services": BriefcaseBusiness,
+    "/parts": Wrench,
+    "/defects": AlertTriangle,
+    "/instrucciones-trabajo": PackageSearch,
+    "/users": Users,
+    "/roles": ShieldCheck,
+    "/media": FileImage,
+    "/mis-reportes": FileText,
 };
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
+    const pathname = usePathname();
     const router = useRouter();
     const { user } = useUser();
 
     const isAdmin = user?.roles?.includes("Admin") ?? false;
     const isClientOnly = user?.roles?.includes("Cliente") ?? false;
+    const homePath = isClientOnly ? "/mis-reportes" : "/home";
 
     const categories = useMemo(() => {
-        // Fail to the most restrictive state while the role hasn't loaded yet -
-        // never show the full/inspector menu by default.
         if (!user) return [];
         if (isClientOnly) return [CLIENT_PORTAL_CATEGORY];
         if (isAdmin) return sitemapData;
         return sitemapData.filter(
-            (cat) => !ADMIN_ONLY_CATEGORIES.includes(cat.name)
+            (category) => !ADMIN_ONLY_CATEGORIES.includes(category.name)
         );
     }, [user, isAdmin, isClientOnly]);
 
@@ -41,86 +71,122 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         onClose();
     };
 
+    const isActive = (path: string) =>
+        pathname === path || (path !== "/home" && pathname.startsWith(`${path}/`));
+
     return (
         <>
-            {/* Overlay */}
-            <div
-                className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${
-                    isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+            <button
+                type="button"
+                aria-label="Cerrar menú"
+                className={`fixed inset-0 z-40 bg-slate-950/60 transition-opacity lg:hidden ${
+                    isOpen ? "opacity-100" : "pointer-events-none opacity-0"
                 }`}
                 onClick={onClose}
             />
 
-            {/* Sidebar */}
-            <div
-                className={`fixed top-0 right-0 h-full w-full sm:w-80 max-w-full flex flex-col bg-white dark:bg-gray-900 z-50 shadow-xl transform transition-transform duration-300 ${
-                    isOpen ? "translate-x-0" : "translate-x-full"
+            <aside
+                className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col bg-[#0f1a2d] text-white shadow-xl transition-transform duration-300 lg:w-64 lg:translate-x-0 ${
+                    isOpen ? "translate-x-0" : "-translate-x-full"
                 }`}
             >
-                {/* Header */}
-                <div className="flex shrink-0 items-center justify-between p-4 border-b dark:border-gray-700">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Navegación
-                    </h2>
+                <div className="flex h-20 shrink-0 items-center justify-between border-b border-white/10 px-5">
                     <button
-                        onClick={onClose}
-                        className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                        type="button"
+                        onClick={() => handleNavigate(homePath)}
+                        className="rounded-md transition-opacity hover:opacity-85"
+                        aria-label="Ir al inicio"
                     >
-                        <X className="h-5 w-5 text-gray-600 dark:text-gray-300" />
+                        <Image
+                            src="/logo.png"
+                            alt="OZCAB Group"
+                            width={118}
+                            height={44}
+                            className="h-11 w-auto object-contain"
+                            priority
+                        />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white lg:hidden"
+                        aria-label="Cerrar menú"
+                    >
+                        <X className="h-5 w-5" />
                     </button>
                 </div>
 
-                {/* Categories */}
-                <div className="overflow-y-auto flex-1 p-4">
-                    {categories.length > 0 ? (
-                        categories.map(category => (
-                            <div key={category.name} className="mb-6">
-                                <h3 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
-                                    {category.name}
-                                </h3>
-                                <ul className="space-y-1">
-                                    {category.routes.map(route => (
+                <nav className="flex-1 overflow-y-auto px-3 py-5">
+                    {!isClientOnly && (
+                        <button
+                            type="button"
+                            onClick={() => handleNavigate("/home")}
+                            className={`mb-5 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                                isActive("/home")
+                                    ? "bg-orange-500 text-white shadow-sm"
+                                    : "text-slate-200 hover:bg-white/10 hover:text-white"
+                            }`}
+                        >
+                            <Home className="h-4 w-4" />
+                            Inicio
+                        </button>
+                    )}
+
+                    {categories.map((category) => (
+                        <section key={category.name} className="mb-6">
+                            <h2 className="mb-2 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">
+                                {category.name}
+                            </h2>
+                            <ul className="space-y-1">
+                                {category.routes.map((route) => {
+                                    const Icon = ROUTE_ICONS[route.path] ?? FileText;
+                                    const active = isActive(route.path);
+
+                                    return (
                                         <li key={route.path}>
                                             <button
+                                                type="button"
                                                 onClick={() => handleNavigate(route.path)}
-                                                className="w-full text-left px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                                                    active
+                                                        ? "bg-orange-500 text-white shadow-sm"
+                                                        : "text-slate-200 hover:bg-white/10 hover:text-white"
+                                                }`}
                                             >
-                                                {route.name}
+                                                <Icon className="h-4 w-4 shrink-0" />
+                                                <span>{route.name}</span>
                                             </button>
                                         </li>
-                                    ))}
-                                </ul>
-                            </div>
-                        ))
-                    ) : (
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">
-                            No hay rutas disponibles.
-                        </p>
-                    )}
-                </div>
+                                    );
+                                })}
+                            </ul>
+                        </section>
+                    ))}
+                </nav>
 
-                {/* Footer actions */}
-                <div className="shrink-0 p-4 border-t dark:border-gray-700 bg-white dark:bg-gray-900 space-y-1">
+                <div className="shrink-0 border-t border-white/10 p-3">
                     <button
+                        type="button"
                         onClick={() => handleNavigate("/cambiar-contrasena")}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-slate-200 hover:bg-white/10 hover:text-white"
                     >
                         <KeyRound className="h-4 w-4" />
                         Cambiar contraseña
                     </button>
                     <button
+                        type="button"
                         onClick={async () => {
                             await fetch("/api/auth/logout", { method: "POST" });
                             router.push("/login");
                             onClose();
                         }}
-                        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-red-300 hover:bg-red-500/10 hover:text-red-200"
                     >
                         <LogOut className="h-4 w-4" />
                         Cerrar sesión
                     </button>
                 </div>
-            </div>
+            </aside>
         </>
     );
 }

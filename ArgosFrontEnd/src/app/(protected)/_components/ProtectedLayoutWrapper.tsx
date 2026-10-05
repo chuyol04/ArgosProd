@@ -12,12 +12,12 @@ export default function ProtectedLayoutWrapper({
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     return (
-        <div className="min-h-screen flex flex-col">
-            <Header onMenuClick={() => setSidebarOpen(true)} />
+        <div className="min-h-screen bg-slate-50">
             <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-            <main className="flex-1">
-                {children}
-            </main>
+            <div className="min-h-screen lg:pl-64">
+                <Header onMenuClick={() => setSidebarOpen(true)} />
+                <main>{children}</main>
+            </div>
         </div>
     );
 }
