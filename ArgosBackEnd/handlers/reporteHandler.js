@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs';
 import { sanitizeDateField, formatDateOnlyEs, formatTimeOnly } from '../lib/helpers/dateTimeHelpers.js';
 import { expandSerialAndDefectRows, getExportHours } from '../lib/helpers/reportExcelHelpers.js';
 import { isClientRole } from '../lib/constants/roles.js';
+import { resolveClientScope } from '../lib/helpers/clientScope.js';
 
 // po_hours: optional integer between 1 and 9999.
 // Returns { valid: true, value } or { valid: false } when present but out of range/non-integer.
@@ -65,12 +66,12 @@ export async function getReportes(req, res) {
     const { search, work_instruction_id } = req.query;
     const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
     const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const scope = resolveClientScope(req, res);
 
-    // Client-portal users only ever see their own client's reports - this is
-    // enforced here in the query itself, never just by hiding UI elements.
-    const requester = res.locals.requester;
-    const isClient = requester && isClientRole(requester.roles);
-    if (isClient && !requester.client_id) {
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
       return res.status(200).json({ success: true, data: [], total: 0 });
     }
 
@@ -110,9 +111,9 @@ export async function getReportes(req, res) {
       params.push(searchPattern, searchPattern, searchPattern, searchPattern);
     }
 
-    if (isClient) {
-      conditions.push('c.id = ?');
-      params.push(requester.client_id);
+    if (scope.clientId) {
+      conditions.push('s.client_id = ?');
+      params.push(scope.clientId);
     }
 
     if (conditions.length > 0) {
@@ -136,15 +137,7 @@ export async function getReportes(req, res) {
       countQuery += ` WHERE ${conditions.join(' AND ')}`;
     }
 
-    const countParams = [];
-    if (work_instruction_id) countParams.push(work_instruction_id);
-    if (search) {
-      const searchPattern = `%${search}%`;
-      countParams.push(searchPattern, searchPattern, searchPattern, searchPattern);
-    }
-    if (isClient) countParams.push(requester.client_id);
-
-    const [countResult] = await MysqlClient.execute(countQuery, countParams);
+    const [countResult] = await MysqlClient.execute(countQuery, params);
 
     return res.status(200).json({
       success: true,

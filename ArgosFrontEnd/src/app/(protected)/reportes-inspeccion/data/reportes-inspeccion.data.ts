@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { IInspectionReportsResponse } from "@/app/(protected)/reportes-inspeccion/types/reportes-inspeccion.types";
+import { ACTIVE_CLIENT_COOKIE, parseActiveClientId } from "@/lib/clientScope";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
 
@@ -30,10 +31,14 @@ export async function fetchInspectionReports(
 
   const offset = (page - 1) * limit;
   const queryParams = new URLSearchParams();
+  const activeClientId = parseActiveClientId(
+    cookieStore.get(ACTIVE_CLIENT_COOKIE)?.value
+  );
   queryParams.set("limit", String(limit));
   queryParams.set("offset", String(offset));
   if (search) queryParams.set("search", search);
   if (work_instruction_id) queryParams.set("work_instruction_id", String(work_instruction_id));
+  if (activeClientId) queryParams.set("client_id", String(activeClientId));
 
   try {
     const res = await fetch(

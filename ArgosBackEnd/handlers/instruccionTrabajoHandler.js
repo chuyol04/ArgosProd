@@ -1,5 +1,6 @@
 import MysqlClient from '../connections/mysqldb.js';
 import { sanitizeDateField } from '../lib/helpers/dateTimeHelpers.js';
+import { resolveClientScope } from '../lib/helpers/clientScope.js';
 
 // "Pieza" is captured as free text now - the parts catalog (table `parts`)
 // is kept for backward compatibility and reporting, but is no longer a
@@ -83,6 +84,14 @@ export async function getInstruccionesTrabajo(req, res) {
     const { search, service_id } = req.query;
     const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
     const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const scope = resolveClientScope(req, res);
+
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
+      return res.status(200).json({ success: true, data: [], total: 0 });
+    }
 
     let query = `
       SELECT
@@ -107,6 +116,10 @@ export async function getInstruccionesTrabajo(req, res) {
     const params = [];
     const conditions = [];
 
+    if (scope.clientId) {
+      conditions.push('s.client_id = ?');
+      params.push(scope.clientId);
+    }
     if (service_id) {
       conditions.push('wi.service_id = ?');
       params.push(service_id);
@@ -137,14 +150,7 @@ export async function getInstruccionesTrabajo(req, res) {
     if (conditions.length > 0) {
       countQuery += ` WHERE ${conditions.join(' AND ')}`;
     }
-    const countParams = service_id && search
-      ? [service_id, `%${search}%`, `%${search}%`, `%${search}%`]
-      : service_id
-      ? [service_id]
-      : search
-      ? [`%${search}%`, `%${search}%`, `%${search}%`]
-      : [];
-    const [countResult] = await MysqlClient.execute(countQuery, countParams);
+    const [countResult] = await MysqlClient.execute(countQuery, params);
 
     return res.status(200).json({
       success: true,

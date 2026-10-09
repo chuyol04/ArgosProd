@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
+import { ACTIVE_CLIENT_COOKIE } from '@/lib/clientScope';
 
 
 export const runtime = 'nodejs';
@@ -75,6 +76,11 @@ export async function POST(req: NextRequest) {
             sameSite: 'lax', // if you will do cross-site to other domains, change to 'none' + secure
             path: '/',
             maxAge: Math.floor(SESSION_MAX_AGE_MS / 1000),
+        });
+        res.cookies.set(ACTIVE_CLIENT_COOKIE, '', {
+            sameSite: 'lax',
+            path: '/',
+            maxAge: 0,
         });
         console.log(res)
         return res

@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { IService, IServicesResponse } from "@/app/(protected)/services/types/services.types";
+import { ACTIVE_CLIENT_COOKIE, parseActiveClientId } from "@/lib/clientScope";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
 
@@ -22,7 +23,11 @@ export async function fetchServices(
         }
 
         const params = new URLSearchParams();
+        const activeClientId = parseActiveClientId(
+            cookieStore.get(ACTIVE_CLIENT_COOKIE)?.value
+        );
         if (search) params.set("search", search);
+        if (activeClientId) params.set("client_id", String(activeClientId));
         params.set("limit", String(limit));
         params.set("offset", String(offset));
 

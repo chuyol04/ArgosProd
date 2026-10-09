@@ -4,6 +4,8 @@ export interface IUser {
     name?: string;
     phone_number?: string;
     roles: string[];
+    active_client_id?: number;
+    client_options?: Array<{ id: number; name: string }>;
 }
 
 export interface IUserRow {

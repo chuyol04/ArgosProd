@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { ACTIVE_CLIENT_COOKIE, parseActiveClientId } from "@/lib/clientScope";
 import {
   IInspectionDetailsListResponse,
   IInspectionDetailResponse,
@@ -144,7 +145,13 @@ export async function fetchReportOptions(): Promise<IReportOption[]> {
   }
 
   try {
-    const res = await fetch(`${EXPRESS_BASE_URL}/reports?limit=100`, {
+    const queryParams = new URLSearchParams({ limit: "100" });
+    const activeClientId = parseActiveClientId(
+      cookieStore.get(ACTIVE_CLIENT_COOKIE)?.value
+    );
+    if (activeClientId) queryParams.set("client_id", String(activeClientId));
+
+    const res = await fetch(`${EXPRESS_BASE_URL}/reports?${queryParams}`, {
       method: "GET",
       headers: {
         Cookie: `session=${session}`,

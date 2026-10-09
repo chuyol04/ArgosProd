@@ -51,8 +51,9 @@ export default function ServiceModal({
   const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const defaultClientId = clients.length === 1 ? String(clients[0].id) : "";
   const [formData, setFormData] = useState({
-    client_id: "",
+    client_id: defaultClientId,
     name: "",
     start_date: "",
     end_date: "",
@@ -63,13 +64,13 @@ export default function ServiceModal({
     if (!open) {
       setError(null);
       setFormData({
-        client_id: "",
+        client_id: defaultClientId,
         name: "",
         start_date: "",
         end_date: "",
       });
     }
-  }, [open]);
+  }, [open, defaultClientId]);
 
   // Fetch service data when editing
   useEffect(() => {

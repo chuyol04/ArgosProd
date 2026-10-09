@@ -1,5 +1,6 @@
 import MysqlClient from '../connections/mysqldb.js';
 import { sanitizeDateField } from '../lib/helpers/dateTimeHelpers.js';
+import { resolveClientScope } from '../lib/helpers/clientScope.js';
 
 // CREATE
 export async function createServicio(req, res) {
@@ -35,6 +36,14 @@ export async function getServicios(req, res) {
     const { search } = req.query;
     const limitNum = Math.max(1, Math.min(1000, parseInt(req.query.limit, 10) || 100));
     const offsetNum = Math.max(0, parseInt(req.query.offset, 10) || 0);
+    const scope = resolveClientScope(req, res);
+
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
+      return res.status(200).json({ success: true, data: [], total: 0 });
+    }
 
     let query = `
       SELECT s.id, s.start_date, s.end_date, s.name,
@@ -43,11 +52,19 @@ export async function getServicios(req, res) {
       INNER JOIN clients c ON s.client_id = c.id
     `;
     const params = [];
+    const conditions = [];
 
+    if (scope.clientId) {
+      conditions.push('s.client_id = ?');
+      params.push(scope.clientId);
+    }
     if (search) {
-      query += ' WHERE s.name LIKE ? OR c.name LIKE ?';
+      conditions.push('(s.name LIKE ? OR c.name LIKE ?)');
       const searchPattern = `%${search}%`;
       params.push(searchPattern, searchPattern);
+    }
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
     }
 
     query += ` ORDER BY s.id DESC LIMIT ${limitNum} OFFSET ${offsetNum}`;
@@ -60,13 +77,10 @@ export async function getServicios(req, res) {
       FROM services s
       INNER JOIN clients c ON s.client_id = c.id
     `;
-    const countParams = [];
-    if (search) {
-      countQuery += ' WHERE s.name LIKE ? OR c.name LIKE ?';
-      const searchPattern = `%${search}%`;
-      countParams.push(searchPattern, searchPattern);
+    if (conditions.length > 0) {
+      countQuery += ` WHERE ${conditions.join(' AND ')}`;
     }
-    const [countResult] = await MysqlClient.execute(countQuery, countParams);
+    const [countResult] = await MysqlClient.execute(countQuery, params);
     const total = countResult[0]?.total || 0;
 
     return res.status(200).json({ success: true, data: rows, total });

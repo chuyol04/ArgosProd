@@ -9,6 +9,7 @@ import {
     UpdateWorkInstructionData,
     IWorkInstructionDetails,
 } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
+import { ACTIVE_CLIENT_COOKIE, parseActiveClientId } from "@/lib/clientScope";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
 
@@ -43,7 +44,13 @@ export async function fetchServicesForSelect(): Promise<IServiceOption[]> {
             throw new Error("No session cookie");
         }
 
-        const res = await fetch(`${EXPRESS_BASE_URL}/services?limit=1000`, {
+        const queryParams = new URLSearchParams({ limit: "1000" });
+        const activeClientId = parseActiveClientId(
+            cookieStore.get(ACTIVE_CLIENT_COOKIE)?.value
+        );
+        if (activeClientId) queryParams.set("client_id", String(activeClientId));
+
+        const res = await fetch(`${EXPRESS_BASE_URL}/services?${queryParams}`, {
             method: 'GET',
             headers: {
                 'Cookie': `session=${session}`,
