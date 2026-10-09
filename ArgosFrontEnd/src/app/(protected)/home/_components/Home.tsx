@@ -211,13 +211,13 @@ export default function Home() {
                         </Link>
                     </div>
                 </div>
-                <div className="relative min-h-64 bg-slate-900 lg:min-h-full">
+                <div className="relative aspect-[1917/821] bg-slate-900 lg:aspect-auto lg:min-h-full">
                     <Image
                         src="/images/bannerozcabinspeccion.png"
                         alt="Equipo de inspección de OZCAB"
                         fill
                         sizes="(min-width: 1024px) 55vw, 100vw"
-                        className="object-cover object-center"
+                        className="object-contain lg:object-cover lg:object-center"
                         priority
                     />
                 </div>
