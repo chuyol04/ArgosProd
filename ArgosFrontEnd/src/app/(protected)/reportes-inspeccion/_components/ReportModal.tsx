@@ -45,21 +45,6 @@ interface ReportModalProps {
 }
 
 const formatDate = formatDateDisplay;
-const richTextToPlainText = (html: string | null) =>
-  html ? new DOMParser().parseFromString(html, "text/html").body.textContent || "" : "";
-
-/** Horas de PO: entero opcional entre 1 y 9999. */
-function validatePoHours(value: string): string | null {
-  if (!value) return null;
-  if (!/^\d+$/.test(value)) {
-    return "Horas de PO debe ser un número entero (sin decimales ni texto)";
-  }
-  const num = Number(value);
-  if (num < 1 || num > 9999) {
-    return "Horas de PO debe estar entre 1 y 9999";
-  }
-  return null;
-}
 
 export default function ReportModal({
   reportId,
@@ -75,10 +60,6 @@ export default function ReportModal({
   // Form state
   const [workInstructionId, setWorkInstructionId] = useState<string>("");
   const [startDate, setStartDate] = useState("");
-  const [poNumber, setPoNumber] = useState("");
-  const [poHours, setPoHours] = useState("");
-  const [poHoursError, setPoHoursError] = useState<string | null>(null);
-  const [description, setDescription] = useState("");
   const [problem, setProblem] = useState("");
 
   // Data state
@@ -95,10 +76,6 @@ export default function ReportModal({
   const resetForm = () => {
     setWorkInstructionId("");
     setStartDate("");
-    setPoNumber("");
-    setPoHours("");
-    setPoHoursError(null);
-    setDescription("");
     setProblem("");
     setInspectionDetails([]);
     setReportDetails(null);
@@ -124,9 +101,6 @@ export default function ReportModal({
             setReportDetails(result.data);
             setWorkInstructionId(String(report.work_instruction_id));
             setStartDate(toDateInputValue(report.start_date));
-            setPoNumber(report.po_number || "");
-            setPoHours(report.po_hours ? String(report.po_hours) : "");
-            setDescription(report.description || "");
             setProblem(report.problem || "");
             setInspectionDetails(inspections || []);
           } else {
@@ -153,7 +127,6 @@ export default function ReportModal({
     const workInstruction = workInstructions.find((wi) => String(wi.id) === value);
     setWorkInstructionId(value);
     setStartDate(toDateInputValue(workInstruction?.start_date));
-    setDescription(richTextToPlainText(workInstruction?.description ?? null));
     setProblem(workInstruction?.problem || "");
   };
 
@@ -163,19 +136,10 @@ export default function ReportModal({
       return;
     }
 
-    const poHoursValidationError = validatePoHours(poHours);
-    if (poHoursValidationError) {
-      setPoHoursError(poHoursValidationError);
-      return;
-    }
-
     startTransition(async () => {
       const data = {
         work_instruction_id: Number(workInstructionId),
         start_date: startDate,
-        po_number: poNumber || undefined,
-        po_hours: poHours ? Number(poHours) : undefined,
-        description: description || undefined,
         problem: problem || undefined,
       };
 
@@ -274,26 +238,6 @@ export default function ReportModal({
                     </p>
                     <p className="text-sm font-medium">{report.client_name}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Número de PO
-                    </p>
-                    <p className="text-sm font-medium">{report.po_number || "-"}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Horas de PO
-                    </p>
-                    <p className="text-sm font-medium">{report.po_hours || "-"}</p>
-                  </div>
-                  {report.description && (
-                    <div className="space-y-1 col-span-2">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Descripción
-                      </p>
-                      <p className="text-sm whitespace-pre-wrap">{report.description}</p>
-                    </div>
-                  )}
                   {report.problem && (
                     <div className="space-y-1 col-span-2">
                       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -335,47 +279,6 @@ export default function ReportModal({
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="poNumber">Número de PO</Label>
-                    <Input
-                      id="poNumber"
-                      placeholder="Ej: PO-12345"
-                      value={poNumber}
-                      onChange={(e) => setPoNumber(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="poHours">Horas de PO</Label>
-                    <Input
-                      id="poHours"
-                      type="number"
-                      step="1"
-                      min="1"
-                      max="9999"
-                      placeholder="Ej: 40"
-                      value={poHours}
-                      onChange={(e) => {
-                        setPoHours(e.target.value);
-                        setPoHoursError(validatePoHours(e.target.value));
-                      }}
-                    />
-                    {poHoursError && (
-                      <p className="text-xs text-destructive">{poHoursError}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="description">Descripción</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="Descripción del reporte..."
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value)}
-                      rows={2}
                     />
                   </div>
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MongoClient, ObjectId, GridFSBucket } from "mongodb";
 import { getMongoClient } from "@/lib/db/mongoClient";
+import { getAuthorizedMediaIds } from "@/lib/storage/mediaAuthorization";
 import { Readable } from "stream";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,15 @@ export async function GET(req: NextRequest, context: RouteParams) {
       return NextResponse.json({ message: "ID de archivo no válido." }, { status: 400 });
     }
 
+    const session = req.cookies.get("session")?.value;
+    if (!session) {
+      return NextResponse.json({ message: "No autorizado." }, { status: 401 });
+    }
+    const authorizedIds = await getAuthorizedMediaIds(session, [mediaIdString]);
+    if (!authorizedIds.has(mediaIdString.toLowerCase())) {
+      return NextResponse.json({ message: "Archivo no encontrado." }, { status: 404 });
+    }
+
     const objectId = new ObjectId(mediaIdString);
     const client: MongoClient = await getMongoClient();
     const db = client.db("media");
@@ -47,6 +57,7 @@ export async function GET(req: NextRequest, context: RouteParams) {
         "Content-Type": contentType,
         "Content-Disposition": `attachment; filename="${filename}"`,
         "Content-Length": fileDoc.length.toString(),
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (err) {

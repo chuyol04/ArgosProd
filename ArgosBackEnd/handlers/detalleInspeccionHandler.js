@@ -1,7 +1,8 @@
 import MysqlClient from '../connections/mysqldb.js';
-import { isManagerOrAbove, isClientRole } from '../lib/constants/roles.js';
+import { isManagerOrAbove } from '../lib/constants/roles.js';
 import userHelper from '../lib/helpers/userHelpers.js';
 import { sanitizeDateField, sanitizeTimeField, todayLocalDateString, isoWeekFromDate } from '../lib/helpers/dateTimeHelpers.js';
+import { appendServiceAccessScope, resolveClientScope } from '../lib/helpers/clientScope.js';
 
 import { MAX_SERIAL_NUMBERS, PIECE_FIELDS, normalizePieceCounts, normalizeInspectionBox, normalizeInspectionBoxes } from '../lib/helpers/inspectionBoxHelpers.js';
 
@@ -228,10 +229,11 @@ export async function getDetallesInspeccion(req, res) {
   try {
     const { report_id } = req.query;
 
-    // Client-portal users only ever see boxes belonging to their own client.
-    const requester = res.locals.requester;
-    const isClient = requester && isClientRole(requester.roles);
-    if (isClient && !requester.client_id) {
+    const scope = resolveClientScope(req, res);
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
       return res.status(200).json({ success: true, data: [] });
     }
 
@@ -239,7 +241,7 @@ export async function getDetallesInspeccion(req, res) {
       SELECT
         idt.*,
         p.name AS part_name, p.description AS part_description,
-        ir.po_number, ir.start_date AS report_start_date, ir.problem AS report_problem,
+        ir.start_date AS report_start_date, ir.problem AS report_problem,
         wi.id AS work_instruction_id,
         wi.description AS work_instruction_description,
         wi.inspection_mode,
@@ -262,10 +264,7 @@ export async function getDetallesInspeccion(req, res) {
       conditions.push('ir.id = ?');
       params.push(report_id);
     }
-    if (isClient) {
-      conditions.push('c.id = ?');
-      params.push(requester.client_id);
-    }
+    appendServiceAccessScope(scope, conditions, params);
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
     }
@@ -306,11 +305,22 @@ export async function getDetallesInspeccion(req, res) {
 export async function getDetalleInspeccionById(req, res) {
   try {
     const { id } = req.params;
+    const scope = resolveClientScope(req, res);
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
+      return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
+    }
+
+    const conditions = ['idt.id = ?'];
+    const params = [id];
+    appendServiceAccessScope(scope, conditions, params);
     const [rows] = await MysqlClient.execute(`
       SELECT
         idt.*,
         p.name AS part_name, p.description AS part_description,
-        ir.po_number, ir.start_date AS report_start_date, ir.problem AS report_problem,
+        ir.start_date AS report_start_date, ir.problem AS report_problem,
         wi.id AS work_instruction_id,
         wi.description AS work_instruction_description,
         wi.inspection_mode,
@@ -325,17 +335,10 @@ export async function getDetalleInspeccionById(req, res) {
       INNER JOIN services s ON s.id = wi.service_id
       INNER JOIN clients c ON c.id = s.client_id
       LEFT JOIN users u ON u.id = idt.inspector_id
-      WHERE idt.id = ? LIMIT 1
-    `, [id]);
+      WHERE ${conditions.join(' AND ')} LIMIT 1
+    `, params);
 
     if (rows.length === 0) {
-      return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
-    }
-
-    // Client-portal users may only see boxes belonging to their own client,
-    // even when they guess/type an ID directly in the URL.
-    const requester = res.locals.requester;
-    if (requester && isClientRole(requester.roles) && rows[0].client_id !== requester.client_id) {
       return res.status(404).json({ success: false, motive: 'Inspection Detail not found' });
     }
 

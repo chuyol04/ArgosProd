@@ -367,7 +367,6 @@ export async function fetchReportsForSelect(): Promise<IReportOption[]> {
         work_instruction_id: number;
         part_name: string;
         service_name: string;
-        po_number: string | null;
         problem: string | null;
         inspection_mode: "rate" | "full_time";
         inspection_rate_per_hour: number | null;
@@ -376,7 +375,6 @@ export async function fetchReportsForSelect(): Promise<IReportOption[]> {
         work_instruction_id: r.work_instruction_id,
         part_name: r.part_name,
         service_name: r.service_name,
-        po_number: r.po_number,
         problem: r.problem,
         inspection_mode: r.inspection_mode,
         inspection_rate_per_hour: r.inspection_rate_per_hour,

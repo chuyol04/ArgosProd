@@ -6,10 +6,18 @@ import {
     IService,
     CreateServiceData,
     UpdateServiceData,
-    IServiceDetails
+    IServiceDetails,
+    IClientPortalUser,
 } from "@/app/(protected)/services/types/services.types";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
+
+async function getSessionCookie() {
+    const cookieStore = await cookies();
+    const session = cookieStore.get('session')?.value;
+    if (!session) throw new Error("No session cookie");
+    return session;
+}
 
 export async function createService(
     data: CreateServiceData
@@ -140,6 +148,9 @@ export async function getServiceById(
                 client_id: service.client_id,
                 client_name: service.client_name,
                 client_email: service.client_email,
+                client_user_ids: (json.data?.client_users ?? []).map(
+                    (user: IClientPortalUser) => user.id
+                ),
             }
         };
     } catch (err) {
@@ -147,6 +158,35 @@ export async function getServiceById(
         return {
             success: false,
             error: err instanceof Error ? err.message : "Unknown error"
+        };
+    }
+}
+
+export async function getClientUsersForService(
+    clientId: number
+): Promise<{ success: boolean; data?: IClientPortalUser[]; error?: string }> {
+    try {
+        if (!EXPRESS_BASE_URL) {
+            throw new Error("EXPRESS_BASE_URL is not defined");
+        }
+
+        const session = await getSessionCookie();
+        const res = await fetch(
+            `${EXPRESS_BASE_URL}/services/client-users?client_id=${clientId}`,
+            {
+                headers: { Cookie: `session=${session}` },
+                cache: "no-store",
+            }
+        );
+        const json = await res.json();
+        if (!res.ok || !json.success) {
+            return { success: false, error: json.motive || res.statusText };
+        }
+        return { success: true, data: json.data ?? [] };
+    } catch (err) {
+        return {
+            success: false,
+            error: err instanceof Error ? err.message : "Unknown error",
         };
     }
 }

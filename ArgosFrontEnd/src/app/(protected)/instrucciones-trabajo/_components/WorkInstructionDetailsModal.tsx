@@ -263,8 +263,6 @@ export default function WorkInstructionDetailsModal({
                         <tr>
                           <th className="p-2 text-left text-xs font-medium text-muted-foreground">ID</th>
                           <th className="p-2 text-left text-xs font-medium text-muted-foreground">Fecha</th>
-                          <th className="p-2 text-left text-xs font-medium text-muted-foreground">PO</th>
-                          <th className="p-2 text-left text-xs font-medium text-muted-foreground">Horas</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -275,8 +273,6 @@ export default function WorkInstructionDetailsModal({
                           >
                             <td className="p-2">{report.id}</td>
                             <td className="p-2">{formatDate(report.start_date)}</td>
-                            <td className="p-2">{report.po_number || "-"}</td>
-                            <td className="p-2">{report.po_hours || "-"}</td>
                           </tr>
                         ))}
                       </tbody>

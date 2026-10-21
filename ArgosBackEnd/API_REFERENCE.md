@@ -9,14 +9,15 @@ The backend interacts with the `ozcab_db` database. The schema has been refactor
 *   **`clients`**: Stores information about client companies.
 *   **`services`**: Represents contracts or projects for clients.
 *   **`parts`**: Details about manufactured pieces to be inspected.
-*   **`defects`**: A catalog of known defects (optional - incidents can also use free-text `defect_label` instead).
+*   **`defects`**: Catalog of known defects. New incidents must use a defect associated with the report's work instruction.
 *   **`work_instructions`**: Defines how an inspection should be done for a specific part.
 *   **`users`**: Stores user accounts, linked with Firebase UIDs. `client_id` (nullable) scopes a `Cliente`-role user to a single client for the read-only portal.
 *   **`inspection_reports`**: Summaries of inspections for a batch of parts.
 *   **`inspection_details`**: Detailed records of individual inspections within a report (a "box").
-*   **`incidents`**: Records specific defects found during an inspection. `defect_id` is optional (nullable); `defect_label` holds the defect name when it wasn't picked from the `defects` catalog.
+*   **`incidents`**: Records specific defects found during an inspection. Nullable legacy fields remain readable, while new captures require a linked `defect_id` and store its catalog name in `defect_label`.
 *   **`roles`**: Defines user roles: `Inspector`, `Manager`, `Admin`, `Cliente`. There are **no** `permissions`/`role_permissions` tables - access control is hardcoded by role name (see `lib/constants/roles.js` and `middleware/clientGuard.js`).
 *   **`user_roles`**: Junction table assigning roles to users.
+*   **`service_client_users`**: Junction table granting one or more `Cliente` users read-only access to a service and its reports.
 *   **`favorite_routes`**: Stores user-specific favorite UI routes.
 *   **`work_instruction_evidence`**: Stores files attached to work instructions. `is_main_it` (0/1) marks the single signed IT file; everything else is an optional complementary document.
 
@@ -1349,18 +1350,18 @@ Missing/foreign boxes or boxes without positive rejected counts return 400.
 *   **Route:** `/incidents/create`
 *   **Method:** `POST`
 *   **Handler:** `incidenciaHandler.js` -> `createIncidencia`
-*   **Description:** Creates a new defect/incident associated with a detailed inspection (a "box"). The defect **does not require the catalog** - it can be captured as free text via `defect_label`. At least one of `defect_id` (catalog) or `defect_label` (free text) is required; `defect_id` is purely an optional shortcut that pre-fills the label on the frontend.
+*   **Description:** Creates a defect/incident for one box. `defect_id` must be associated with the report's work instruction. `quantity` is a positive integer and the accumulated quantities for the box cannot exceed its rejected pieces.
 *   **Request Body:**
     ```json
     {
       "defect_id": 1,
-      "defect_label": "Golpe",
       "inspection_detail_id": 1,
       "inspection_detail_serial_number_id": 10,
+      "quantity": 5,
       "evidence_url": "<gridfs_media_id>"
     }
     ```
-*   **Required Parameters:** `inspection_detail_id`, `inspection_detail_serial_number_id`, and at least one of `defect_id` / `defect_label`.
+*   **Required Parameters:** `defect_id`, `inspection_detail_id`, `inspection_detail_serial_number_id`, `quantity`.
 *   **Response (Success - 201 Created):**
     ```json
     {
@@ -1373,23 +1374,15 @@ Missing/foreign boxes or boxes without positive rejected counts return 400.
     ```json
     {
       "success": false,
-      "motive": "defect_id or defect_label (free text) is required"
+      "motive": "La cantidad supera las 3 piezas rechazadas disponibles en esta caja"
     }
     ```
-*   **Response (Error - 404 Not Found):**
-    ```json
-    {
-      "success": false,
-      "motive": "Defect not found"
-    }
-    ```
-
 #### 3.9.2 Get All Incidents
 
 *   **Route:** `/incidents`
 *   **Method:** `GET`
 *   **Handler:** `incidenciaHandler.js` -> `getIncidencias`
-*   **Description:** Retrieves a list of all incident records, including associated defect and inspection details. `defect_name` is `COALESCE(catalog name, defect_label)` - it always resolves to something display-ready regardless of whether the defect came from the catalog or free text.
+*   **Description:** Retrieves a list of all incident records, including associated defect and inspection details. `defect_name` uses the catalog name and falls back to `defect_label` for historical free-text records.
 *   **Access control:** if the requester's role is `Cliente`, results are filtered to incidents on boxes belonging to their own client.
 *   **Response (Success - 200 OK):**
     ```json
@@ -1456,7 +1449,8 @@ Missing/foreign boxes or boxes without positive rejected counts return 400.
     ```json
     {
       "inspection_detail_serial_number_id": 10,
-      "defect_label": "Rebaba"
+      "defect_id": 2,
+      "quantity": 10
     }
     ```
 *   **Response (Success - 200 OK):**
@@ -1822,4 +1816,6 @@ The following endpoints are identified but have not yet been refactored to the n
 
 ### 3.13 Access Control & Client Portal
 
-See the "Permission System" section in [`CLAUDE.md`](../CLAUDE.md) for the full `clientGuard.js` breakdown. Summary: `GET /reports`, `GET /reports/:id`, `GET /reports/:id/export`, `GET /inspection-details`, `GET /inspection-details/:id`, `GET /incidents`, `GET /incidents/:id` are all scoped/404'd to the requester's `client_id` when the role is `Cliente`.
+See the "Permission System" section in [`CLAUDE.md`](../CLAUDE.md) for the full `clientGuard.js` breakdown. Summary: `GET /reports`, `GET /reports/:id`, `GET /reports/:id/export`, `GET /inspection-details`, `GET /inspection-details/:id`, `GET /incidents`, `GET /incidents/:id` are scoped to both the requester's `client_id` and their explicit membership in `service_client_users` when the role is `Cliente`. Direct URL/ID access to an unassigned service returns 404.
+
+Service administration accepts `client_user_ids: number[]` in `POST /services/create` and `PUT /services/:id`. Every selected user must be active, have role `Cliente`, and belong to the service's owning client. `GET /services/client-users?client_id=:id` returns the eligible users, while `GET /services/:id` includes the assigned users in `data.client_users`.

@@ -229,7 +229,7 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                                 </SelectContent>
                             </Select>
                             <p className="text-xs text-muted-foreground">
-                                Este usuario solo podrá ver los reportes de este cliente.
+                                Después de crearlo, asigna sus servicios desde la pantalla Servicios.
                             </p>
                         </div>
                     )}

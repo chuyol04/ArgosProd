@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { ArrowRight, Calendar, ClipboardList, User } from "lucide-react";
-import { fetchInspectionReports } from "@/app/(protected)/reportes-inspeccion/data/reportes-inspeccion.data";
+import { ArrowRight, Calendar, ClipboardList, Clock3, TrendingUp, User } from "lucide-react";
+import {
+  fetchInspectionReports,
+  fetchReportDashboard,
+} from "@/app/(protected)/reportes-inspeccion/data/reportes-inspeccion.data";
 import PageContainer from "@/components/layout/PageContainer";
 import { formatDateDisplay } from "@/lib/dateTimeUtils";
 
@@ -19,8 +22,16 @@ export default async function MisReportesPage({ searchParams }: Props) {
   const limit = 9;
   const page = typeof params.page === "string" ? parseInt(params.page, 10) : 1;
 
-  const { reports, total } = await fetchInspectionReports({ limit, page });
+  const [{ reports, total }, dashboard] = await Promise.all([
+    fetchInspectionReports({ limit, page }),
+    fetchReportDashboard(),
+  ]);
   const hasMore = page * limit < total;
+  const maxAccumulatedHours = Math.max(
+    dashboard.total_hours,
+    ...dashboard.hours_history.map((point) => point.accumulated_hours),
+    1
+  );
 
   return (
     <PageContainer>
@@ -32,6 +43,72 @@ export default async function MisReportesPage({ searchParams }: Props) {
           <p className="text-muted-foreground text-sm">
             Reportes de inspección de tus piezas. Esta vista es de solo lectura.
           </p>
+        </div>
+
+        <section className="grid gap-4 lg:grid-cols-[260px_1fr]">
+          <div className="flex flex-col justify-between rounded-xl border bg-card p-5 shadow-sm">
+            <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+              <Clock3 className="h-5 w-5 text-primary" />
+              Horas acumuladas
+            </div>
+            <div className="mt-6">
+              <p className="text-4xl font-bold tracking-tight">
+                {dashboard.total_hours.toFixed(2)}
+                <span className="ml-2 text-base font-medium text-muted-foreground">h</span>
+              </p>
+              <p className="mt-2 text-xs text-muted-foreground">
+                Tiempo total invertido en los sorteos de tus servicios.
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-card p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <TrendingUp className="mt-0.5 h-5 w-5 text-primary" />
+              <div>
+                <h2 className="font-semibold">Evolución de horas de sorteo</h2>
+                <p className="text-sm text-muted-foreground">
+                  Acumulado de las últimas {dashboard.hours_history.length || 0} fechas con actividad.
+                </p>
+              </div>
+            </div>
+
+            {dashboard.hours_history.length === 0 ? (
+              <p className="mt-6 text-sm text-muted-foreground">Todavía no hay horas registradas.</p>
+            ) : (
+              <div className="mt-5 space-y-3">
+                {dashboard.hours_history.map((point) => {
+                  const width = (point.accumulated_hours / maxAccumulatedHours) * 100;
+                  return (
+                    <div key={point.date} className="grid grid-cols-[78px_1fr_72px] items-center gap-3 text-xs">
+                      <span className="text-muted-foreground">{formatDateDisplay(point.date)}</span>
+                      <div
+                        className="h-7 overflow-hidden rounded-md bg-muted"
+                        role="img"
+                        aria-label={`${point.accumulated_hours.toFixed(2)} horas acumuladas al ${formatDateDisplay(point.date)}`}
+                      >
+                        <div
+                          className="flex h-full min-w-1 items-center justify-end rounded-md bg-primary/80 px-2 text-[10px] font-medium text-primary-foreground"
+                          style={{ width: `${width}%` }}
+                          title={`${point.daily_hours.toFixed(2)} horas del día`}
+                        >
+                          <span className="hidden sm:inline">+{point.daily_hours.toFixed(2)} h</span>
+                        </div>
+                      </div>
+                      <span className="text-right font-semibold">{point.accumulated_hours.toFixed(2)} h</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold">Reportes disponibles</h2>
+            <p className="text-sm text-muted-foreground">{total} reporte(s) dentro de tus servicios asignados.</p>
+          </div>
         </div>
 
         {reports.length === 0 ? (

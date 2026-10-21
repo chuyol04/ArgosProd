@@ -51,7 +51,6 @@ export async function fetchWorkInstructionsForSelect(): Promise<IWorkInstruction
         id: number;
         start_date: string | null;
         inspection_mode: "rate" | "full_time";
-        description: string | null;
         problem: string | null;
         part_name: string;
         service_name: string;
@@ -60,7 +59,6 @@ export async function fetchWorkInstructionsForSelect(): Promise<IWorkInstruction
         id: wi.id,
         start_date: wi.start_date,
         inspection_mode: wi.inspection_mode,
-        description: wi.description,
         problem: wi.problem,
         part_name: wi.part_name,
         service_name: wi.service_name,

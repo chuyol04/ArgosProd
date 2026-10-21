@@ -73,16 +73,16 @@ interface DefectsSectionProps {
 // form creates the detail and calls commitPendingDefects with its new id.
 interface IPendingDefect {
   tempId: string;
-  defect_id?: number;
+  defect_id: number;
   defect_label: string;
   quantity: number;
   evidenceFile?: File;
   evidencePreview?: string | null;
   boxKey: string;
-  autoExpected?: boolean;
 }
 
 export interface DefectsSectionHandle {
+  validateDistribution: () => string | null;
   /** Uploads evidence and creates an incident for every pending defect,
    * relating them to the just-created inspection detail. Returns the labels
    * of any defects that failed, so the caller can surface them without
@@ -101,13 +101,10 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Modal form state
-  // The catalog is just a convenience shortcut: selecting an entry fills the
-  // free-text field below, but the free-text field is what actually gets
-  // saved and is never required to come from the catalog.
   const [selectedDefectId, setSelectedDefectId] = useState<string>("");
-  const [defectLabel, setDefectLabel] = useState("");
   const [selectedBox, setSelectedBox] = useState("");
-  const quantity = boxDefectQuantity(isPendingMode
+  const [quantity, setQuantity] = useState("");
+  const selectedBoxRejectedQuantity = boxDefectQuantity(isPendingMode
     ? pendingSerialBoxes.find((box) => pendingBoxKey(box) === selectedBox)
     : serialBoxes.find((box) => String(box.id) === selectedBox));
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -154,31 +151,10 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     onTotalQuantityChange?.(total);
   }, [incidents, pendingDefects, isPendingMode, onTotalQuantityChange]);
 
-  // When the IT has exactly one expected defect, keep one automatic entry per
-  // box that has rejected pieces. Manual defects remain untouched.
-  useEffect(() => {
-    if (!isPendingMode || defects.length !== 1) return;
-    const expected = defects[0];
-    setPendingDefects((prev) => {
-      const manual = prev.filter((item) => !item.autoExpected);
-      const automatic = pendingSerialBoxes
-        .filter((box) => box.rejected_pieces > 0)
-        .map((box) => ({
-          tempId: `expected-${expected.id}-${pendingBoxKey(box)}`,
-          defect_id: expected.id,
-          defect_label: expected.name,
-          quantity: box.rejected_pieces,
-          boxKey: pendingBoxKey(box),
-          autoExpected: true,
-        }));
-      return [...manual, ...automatic];
-    });
-  }, [defects, isPendingMode, pendingSerialBoxes]);
-
   const resetModal = useCallback(() => {
     setSelectedDefectId("");
-    setDefectLabel("");
     setSelectedBox("");
+    setQuantity("");
     setEvidenceFile(null);
     setEvidencePreview(null);
     setUploadProgress(0);
@@ -186,29 +162,25 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     setEditingPendingId(null);
   }, []);
 
-  // Picking from the catalog just pre-fills the free-text label.
-  const handleSelectCatalogDefect = (value: string) => {
-    setSelectedDefectId(value);
-    const catalogDefect = defects.find((d) => String(d.id) === value);
-    if (catalogDefect) setDefectLabel(catalogDefect.name);
-  };
-
-  // Editing the text manually detaches it from the catalog entry (if any),
-  // since the label no longer necessarily matches the catalog name.
-  const handleDefectLabelChange = (value: string) => {
-    setDefectLabel(value);
-    setSelectedDefectId("");
-  };
+  useEffect(() => {
+    if (!isPendingMode) return;
+    setPendingDefects([]);
+    resetModal();
+  }, [isPendingMode, workInstructionId, resetModal]);
 
   const handleOpenAddModal = () => {
+    if (defects.length === 0) {
+      alert("La instrucción de trabajo no tiene defectos asociados");
+      return;
+    }
     resetModal();
     setIsModalOpen(true);
   };
 
   const handleOpenEditSaved = (incident: IIncident) => {
     setSelectedDefectId(incident.defect_id ? String(incident.defect_id) : "");
-    setDefectLabel(incident.defect_label || incident.defect_name);
     setSelectedBox(incident.inspection_detail_serial_number_id ? String(incident.inspection_detail_serial_number_id) : "");
+    setQuantity(incident.quantity ? String(incident.quantity) : "");
     setEvidenceFile(null);
     setEvidencePreview(null);
     setUploadProgress(0);
@@ -218,9 +190,9 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   };
 
   const handleOpenEditPending = (pending: IPendingDefect) => {
-    setSelectedDefectId(pending.defect_id ? String(pending.defect_id) : "");
-    setDefectLabel(pending.defect_label);
+    setSelectedDefectId(String(pending.defect_id));
     setSelectedBox(pending.boxKey);
+    setQuantity(String(pending.quantity));
     setEvidenceFile(pending.evidenceFile ?? null);
     // Use a fresh object URL for the modal preview so removing/replacing the
     // file while editing never revokes the URL the list thumbnail relies on.
@@ -270,21 +242,46 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     }
   };
 
+  const quantityAssignedToSelectedBox = (isPendingMode ? pendingDefects : incidents).reduce(
+    (sum, item) => {
+      const belongsToBox = isPendingMode
+        ? (item as IPendingDefect).boxKey === selectedBox
+        : String((item as IIncident).inspection_detail_serial_number_id) === selectedBox;
+      const isCurrentEntry = isPendingMode
+        ? (item as IPendingDefect).tempId === editingPendingId
+        : (item as IIncident).id === editingSavedId;
+      return belongsToBox && !isCurrentEntry ? sum + (item.quantity || 0) : sum;
+    },
+    0
+  );
+  const availableQuantity = Math.max(
+    0,
+    (selectedBoxRejectedQuantity ?? 0) - quantityAssignedToSelectedBox
+  );
+
   const handleSubmit = async () => {
-    const trimmedLabel = defectLabel.trim();
-    if (!trimmedLabel) {
-      alert("Escribe una descripción del defecto");
+    const selectedDefect = defects.find((defect) => String(defect.id) === selectedDefectId);
+    if (!selectedDefect) {
+      alert("Selecciona un defecto asociado a la instrucción de trabajo");
       return;
     }
     if (!selectedBox) {
       alert("Selecciona la caja/serie a la que pertenece el defecto");
       return;
     }
-    if (quantity == null || quantity <= 0) {
+    const parsedQuantity = Number(quantity);
+    if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+      alert("La cantidad debe ser un entero mayor que cero");
+      return;
+    }
+    if (selectedBoxRejectedQuantity == null || selectedBoxRejectedQuantity <= 0) {
       alert("La caja seleccionada debe tener piezas rechazadas registradas");
       return;
     }
-    const parsedQuantity = quantity;
+    if (parsedQuantity > availableQuantity) {
+      alert(`Solo quedan ${availableQuantity} piezas rechazadas por asignar en esta caja`);
+      return;
+    }
 
     setIsSubmitting(true);
     setUploadProgress(0);
@@ -303,8 +300,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
         }
 
         const result = await updateIncident(editingSavedId, {
-          defect_id: selectedDefectId ? Number(selectedDefectId) : null,
-          defect_label: trimmedLabel,
+          defect_id: selectedDefect.id,
           quantity: parsedQuantity,
           inspection_detail_serial_number_id: Number(selectedBox),
           ...(newEvidenceUrl ? { evidence_url: newEvidenceUrl } : {}),
@@ -331,11 +327,10 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
             p.tempId === editingPendingId
               ? {
                   ...p,
-                  defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
-                  defect_label: trimmedLabel,
+                  defect_id: selectedDefect.id,
+                  defect_label: selectedDefect.name,
                   quantity: parsedQuantity,
                   boxKey: selectedBox,
-                  autoExpected: false,
                   evidenceFile: evidenceFile ?? undefined,
                   evidencePreview,
                 }
@@ -358,8 +353,8 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
               typeof crypto !== "undefined" && crypto.randomUUID
                 ? crypto.randomUUID()
                 : `pending-${Date.now()}-${Math.random()}`,
-            defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
-            defect_label: trimmedLabel,
+            defect_id: selectedDefect.id,
+            defect_label: selectedDefect.name,
             quantity: parsedQuantity,
             boxKey: selectedBox,
             evidenceFile: evidenceFile ?? undefined,
@@ -382,8 +377,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
       }
 
       const result = await createIncident({
-        defect_id: selectedDefectId ? Number(selectedDefectId) : undefined,
-        defect_label: trimmedLabel,
+        defect_id: selectedDefect.id,
         inspection_detail_id: inspectionDetailId!,
         quantity: parsedQuantity,
         inspection_detail_serial_number_id: Number(selectedBox),
@@ -461,6 +455,32 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
   // Called by the parent form right after it creates the inspection detail -
   // uploads evidence and creates an incident for every defect gathered while
   // the detail didn't exist yet.
+  const validateDistribution = useCallback((): string | null => {
+    const boxes = isPendingMode ? pendingSerialBoxes : serialBoxes;
+    const entries = isPendingMode ? pendingDefects : incidents;
+    const boxKey = (box: ISerialLotInput | ISerialNumber) =>
+      isPendingMode ? pendingBoxKey(box as ISerialLotInput) : String((box as ISerialNumber).id);
+    const entryBoxKey = (entry: IPendingDefect | IIncident) =>
+      isPendingMode
+        ? (entry as IPendingDefect).boxKey
+        : String((entry as IIncident).inspection_detail_serial_number_id ?? "");
+
+    if (entries.some((entry) => !boxes.some((box) => boxKey(box) === entryBoxKey(entry)))) {
+      return "Hay defectos asociados a una caja que ya no está disponible.";
+    }
+
+    for (const [index, box] of boxes.entries()) {
+      const rejected = boxDefectQuantity(box) ?? 0;
+      const assigned = entries
+        .filter((entry) => entryBoxKey(entry) === boxKey(box))
+        .reduce((sum, entry) => sum + (entry.quantity || 0), 0);
+      if (assigned !== rejected) {
+        return `La caja ${index + 1} tiene ${rejected} piezas rechazadas, pero ${assigned} distribuidas entre defectos.`;
+      }
+    }
+    return null;
+  }, [incidents, isPendingMode, pendingDefects, pendingSerialBoxes, serialBoxes]);
+
   const commitPendingDefects = useCallback(
     async (newDetailId: number, createdSerials: ISerialNumber[]): Promise<string[]> => {
       const failed: string[] = [];
@@ -469,8 +489,8 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           // The API returns boxes in submission order; series can be empty or lots repeated.
           const boxIndex = pendingSerialBoxes.findIndex((box) => pendingBoxKey(box) === pending.boxKey);
           const serialId = createdSerials[boxIndex]?.id;
-          const currentQuantity = boxDefectQuantity(createdSerials[boxIndex]);
-          if (!serialId || currentQuantity == null || currentQuantity <= 0) {
+          const rejectedQuantity = boxDefectQuantity(createdSerials[boxIndex]);
+          if (!serialId || rejectedQuantity == null || rejectedQuantity <= 0) {
             failed.push(`${pending.defect_label} (caja sin rechazadas o no disponible)`);
             continue;
           }
@@ -480,10 +500,9 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           }
           const result = await createIncident({
             defect_id: pending.defect_id,
-            defect_label: pending.defect_label,
             inspection_detail_id: newDetailId,
             inspection_detail_serial_number_id: serialId,
-            quantity: currentQuantity,
+            quantity: pending.quantity,
             evidence_url: evidenceUrl,
           });
           if (!result.success) failed.push(pending.defect_label);
@@ -496,7 +515,11 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
     [pendingDefects, pendingSerialBoxes]
   );
 
-  useImperativeHandle(ref, () => ({ commitPendingDefects }), [commitPendingDefects]);
+  useImperativeHandle(
+    ref,
+    () => ({ commitPendingDefects, validateDistribution }),
+    [commitPendingDefects, validateDistribution]
+  );
 
   if (isLoading) {
     return (
@@ -520,12 +543,18 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           variant="outline"
           size="sm"
           onClick={handleOpenAddModal}
-          disabled={disabled}
+          disabled={disabled || defects.length === 0}
         >
           <Plus className="h-4 w-4 mr-1" />
           Agregar
         </Button>
       </div>
+
+      {!isLoading && defects.length === 0 && (
+        <p className="text-sm text-amber-700 dark:text-amber-300">
+          Asocia al menos un defecto a la instrucción de trabajo para poder capturarlo.
+        </p>
+      )}
 
       {/* Entries list */}
       {entryCount === 0 ? (
@@ -670,7 +699,14 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="defect-box">Caja / serie o lote *</Label>
-              <Select value={selectedBox} onValueChange={setSelectedBox} disabled={isSubmitting}>
+              <Select
+                value={selectedBox}
+                onValueChange={(value) => {
+                  setSelectedBox(value);
+                  setQuantity("");
+                }}
+                disabled={isSubmitting}
+              >
                 <SelectTrigger id="defect-box"><SelectValue placeholder="Selecciona una caja..." /></SelectTrigger>
                 <SelectContent>
                   {(isPendingMode ? pendingSerialBoxes : serialBoxes).map((box, index) => (
@@ -681,59 +717,47 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                 </SelectContent>
               </Select>
             </div>
-            {/* Catalog shortcut - optional, only pre-fills the free-text field below */}
-            {defects.length > 0 && (
-              <div className="space-y-2">
-                <Label htmlFor="defect-catalog">Seleccionar defecto de la IT (opcional)</Label>
-                <Select
-                  value={selectedDefectId}
-                  onValueChange={handleSelectCatalogDefect}
-                  disabled={isSubmitting}
-                >
-                  <SelectTrigger id="defect-catalog">
-                    <SelectValue placeholder="Selecciona un defecto asociado..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {defects.map((defect) => (
-                      <SelectItem key={defect.id} value={String(defect.id)}>
-                        {defect.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Defect description - free text, always required regardless of catalog */}
             <div className="space-y-2">
-              <Label htmlFor="defect-label">Descripción del Defecto *</Label>
-              <Input
-                id="defect-label"
-                placeholder="Ej: Golpe, Rebaba, Rayón..."
-                value={defectLabel}
-                onChange={(e) => handleDefectLabelChange(e.target.value)}
+              <Label htmlFor="defect-catalog">Defecto de la instrucción de trabajo *</Label>
+              <Select
+                value={selectedDefectId}
+                onValueChange={setSelectedDefectId}
                 disabled={isSubmitting}
-              />
+              >
+                <SelectTrigger id="defect-catalog">
+                  <SelectValue placeholder="Selecciona un defecto asociado..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {defects.map((defect) => (
+                    <SelectItem key={defect.id} value={String(defect.id)}>
+                      {defect.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Quantity */}
             <div className="space-y-2">
-              <Label htmlFor="quantity">Cantidad (automática)</Label>
+              <Label htmlFor="quantity">Cantidad *</Label>
               <Input
                 id="quantity"
                 type="number"
-                min="0"
-                placeholder="Selecciona una caja"
-                value={quantity ?? ""}
-                readOnly
+                min="1"
+                max={availableQuantity || undefined}
+                step="1"
+                placeholder="Ej: 10"
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
                 aria-describedby="defect-quantity-help"
-                className="bg-muted"
-                disabled={isSubmitting}
+                disabled={isSubmitting || !selectedBox}
               />
               <p id="defect-quantity-help" className="text-xs text-muted-foreground">
-                {selectedBox && (quantity == null || quantity === 0)
+                {selectedBox && (selectedBoxRejectedQuantity == null || selectedBoxRejectedQuantity === 0)
                   ? "Esta caja no tiene piezas rechazadas registradas."
-                  : "Corresponde a las piezas rechazadas de la caja seleccionada."}
+                  : selectedBox
+                    ? `${availableQuantity} de ${selectedBoxRejectedQuantity} rechazadas disponibles por asignar.`
+                    : "Selecciona una caja para capturar la cantidad."}
               </p>
             </div>
 
@@ -816,7 +840,14 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
             <Button
               type="button"
               onClick={handleSubmit}
-              disabled={isSubmitting || !defectLabel.trim() || !selectedBox || quantity == null || quantity <= 0}
+              disabled={
+                isSubmitting ||
+                !selectedDefectId ||
+                !selectedBox ||
+                !Number.isInteger(Number(quantity)) ||
+                Number(quantity) <= 0 ||
+                Number(quantity) > availableQuantity
+              }
             >
               {isSubmitting ? (
                 <>

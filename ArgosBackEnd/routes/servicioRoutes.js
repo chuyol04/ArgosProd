@@ -12,6 +12,9 @@ router.get('/', servicioHandlers.getServicios);
 // GET /services/by-client?client_id=1
 router.get('/by-client', servicioHandlers.getServiciosByCliente);
 
+// GET /services/client-users?client_id=1
+router.get('/client-users', servicioHandlers.getClientUsersForService);
+
 // GET /services/:id
 router.get('/:id', servicioHandlers.getServicioById);
 

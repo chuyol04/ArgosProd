@@ -171,12 +171,10 @@ export async function fetchReportOptions(): Promise<IReportOption[]> {
         id: number;
         part_name: string;
         service_name: string;
-        po_number: string | null;
       }) => ({
         id: r.id,
         part_name: r.part_name,
         service_name: r.service_name,
-        po_number: r.po_number,
       })
     );
   } catch (error) {

@@ -208,7 +208,7 @@ export default function UserEditModal({
                                     </SelectContent>
                                 </Select>
                                 <p className="text-xs text-muted-foreground">
-                                    Este usuario solo podrá ver los reportes de este cliente.
+                                    Los accesos específicos se administran desde la pantalla Servicios.
                                 </p>
                             </div>
                         )}

@@ -1,5 +1,8 @@
 import { cookies } from "next/headers";
-import { IInspectionReportsResponse } from "@/app/(protected)/reportes-inspeccion/types/reportes-inspeccion.types";
+import {
+  IInspectionReportsResponse,
+  IReportDashboard,
+} from "@/app/(protected)/reportes-inspeccion/types/reportes-inspeccion.types";
 import { ACTIVE_CLIENT_COOKIE, parseActiveClientId } from "@/lib/clientScope";
 
 const EXPRESS_BASE_URL = process.env.EXPRESS_BASE_URL;
@@ -66,5 +69,46 @@ export async function fetchInspectionReports(
   } catch (error) {
     console.error("Error fetching inspection reports:", error);
     return { reports: [], total: 0 };
+  }
+}
+
+export async function fetchReportDashboard(): Promise<IReportDashboard> {
+  const emptyDashboard = { total_hours: 0, hours_history: [] };
+  if (!EXPRESS_BASE_URL) {
+    console.error("EXPRESS_BASE_URL is not defined");
+    return emptyDashboard;
+  }
+
+  const cookieStore = await cookies();
+  const session = cookieStore.get("session")?.value;
+  if (!session) {
+    console.error("No session cookie");
+    return emptyDashboard;
+  }
+
+  const queryParams = new URLSearchParams();
+  const activeClientId = parseActiveClientId(
+    cookieStore.get(ACTIVE_CLIENT_COOKIE)?.value
+  );
+  if (activeClientId) queryParams.set("client_id", String(activeClientId));
+
+  try {
+    const res = await fetch(
+      `${EXPRESS_BASE_URL}/reports/dashboard?${queryParams.toString()}`,
+      {
+        method: "GET",
+        headers: { Cookie: `session=${session}` },
+        cache: "no-store",
+      }
+    );
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      console.error("Failed to fetch report dashboard:", json.motive);
+      return emptyDashboard;
+    }
+    return json.data ?? emptyDashboard;
+  } catch (error) {
+    console.error("Error fetching report dashboard:", error);
+    return emptyDashboard;
   }
 }

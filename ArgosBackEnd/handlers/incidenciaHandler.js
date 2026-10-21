@@ -1,62 +1,81 @@
 import MysqlClient from '../connections/mysqldb.js';
-import { isClientRole } from '../lib/constants/roles.js';
+import { appendServiceAccessScope, resolveClientScope } from '../lib/helpers/clientScope.js';
 
-// Never trust a manually supplied defect count: its source is the selected box.
-async function getBoxDefectQuantity(boxId, detailId) {
+async function validateIncidentAssignment({ detailId, boxId, defectId, quantity, excludeIncidentId }) {
   if (!boxId) {
     throw Object.assign(new Error('Selecciona una caja/serie o lote'), { status: 400 });
   }
+  if (!defectId) {
+    throw Object.assign(new Error('Selecciona un defecto asociado a la instrucción de trabajo'), { status: 400 });
+  }
+  const parsedQuantity = Number(quantity);
+  if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
+    throw Object.assign(new Error('La cantidad del defecto debe ser un entero mayor que cero'), { status: 400 });
+  }
+
   const [boxes] = await MysqlClient.execute(
-    'SELECT rejected_pieces FROM inspection_detail_serial_numbers WHERE id = ? AND inspection_detail_id = ? LIMIT 1',
-    [boxId, detailId]
+    `SELECT box.rejected_pieces, d.name AS defect_name
+       FROM inspection_detail_serial_numbers box
+       INNER JOIN inspection_details detail ON detail.id = box.inspection_detail_id
+       INNER JOIN inspection_reports report ON report.id = detail.inspection_report_id
+       INNER JOIN work_instruction_defects wid
+         ON wid.work_instruction_id = report.work_instruction_id AND wid.defect_id = ?
+       INNER JOIN defects d ON d.id = wid.defect_id
+      WHERE box.id = ? AND box.inspection_detail_id = ?
+      LIMIT 1`,
+    [defectId, boxId, detailId]
   );
   if (!boxes.length) {
-    throw Object.assign(new Error('La caja seleccionada no pertenece a esta inspección'), { status: 400 });
+    throw Object.assign(new Error('La caja o el defecto no pertenecen a la instrucción de trabajo'), { status: 400 });
   }
-  const quantity = boxes[0].rejected_pieces;
-  if (!Number.isInteger(quantity) || quantity <= 0) {
+  const rejectedPieces = Number(boxes[0].rejected_pieces);
+  if (!Number.isInteger(rejectedPieces) || rejectedPieces <= 0) {
     throw Object.assign(new Error('La caja seleccionada debe tener piezas rechazadas registradas'), { status: 400 });
   }
-  return quantity;
+
+  const params = [detailId, boxId];
+  let exclude = '';
+  if (excludeIncidentId) {
+    exclude = ' AND id <> ?';
+    params.push(excludeIncidentId);
+  }
+  const [totals] = await MysqlClient.execute(
+    `SELECT COALESCE(SUM(quantity), 0) AS assigned_quantity
+       FROM incidents
+      WHERE inspection_detail_id = ? AND inspection_detail_serial_number_id = ?${exclude}`,
+    params
+  );
+  const assignedQuantity = Number(totals[0]?.assigned_quantity || 0);
+  if (assignedQuantity + parsedQuantity > rejectedPieces) {
+    throw Object.assign(
+      new Error(`La cantidad supera las ${rejectedPieces - assignedQuantity} piezas rechazadas disponibles en esta caja`),
+      { status: 400 }
+    );
+  }
+
+  return { quantity: parsedQuantity, defectLabel: boxes[0].defect_name };
 }
 
 // CREATE
-// The defect catalog (defect_id) is optional - a defect can be captured as
-// free text (defect_label) instead. At least one of the two is required.
 export async function createIncidencia(req, res) {
   try {
-    const { defect_id, defect_label, inspection_detail_id, inspection_detail_serial_number_id, evidence_url } = req.body || {};
-    const trimmedLabel = typeof defect_label === 'string' ? defect_label.trim() : '';
+    const { defect_id, inspection_detail_id, inspection_detail_serial_number_id, quantity, evidence_url } = req.body || {};
 
     if (!inspection_detail_id) {
       return res.status(400).json({ success: false, motive: 'inspection_detail_id is required' });
     }
-    if (!defect_id && !trimmedLabel) {
-      return res.status(400).json({ success: false, motive: 'defect_id or defect_label (free text) is required' });
-    }
-
-    // Validate FK: Defects (only when referencing the catalog)
-    if (defect_id) {
-      const [def] = await MysqlClient.execute(
-        'SELECT id FROM defects WHERE id = ? LIMIT 1',
-        [defect_id]
-      );
-      if (def.length === 0) return res.status(404).json({ success: false, motive: 'Defect not found' });
-    }
-
-    // Validate FK: Inspection Details
-    const [det] = await MysqlClient.execute(
-      'SELECT id FROM inspection_details WHERE id = ? LIMIT 1',
-      [inspection_detail_id]
-    );
-    if (det.length === 0) return res.status(404).json({ success: false, motive: 'Inspection detail not found' });
-    const quantity = await getBoxDefectQuantity(inspection_detail_serial_number_id, inspection_detail_id);
+    const assignment = await validateIncidentAssignment({
+      detailId: inspection_detail_id,
+      boxId: inspection_detail_serial_number_id,
+      defectId: defect_id,
+      quantity,
+    });
 
     const [result] = await MysqlClient.execute(
       `INSERT INTO incidents
         (defect_id, defect_label, inspection_detail_id, inspection_detail_serial_number_id, quantity, evidence_url)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [defect_id || null, trimmedLabel || null, inspection_detail_id, inspection_detail_serial_number_id || null, quantity || null, evidence_url || null]
+      [defect_id, assignment.defectLabel, inspection_detail_id, inspection_detail_serial_number_id, assignment.quantity, evidence_url || null]
     );
 
     return res.status(201).json({
@@ -76,10 +95,11 @@ export async function getIncidencias(req, res) {
   try {
     const { inspection_detail_id } = req.query;
 
-    // Client-portal users only ever see defects on their own client's boxes.
-    const requester = res.locals.requester;
-    const isClient = requester && isClientRole(requester.roles);
-    if (isClient && !requester.client_id) {
+    const scope = resolveClientScope(req, res);
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
       return res.status(200).json({ success: true, data: [] });
     }
 
@@ -102,14 +122,13 @@ export async function getIncidencias(req, res) {
       params.push(inspection_detail_id);
     }
 
-    if (isClient) {
+    if (scope.clientId) {
       query += `
         INNER JOIN inspection_reports ir ON ir.id = di.inspection_report_id
         INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
         INNER JOIN services s ON s.id = wi.service_id
       `;
-      conditions.push('s.client_id = ?');
-      params.push(requester.client_id);
+      appendServiceAccessScope(scope, conditions, params);
     }
 
     if (conditions.length > 0) {
@@ -130,6 +149,17 @@ export async function getIncidencias(req, res) {
 export async function getIncidenciaById(req, res) {
   try {
     const { id } = req.params;
+    const scope = resolveClientScope(req, res);
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
+      return res.status(404).json({ success: false, motive: 'Incident not found' });
+    }
+
+    const conditions = ['i.id = ?'];
+    const params = [id];
+    appendServiceAccessScope(scope, conditions, params);
     const [rows] = await MysqlClient.execute(
       `SELECT i.*,
               COALESCE(d.name, i.defect_label) AS defect_name,
@@ -143,15 +173,10 @@ export async function getIncidenciaById(req, res) {
        INNER JOIN inspection_reports ir ON ir.id = di.inspection_report_id
        INNER JOIN work_instructions wi ON wi.id = ir.work_instruction_id
        INNER JOIN services s ON s.id = wi.service_id
-       WHERE i.id = ? LIMIT 1`,
-      [id]
+       WHERE ${conditions.join(' AND ')} LIMIT 1`,
+      params
     );
     if (rows.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
-
-    const requester = res.locals.requester;
-    if (requester && isClientRole(requester.roles) && rows[0].client_id !== requester.client_id) {
-      return res.status(404).json({ success: false, motive: 'Incident not found' });
-    }
 
     return res.status(200).json({ success: true, data: rows[0] });
   } catch (error) {
@@ -165,30 +190,35 @@ export async function updateIncidencia(req, res) {
   try {
     const { id } = req.params;
     const payload = { ...req.body };
+    delete payload.defect_label;
 
     // Check existence
     const [ex] = await MysqlClient.execute(
-      'SELECT id, inspection_detail_id, inspection_detail_serial_number_id FROM incidents WHERE id = ? LIMIT 1',
+      'SELECT id, defect_id, inspection_detail_id, inspection_detail_serial_number_id, quantity FROM incidents WHERE id = ? LIMIT 1',
       [id]
     );
     if (ex.length === 0) return res.status(404).json({ success: false, motive: 'Incident not found' });
 
-    // Validate FKs if new ones are sent (defect_id remains optional - null clears the catalog link)
-    if (payload.defect_id) {
-      const [d] = await MysqlClient.execute('SELECT id FROM defects WHERE id = ? LIMIT 1', [payload.defect_id]);
-      if (d.length === 0) return res.status(404).json({ success: false, motive: 'Defect (new) not found' });
-    }
-    if (payload.inspection_detail_id !== undefined) {
-      const [di] = await MysqlClient.execute('SELECT id FROM inspection_details WHERE id = ? LIMIT 1', [payload.inspection_detail_id]);
-      if (di.length === 0) return res.status(404).json({ success: false, motive: 'Inspection Detail (new) not found' });
-    }
-    // Evidence-only updates must not alter historical quantities or require a box.
-    if (['quantity', 'inspection_detail_serial_number_id', 'inspection_detail_id'].some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
-      const detailId = payload.inspection_detail_id ?? ex[0].inspection_detail_id;
-      const boxId = Object.prototype.hasOwnProperty.call(payload, 'inspection_detail_serial_number_id')
-        ? payload.inspection_detail_serial_number_id
-        : ex[0].inspection_detail_serial_number_id;
-      payload.quantity = await getBoxDefectQuantity(boxId, detailId);
+    // Evidence-only updates preserve historical rows. Any assignment change
+    // must use a defect configured for the report's work instruction.
+    if (['defect_id', 'quantity', 'inspection_detail_serial_number_id', 'inspection_detail_id'].some((field) => Object.prototype.hasOwnProperty.call(payload, field))) {
+      const requested = (field) => Object.prototype.hasOwnProperty.call(payload, field) ? payload[field] : ex[0][field];
+      const detailId = requested('inspection_detail_id');
+      const boxId = requested('inspection_detail_serial_number_id');
+      const defectId = requested('defect_id');
+      const quantity = requested('quantity');
+      const assignment = await validateIncidentAssignment({
+        detailId,
+        boxId,
+        defectId,
+        quantity,
+        excludeIncidentId: id,
+      });
+      payload.defect_id = defectId;
+      payload.inspection_detail_id = detailId;
+      payload.inspection_detail_serial_number_id = boxId;
+      payload.quantity = assignment.quantity;
+      payload.defect_label = assignment.defectLabel;
     }
 
     // Build dynamic SET clause

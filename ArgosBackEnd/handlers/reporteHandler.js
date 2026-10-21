@@ -2,21 +2,7 @@ import MysqlClient from '../connections/mysqldb.js';
 import ExcelJS from 'exceljs';
 import { sanitizeDateField, formatDateOnlyEs, formatTimeOnly } from '../lib/helpers/dateTimeHelpers.js';
 import { expandSerialAndDefectRows, getExportHours } from '../lib/helpers/reportExcelHelpers.js';
-import { isClientRole } from '../lib/constants/roles.js';
-import { resolveClientScope } from '../lib/helpers/clientScope.js';
-
-// po_hours: optional integer between 1 and 9999.
-// Returns { valid: true, value } or { valid: false } when present but out of range/non-integer.
-function validatePoHours(value) {
-  if (value === undefined || value === null || value === '') {
-    return { valid: true, value: null };
-  }
-  const num = Number(value);
-  if (!Number.isInteger(num) || num < 1 || num > 9999) {
-    return { valid: false };
-  }
-  return { valid: true, value: num };
-}
+import { appendServiceAccessScope, resolveClientScope } from '../lib/helpers/clientScope.js';
 
 // CREATE
 export async function createReporte(req, res) {
@@ -24,21 +10,13 @@ export async function createReporte(req, res) {
     const {
       work_instruction_id,
       start_date,
-      po_hours,
-      description,
       problem,
-      photo_url,
-      po_number
+      photo_url
     } = req.body || {};
 
     const safeStartDate = sanitizeDateField(start_date);
     if (!work_instruction_id || !safeStartDate) {
       return res.status(400).json({ success: false, motive: 'work_instruction_id and start_date are required' });
-    }
-
-    const poHoursCheck = validatePoHours(po_hours);
-    if (!poHoursCheck.valid) {
-      return res.status(400).json({ success: false, motive: 'po_hours must be an integer between 1 and 9999' });
     }
 
     // Validate IT (Work Instruction) exists
@@ -48,8 +26,8 @@ export async function createReporte(req, res) {
     }
 
     const [result] = await MysqlClient.execute(
-      `INSERT INTO inspection_reports (work_instruction_id, start_date, po_hours, description, problem, photo_url, po_number) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [work_instruction_id, safeStartDate, poHoursCheck.value, description || null, problem || null, photo_url || null, po_number || null]
+      `INSERT INTO inspection_reports (work_instruction_id, start_date, problem, photo_url) VALUES (?, ?, ?, ?)`,
+      [work_instruction_id, safeStartDate, problem || null, photo_url || null]
     );
 
     return res.status(201).json({ success: true, id: result.insertId, motive: 'Report created successfully' });
@@ -77,7 +55,7 @@ export async function getReportes(req, res) {
 
     let query = `
       SELECT
-        ir.id, ir.start_date, ir.description, ir.problem, ir.po_number, ir.po_hours,
+        ir.id, ir.start_date, ir.problem, ir.photo_url,
         wi.id AS work_instruction_id, wi.description AS work_instruction_description,
         wi.inspection_mode, wi.inspection_rate_per_hour,
         wi.part_id, p.name AS part_name,
@@ -106,15 +84,12 @@ export async function getReportes(req, res) {
     }
 
     if (search) {
-      conditions.push('(p.name LIKE ? OR s.name LIKE ? OR c.name LIKE ? OR ir.po_number LIKE ?)');
+      conditions.push('(p.name LIKE ? OR s.name LIKE ? OR c.name LIKE ?)');
       const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern, searchPattern);
+      params.push(searchPattern, searchPattern, searchPattern);
     }
 
-    if (scope.clientId) {
-      conditions.push('s.client_id = ?');
-      params.push(scope.clientId);
-    }
+    appendServiceAccessScope(scope, conditions, params);
 
     if (conditions.length > 0) {
       query += ` WHERE ${conditions.join(' AND ')}`;
@@ -154,11 +129,22 @@ export async function getReportes(req, res) {
 export async function getReporteById(req, res) {
   try {
     const { id } = req.params;
+    const scope = resolveClientScope(req, res);
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
+      return res.status(404).json({ success: false, motive: 'Report not found' });
+    }
+
+    const conditions = ['ir.id = ?'];
+    const params = [id];
+    appendServiceAccessScope(scope, conditions, params);
 
     // Get base report data + Work Instruction + Client + Service + Part
     const [reportRows] = await MysqlClient.execute(`
       SELECT
-        ir.*,
+        ir.id, ir.work_instruction_id, ir.start_date, ir.problem, ir.photo_url,
         wi.description AS work_instruction_description,
         wi.inspection_mode, wi.inspection_rate_per_hour,
         wi.part_id, p.name AS part_name,
@@ -169,27 +155,20 @@ export async function getReporteById(req, res) {
       INNER JOIN parts p ON p.id = wi.part_id
       INNER JOIN services s ON s.id = wi.service_id
       INNER JOIN clients c ON c.id = s.client_id
-      WHERE ir.id = ? LIMIT 1
-    `, [id]);
+      WHERE ${conditions.join(' AND ')} LIMIT 1
+    `, params);
 
     if (reportRows.length === 0) {
       return res.status(404).json({ success: false, motive: 'Report not found' });
     }
     const report = reportRows[0];
 
-    // Client-portal users may only see their own client's report - even when
-    // they guess/type an ID directly in the URL.
-    const requester = res.locals.requester;
-    if (requester && isClientRole(requester.roles) && report.client_id !== requester.client_id) {
-      return res.status(404).json({ success: false, motive: 'Report not found' });
-    }
-
     // Get associated inspections (part info comes from work_instruction)
     const [inspections] = await MysqlClient.execute(`
       SELECT
         idt.id,
         idt.lot_number, idt.inspector_id, u.name as inspector_name,
-        idt.inspection_date, idt.manufacture_date, idt.shift, idt.hours,
+        idt.inspection_date, idt.manufacture_date, idt.shift, idt.hours, idt.comments,
         idt.inspected_pieces, idt.accepted_pieces, idt.rejected_pieces, idt.reworked_pieces
       FROM inspection_details idt
       LEFT JOIN users u ON u.id = idt.inspector_id
@@ -220,7 +199,14 @@ export async function getReporteById(req, res) {
       }
     }
 
-    return res.status(200).json({ success: true, data: { report, inspections } });
+    const [documents] = await MysqlClient.execute(`
+      SELECT id, photo_url, comment, is_main_it
+      FROM work_instruction_evidence
+      WHERE work_instruction_id = ?
+      ORDER BY is_main_it DESC, id ASC
+    `, [report.work_instruction_id]);
+
+    return res.status(200).json({ success: true, data: { report, inspections, documents } });
   } catch (error) {
     console.error('Error getting report by ID:', error);
     return res.status(500).json({ success: false, motive: 'Server Error' });
@@ -245,22 +231,13 @@ export async function updateReporte(req, res) {
       }
     }
 
-    let poHoursCheck;
-    if (payload.po_hours !== undefined) {
-      poHoursCheck = validatePoHours(payload.po_hours);
-      if (!poHoursCheck.valid) {
-        return res.status(400).json({ success: false, motive: 'po_hours must be an integer between 1 and 9999' });
-      }
-    }
-
-    const fields = ['work_instruction_id', 'start_date', 'po_hours', 'description', 'problem', 'photo_url', 'po_number'];
+    const fields = ['work_instruction_id', 'start_date', 'problem', 'photo_url'];
     const sets = [];
     const params = [];
     for (const f of fields) {
       if (Object.prototype.hasOwnProperty.call(payload, f)) {
         let value = payload[f];
         if (f === 'start_date') value = sanitizeDateField(value);
-        else if (f === 'po_hours') value = poHoursCheck.value;
         sets.push(`${f} = ?`);
         params.push(value);
       }
@@ -316,11 +293,22 @@ export async function deleteReporte(req, res) {
 export async function exportReporteToExcel(req, res) {
   try {
     const { id } = req.params;
+    const scope = resolveClientScope(req, res);
+    if (scope.invalid) {
+      return res.status(400).json({ success: false, motive: 'client_id must be a positive integer' });
+    }
+    if (scope.denyAll) {
+      return res.status(404).json({ success: false, motive: 'Report not found' });
+    }
+
+    const conditions = ['ir.id = ?'];
+    const params = [id];
+    appendServiceAccessScope(scope, conditions, params);
 
     // Get base report data + Work Instruction + Client + Service + Part
     const [reportRows] = await MysqlClient.execute(`
       SELECT
-        ir.*,
+        ir.id, ir.work_instruction_id, ir.start_date, ir.problem, ir.photo_url,
         wi.description AS work_instruction_description,
         wi.inspection_mode, wi.inspection_rate_per_hour,
         wi.part_id, p.name AS part_name, p.description AS part_description,
@@ -331,18 +319,13 @@ export async function exportReporteToExcel(req, res) {
       INNER JOIN parts p ON p.id = wi.part_id
       INNER JOIN services s ON s.id = wi.service_id
       INNER JOIN clients c ON c.id = s.client_id
-      WHERE ir.id = ? LIMIT 1
-    `, [id]);
+      WHERE ${conditions.join(' AND ')} LIMIT 1
+    `, params);
 
     if (reportRows.length === 0) {
       return res.status(404).json({ success: false, motive: 'Report not found' });
     }
     const report = reportRows[0];
-
-    const requester = res.locals.requester;
-    if (requester && isClientRole(requester.roles) && report.client_id !== requester.client_id) {
-      return res.status(404).json({ success: false, motive: 'Report not found' });
-    }
 
     const inspectionMode = report.inspection_mode === 'full_time' ? 'full_time' : 'rate';
     const isRateReport = inspectionMode === 'rate';
@@ -359,7 +342,7 @@ export async function exportReporteToExcel(req, res) {
     `, [id]);
 
     // Get defects (incidents) for every box/detail above, grouped by detail.
-    // Free-text defects (no catalog entry) are covered by COALESCE(d.name, i.defect_label).
+    // Historical free-text defects remain covered by COALESCE(d.name, i.defect_label).
     const incidentsByDetail = new Map();
     const serialLotsByDetail = new Map();
     if (inspections.length > 0) {
@@ -426,12 +409,9 @@ export async function exportReporteToExcel(req, res) {
       ['Cliente', report.client_name],
       ['Servicio', report.service_name],
       ['Pieza', report.part_name],
-      ['Número de PO', report.po_number || '-'],
       ['Fecha de Inicio', formatDateOnlyEs(report.start_date)],
-      ['Horas de PO', report.po_hours || '-'],
       ['Modalidad', isRateReport ? 'RATE' : 'FULL TIME'],
       ['Rate (piezas por hora)', isRateReport ? (report.inspection_rate_per_hour || '-') : '-'],
-      ['Descripción', report.description || '-'],
       ['Problema', report.problem || '-'],
     ];
 

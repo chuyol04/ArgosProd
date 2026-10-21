@@ -205,7 +205,7 @@ export async function getInstruccionTrabajoById(req, res) {
 
     // Associated inspection reports (all)
     const [reports] = await MysqlClient.execute(
-      'SELECT id, start_date, po_hours, problem, po_number, description FROM inspection_reports WHERE work_instruction_id = ? ORDER BY start_date DESC',
+      'SELECT id, start_date, problem FROM inspection_reports WHERE work_instruction_id = ? ORDER BY start_date DESC',
       [id]
     );
 

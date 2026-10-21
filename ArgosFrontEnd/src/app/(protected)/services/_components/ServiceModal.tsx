@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -19,12 +20,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 import {
   createService,
+  getClientUsersForService,
   updateService,
   getServiceById,
 } from "@/app/(protected)/services/actions/services.actions";
+import { IClientPortalUser } from "@/app/(protected)/services/types/services.types";
 import { IClient } from "@/app/(protected)/clients/types/clients.types";
 import { toDateInputValue, emptyToUndefined } from "@/lib/dateTimeUtils";
 
@@ -50,7 +53,10 @@ export default function ServiceModal({
 
   const [isPending, startTransition] = useTransition();
   const [isLoading, setIsLoading] = useState(false);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clientUsers, setClientUsers] = useState<IClientPortalUser[]>([]);
+  const [selectedClientUserIds, setSelectedClientUserIds] = useState<number[]>([]);
   const defaultClientId = clients.length === 1 ? String(clients[0].id) : "";
   const [formData, setFormData] = useState({
     client_id: defaultClientId,
@@ -69,6 +75,8 @@ export default function ServiceModal({
         start_date: "",
         end_date: "",
       });
+      setClientUsers([]);
+      setSelectedClientUserIds([]);
     }
   }, [open, defaultClientId]);
 
@@ -86,6 +94,7 @@ export default function ServiceModal({
               start_date: toDateInputValue(result.data.start_date),
               end_date: toDateInputValue(result.data.end_date),
             });
+            setSelectedClientUserIds(result.data.client_user_ids ?? []);
           } else {
             setError(result.error || "Error al cargar servicio");
           }
@@ -99,8 +108,51 @@ export default function ServiceModal({
     }
   }, [open, serviceId, isEditMode]);
 
+  const selectedClientId = Number(formData.client_id);
+  useEffect(() => {
+    if (!open || !Number.isSafeInteger(selectedClientId) || selectedClientId <= 0) {
+      setClientUsers([]);
+      setIsUsersLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsUsersLoading(true);
+    getClientUsersForService(selectedClientId)
+      .then((result) => {
+        if (cancelled) return;
+        if (result.success) {
+          setClientUsers(result.data ?? []);
+        } else {
+          setClientUsers([]);
+          setError(result.error || "Error al cargar usuarios del cliente");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsUsersLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, selectedClientId]);
+
   const handleChange = (field: keyof typeof formData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleClientChange = (value: string) => {
+    setError(null);
+    setSelectedClientUserIds([]);
+    handleChange("client_id", value);
+  };
+
+  const toggleClientUser = (userId: number, checked: boolean) => {
+    setSelectedClientUserIds((current) =>
+      checked
+        ? [...new Set([...current, userId])]
+        : current.filter((id) => id !== userId)
+    );
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -120,6 +172,7 @@ export default function ServiceModal({
           name: formData.name || undefined,
           start_date: emptyToUndefined(formData.start_date),
           end_date: emptyToUndefined(formData.end_date),
+          client_user_ids: selectedClientUserIds,
         });
       } else {
         result = await createService({
@@ -127,6 +180,7 @@ export default function ServiceModal({
           start_date: formData.start_date,
           end_date: emptyToUndefined(formData.end_date),
           name: formData.name || undefined,
+          client_user_ids: selectedClientUserIds,
         });
       }
 
@@ -145,7 +199,7 @@ export default function ServiceModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[560px]">
         <DialogHeader>
           <DialogTitle>
             {isCreateMode ? "Crear Servicio" : "Actualizar Servicio"}
@@ -168,7 +222,7 @@ export default function ServiceModal({
                 <Label htmlFor="client">Cliente *</Label>
                 <Select
                   value={formData.client_id}
-                  onValueChange={(value) => handleChange("client_id", value)}
+                  onValueChange={handleClientChange}
                   disabled={isPending}
                 >
                   <SelectTrigger id="client" className="w-full">
@@ -188,6 +242,60 @@ export default function ServiceModal({
                     )}
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <div className="flex items-center justify-between gap-3">
+                  <Label>Usuarios cliente con acceso</Label>
+                  <span className="text-xs text-muted-foreground">
+                    {selectedClientUserIds.length} seleccionado(s)
+                  </span>
+                </div>
+                <div className="rounded-md border">
+                  {isUsersLoading ? (
+                    <div className="flex items-center justify-center gap-2 px-3 py-6 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Cargando usuarios...
+                    </div>
+                  ) : !formData.client_id ? (
+                    <p className="px-3 py-4 text-sm text-muted-foreground">
+                      Selecciona un cliente para ver sus usuarios.
+                    </p>
+                  ) : clientUsers.length === 0 ? (
+                    <div className="flex gap-2 px-3 py-4 text-sm text-muted-foreground">
+                      <Users className="mt-0.5 h-4 w-4 shrink-0" />
+                      <p>
+                        Este cliente aún no tiene usuarios activos con rol Cliente. Créelos en Usuarios y vuelve a este servicio.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="max-h-44 divide-y overflow-y-auto">
+                      {clientUsers.map((user) => {
+                        const checked = selectedClientUserIds.includes(user.id);
+                        return (
+                          <label
+                            key={user.id}
+                            className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-muted/50"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(value) => toggleClientUser(user.id, value === true)}
+                              disabled={isPending}
+                              aria-label={`Dar acceso a ${user.name}`}
+                            />
+                            <span className="min-w-0">
+                              <span className="block truncate text-sm font-medium">{user.name}</span>
+                              <span className="block truncate text-xs text-muted-foreground">{user.email}</span>
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Solo los usuarios seleccionados podrán consultar los reportes, detalles y Excel de este servicio.
+                </p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="name">Descripción</Label>
@@ -233,7 +341,7 @@ export default function ServiceModal({
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={isPending}>
+              <Button type="submit" disabled={isPending || isUsersLoading}>
                 {isPending ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

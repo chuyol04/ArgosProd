@@ -81,7 +81,6 @@ export default function ReportsTable({ initialData }: Props) {
         service_name: report.service_name,
         client_name: report.client_name,
         start_date: report.start_date,
-        po_number: report.po_number || "-",
       })),
     [initialData.reports]
   );
@@ -137,7 +136,7 @@ export default function ReportsTable({ initialData }: Props) {
               <div className="flex gap-2">
                 <Input
                   id="search"
-                  placeholder="Buscar por pieza, servicio, cliente o PO..."
+                  placeholder="Buscar por pieza, servicio o cliente..."
                   className="min-w-0 flex-1"
                   value={searchInput}
                   onChange={(e) => setSearchInput(e.target.value)}

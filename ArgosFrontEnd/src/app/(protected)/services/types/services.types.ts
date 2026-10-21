@@ -6,6 +6,13 @@ export interface IService {
     client_id: number;
     client_name: string;
     client_email: string;
+    client_user_ids?: number[];
+}
+
+export interface IClientPortalUser {
+    id: number;
+    name: string;
+    email: string;
 }
 
 export interface IServicesResponse {
@@ -18,6 +25,7 @@ export interface CreateServiceData {
     start_date: string;
     end_date?: string;
     name?: string;
+    client_user_ids?: number[];
 }
 
 export interface UpdateServiceData {
@@ -25,6 +33,7 @@ export interface UpdateServiceData {
     start_date?: string;
     end_date?: string;
     name?: string;
+    client_user_ids?: number[];
 }
 
 export interface ICollaborator {
@@ -49,4 +58,5 @@ export interface IServiceDetails {
         part_name: string;
     }[];
     collaborators: ICollaborator[];
+    client_users: IClientPortalUser[];
 }

@@ -81,7 +81,7 @@ CREATE TABLE users (
     email VARCHAR(100) UNIQUE NOT NULL,
     phone_number VARCHAR(50), -- Changed from 'contact'
     is_active BOOLEAN DEFAULT TRUE,
-    client_id INT NULL, -- Set only for users with role 'Cliente': the single client they're scoped to.
+    client_id INT NULL, -- Owning client for role 'Cliente'; service_client_users narrows service access.
     FOREIGN KEY (client_id) REFERENCES clients(id)
 );
 
@@ -151,8 +151,8 @@ CREATE TABLE incidents (
     id INT AUTO_INCREMENT PRIMARY KEY,
     inspection_detail_id INT NOT NULL,
     inspection_detail_serial_number_id INT,
-    defect_id INT, -- Optional: catalog reference. NULL when captured as free text.
-    defect_label VARCHAR(150), -- Free-text defect description, independent of the catalog.
+    defect_id INT, -- Required by the API for new captures; nullable for historical rows.
+    defect_label VARCHAR(150), -- Snapshot/fallback label retained for historical compatibility.
     quantity INT,
     evidence_url TEXT,
     FOREIGN KEY (inspection_detail_id) REFERENCES inspection_details(id),
@@ -179,6 +179,20 @@ CREATE TABLE user_roles (
     PRIMARY KEY (user_id, role_id),
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (role_id) REFERENCES roles(id)
+);
+
+-- -----------------------------------------------------
+-- Table `service_client_users`
+-- Explicitly grants a client-portal user access to one service. A service
+-- keeps a single owning client, but several users from that client may view
+-- its reports concurrently.
+-- -----------------------------------------------------
+CREATE TABLE service_client_users (
+    service_id INT NOT NULL,
+    user_id INT NOT NULL,
+    PRIMARY KEY (service_id, user_id),
+    FOREIGN KEY (service_id) REFERENCES services(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- -----------------------------------------------------

@@ -1,10 +1,7 @@
 export interface IInspectionReport {
   id: number;
   start_date: string;
-  description: string | null;
   problem: string | null;
-  po_number: string | null;
-  po_hours: number | null;
   photo_url: string | null;
   work_instruction_id: number;
   work_instruction_description: string | null;
@@ -31,12 +28,20 @@ export interface IInspectionReportsResponse {
   total: number;
 }
 
+export interface IReportHoursPoint {
+  date: string;
+  daily_hours: number;
+  accumulated_hours: number;
+}
+
+export interface IReportDashboard {
+  total_hours: number;
+  hours_history: IReportHoursPoint[];
+}
+
 export interface CreateInspectionReportData {
   work_instruction_id: number;
   start_date: string;
-  po_number?: string;
-  po_hours?: number;
-  description?: string;
   problem?: string;
   photo_url?: string;
 }
@@ -44,9 +49,6 @@ export interface CreateInspectionReportData {
 export interface UpdateInspectionReportData {
   work_instruction_id?: number;
   start_date?: string;
-  po_number?: string;
-  po_hours?: number;
-  description?: string;
   problem?: string;
   photo_url?: string;
 }
@@ -71,16 +73,25 @@ export interface IInspectionDetail {
   manufacture_date?: string | null;
   shift: string | null;
   hours: number | null;
+  comments: string | null;
   inspected_pieces: number | null;
   accepted_pieces: number | null;
   rejected_pieces: number | null;
   reworked_pieces?: number | null;
 }
 
+export interface IWorkInstructionDocument {
+  id: number;
+  photo_url: string | null;
+  comment: string | null;
+  is_main_it: number | boolean;
+}
+
 // Full report details for the modal
 export interface IInspectionReportDetails {
   report: IInspectionReport;
   inspections: IInspectionDetail[];
+  documents: IWorkInstructionDocument[];
 }
 
 // Work instruction option for select dropdown
@@ -88,7 +99,6 @@ export interface IWorkInstructionOption {
   id: number;
   start_date: string | null;
   inspection_mode: "rate" | "full_time";
-  description: string | null;
   problem: string | null;
   part_name: string;
   service_name: string;

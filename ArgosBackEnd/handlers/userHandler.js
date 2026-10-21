@@ -259,6 +259,27 @@ export async function updateUser(req, res) {
             }
         }
 
+        // Remove service grants that are no longer valid after changing the
+        // user's client or role. Valid assignments are intentionally kept.
+        await MysqlClient.execute(
+            `DELETE scu
+             FROM service_client_users scu
+             INNER JOIN services s ON s.id = scu.service_id
+             INNER JOIN users u ON u.id = scu.user_id
+             WHERE scu.user_id = ?
+               AND (
+                 u.client_id IS NULL
+                 OR s.client_id <> u.client_id
+                 OR NOT EXISTS (
+                   SELECT 1
+                   FROM user_roles ur
+                   INNER JOIN roles r ON r.id = ur.role_id
+                   WHERE ur.user_id = u.id AND r.name = 'Cliente'
+                 )
+               )`,
+            [id]
+        );
+
         return res.status(200).json({ success: true, motive: 'User updated successfully' });
     } catch (error) {
         console.error('Update user error:', error);

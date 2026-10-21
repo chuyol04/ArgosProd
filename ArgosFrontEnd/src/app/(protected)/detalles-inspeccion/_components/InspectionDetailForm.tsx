@@ -344,7 +344,7 @@ export default function InspectionDetailForm({
   );
 
   // Sum of defect quantities reported by DefectsSection, compared against
-  // rejected pieces - shown as a non-blocking visual warning when they differ.
+  // rejected pieces. The per-box distribution is validated before saving.
   const [defectsTotalQuantity, setDefectsTotalQuantity] = useState(0);
   const rejectedPieces = formData.rejected_pieces || 0;
   const defectsMismatch =
@@ -362,6 +362,12 @@ export default function InspectionDetailForm({
         el?.scrollIntoView({ behavior: "smooth", block: "center" });
         el?.querySelector<HTMLElement>("input, button, select, textarea")?.focus();
       }
+      return;
+    }
+
+    const defectDistributionError = defectsSectionRef.current?.validateDistribution();
+    if (defectDistributionError) {
+      setError(defectDistributionError);
       return;
     }
 
@@ -391,8 +397,10 @@ export default function InspectionDetailForm({
             alert(
               `El detalle se creó, pero no se pudieron guardar estos defectos: ${failedDefects.join(", ")}. Puedes agregarlos de nuevo desde la pantalla del detalle.`
             );
+            router.push(`/detalles-inspeccion/${result.id}`);
+            return;
           }
-          router.push(`/detalles-inspeccion/${result.id}`);
+          router.push("/home");
         } else {
           setError(result.error || "Error al crear detalle");
         }
@@ -524,7 +532,7 @@ export default function InspectionDetailForm({
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-medium">Información del Reporte</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             <div>
               <p className="text-xs text-muted-foreground">Pieza</p>
               <p className="text-sm font-medium">{detail.part_name}</p>
@@ -536,10 +544,6 @@ export default function InspectionDetailForm({
             <div>
               <p className="text-xs text-muted-foreground">Cliente</p>
               <p className="text-sm font-medium">{detail.client_name}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">PO</p>
-              <p className="text-sm font-medium">{detail.po_number || "-"}</p>
             </div>
           </CardContent>
         </Card>
@@ -568,7 +572,6 @@ export default function InspectionDetailForm({
                   reports.map((report) => (
                     <SelectItem key={report.id} value={String(report.id)}>
                       #{report.id} - {report.part_name} ({report.service_name})
-                      {report.po_number && ` - PO: ${report.po_number}`}
                     </SelectItem>
                   ))
                 )}

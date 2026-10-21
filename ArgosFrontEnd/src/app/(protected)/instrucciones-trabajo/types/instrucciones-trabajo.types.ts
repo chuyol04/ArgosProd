@@ -65,10 +65,7 @@ export interface IEvidence {
 export interface IInspectionReport {
     id: number;
     start_date: string;
-    po_hours: number | null;
     problem: string | null;
-    po_number: string | null;
-    description: string | null;
 }
 
 // Collaborator (user with role)

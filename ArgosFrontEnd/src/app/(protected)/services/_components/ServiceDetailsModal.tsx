@@ -28,6 +28,7 @@ export default function ServiceDetailsModal({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [details, setDetails] = useState<IServiceDetails | null>(null);
+  const clientUsers = details?.client_users ?? [];
 
   // Reset state when modal closes
   useEffect(() => {
@@ -159,6 +160,35 @@ export default function ServiceDetailsModal({
               ) : (
                 <p className="text-sm text-muted-foreground">
                   No hay colaboradores asociados.
+                </p>
+              )}
+            </div>
+
+            {/* Client portal access */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-medium text-muted-foreground">
+                Usuarios cliente con acceso ({clientUsers.length})
+              </h3>
+              {clientUsers.length > 0 ? (
+                <div className="space-y-2">
+                  {clientUsers.map((user) => (
+                    <div
+                      key={user.id}
+                      className="flex items-center justify-between gap-3 rounded-lg bg-muted/50 p-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{user.name}</p>
+                        <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-blue-100 px-2 py-1 text-xs text-blue-700">
+                        Solo lectura
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Ningún usuario cliente tiene acceso a este servicio.
                 </p>
               )}
             </div>

@@ -28,19 +28,15 @@ export interface IIncident {
 }
 
 export interface CreateIncidentData {
-  /** Optional catalog reference - a defect can be free text instead. */
-  defect_id?: number;
-  /** Free-text defect description. Required when defect_id is not provided. */
-  defect_label?: string;
+  defect_id: number;
   inspection_detail_id: number;
-  inspection_detail_serial_number_id?: number;
-  quantity?: number;
+  inspection_detail_serial_number_id: number;
+  quantity: number;
   evidence_url?: string;
 }
 
 export interface UpdateIncidentData {
   defect_id?: number | null;
-  defect_label?: string | null;
   inspection_detail_id?: number;
   inspection_detail_serial_number_id?: number | null;
   quantity?: number | null;
@@ -49,6 +45,7 @@ export interface UpdateIncidentData {
 
 export async function fetchDefects(workInstructionId?: number): Promise<IDefect[]> {
   try {
+    if (!workInstructionId) return [];
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
     }
@@ -60,8 +57,7 @@ export async function fetchDefects(workInstructionId?: number): Promise<IDefect[
       throw new Error("No session cookie");
     }
 
-    const query = workInstructionId ? `?work_instruction_id=${workInstructionId}` : "";
-    const res = await fetch(`${EXPRESS_BASE_URL}/defects${query}`, {
+    const res = await fetch(`${EXPRESS_BASE_URL}/defects?work_instruction_id=${workInstructionId}`, {
       method: "GET",
       headers: {
         Cookie: `session=${session}`,
