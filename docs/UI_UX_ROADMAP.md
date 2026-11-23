@@ -51,7 +51,7 @@ Estado: completada en el commit `bd5c115`.
 
 ### UI/UX-4 — Catálogos e instrucciones
 
-Estado: siguiente fase.
+Estado: completada.
 
 Pantallas:
 
@@ -69,9 +69,17 @@ Objetivos:
 - Organizar el modal de instrucciones en información, modalidad, defectos, colaboradores y documentos.
 - Reducir scroll anidado y conservar todos los datos actuales.
 
+Resultado:
+
+- Encabezados, búsqueda, paginación, vacíos y tarjetas móviles comparten el mismo patrón.
+- El Inspector ve los catálogos en modo consulta sin acciones de creación, edición o eliminación.
+- Servicios separa los datos contractuales de los usuarios Cliente con acceso.
+- El modal de instrucciones organiza información, modalidad, defectos, colaboradores y documentos con un solo desplazamiento principal.
+- Validación visual realizada en 390 px y 1440 px sin cambios de contratos, rutas o persistencia.
+
 ### UI/UX-5 — Portal del cliente
 
-Estado: pendiente.
+Estado: siguiente fase.
 
 - Diferenciar cero real, error, acceso restringido y no encontrado.
 - Mejorar lectura móvil de reportes, horas y gráficas.

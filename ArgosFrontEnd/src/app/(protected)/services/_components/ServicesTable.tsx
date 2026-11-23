@@ -4,33 +4,14 @@ import { IServicesResponse } from "@/app/(protected)/services/types/services.typ
 import { IClient } from "@/app/(protected)/clients/types/clients.types";
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Eye,
-  Plus,
-  Search,
-} from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, Eye, Plus } from "lucide-react";
 import ServiceModal from "./ServiceModal";
 import ServiceDetailsModal from "./ServiceDetailsModal";
 import { deleteService } from "@/app/(protected)/services/actions/services.actions";
@@ -42,6 +23,12 @@ import {
 } from "@/lib/dateTimeUtils";
 import { useUser } from "@/contexts/users/userContext";
 import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogPagination,
+  CatalogSearch,
+} from "@/components/common/CatalogPageElements";
 
 type ModalMode = "create" | "edit";
 
@@ -94,7 +81,7 @@ export default function ServicesTable({ initialData, clients }: Props) {
       setUrlParams({ search: searchInput || null, page: null });
     }, 350);
     return () => clearTimeout(timeout);
-  }, [searchInput]);
+  }, [qSearch, searchInput, setUrlParams]);
 
   const handleSearch = () => {
     setUrlParams({ search: searchInput || null, page: null });
@@ -150,37 +137,27 @@ export default function ServicesTable({ initialData, clients }: Props) {
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center justify-between">
-        <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
-          Servicios
-        </h1>
-        {!isInspectorOnly && <Button onClick={() => openModal("create")}>
-          <Plus className="mr-2 h-4 w-4" />
-          Crear Servicio
-        </Button>}
-      </div>
+      <CatalogPageHeader
+        title="Servicios"
+        description="Revisa el periodo de cada servicio, su cliente y las instrucciones de trabajo relacionadas."
+        readOnly={isInspectorOnly}
+        action={!isInspectorOnly ? (
+          <Button className="w-full sm:w-auto" onClick={() => openModal("create")}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+            Nuevo servicio
+          </Button>
+        ) : undefined}
+      />
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 lg:gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row lg:gap-4">
-          <div className="flex w-full flex-col gap-2">
-            <Label htmlFor="search">Buscar:</Label>
-            <div className="flex gap-2">
-              <Input
-                id="search"
-                placeholder="Buscar por descripción o cliente..."
-                className="min-w-0 flex-1"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-              <Button type="button" variant="outline" size="icon" onClick={handleSearch}>
-                <Search className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CatalogSearch
+        id="services-search"
+        label="Buscar servicios"
+        placeholder="Descripción o cliente"
+        value={searchInput}
+        onChange={setSearchInput}
+        onSubmit={handleSearch}
+      />
 
       {/* Table - Desktop */}
       <div className="border-border hidden overflow-hidden rounded-lg border md:block">
@@ -246,7 +223,7 @@ export default function ServicesTable({ initialData, clients }: Props) {
                   <td className="p-3 text-center lg:p-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" aria-label={`Acciones para el servicio ${record.id}`}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -255,18 +232,17 @@ export default function ServicesTable({ initialData, clients }: Props) {
                           <Eye className="mr-2 h-4 w-4" />
                           Ver Detalles
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Actualizar
-                        </DropdownMenuItem>
                         {!isInspectorOnly && (
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(record.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Borrar
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar servicio
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar servicio
+                            </DropdownMenuItem>
+                          </>
                         )}
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -275,8 +251,8 @@ export default function ServicesTable({ initialData, clients }: Props) {
               ))}
               {tableRows.length === 0 && (
                 <tr>
-                  <td className="text-muted-foreground p-4 text-sm" colSpan={7}>
-                    No hay servicios registrados.
+                  <td className="text-muted-foreground p-8 text-center text-sm" colSpan={7}>
+                    No hay servicios que coincidan con la búsqueda.
                   </td>
                 </tr>
               )}
@@ -320,7 +296,7 @@ export default function ServicesTable({ initialData, clients }: Props) {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" aria-label={`Acciones para el servicio ${record.id}`}>
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -329,18 +305,17 @@ export default function ServicesTable({ initialData, clients }: Props) {
                     <Eye className="mr-2 h-4 w-4" />
                     Ver Detalles
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Actualizar
-                  </DropdownMenuItem>
                   {!isInspectorOnly && (
-                    <DropdownMenuItem
-                      onClick={() => handleDelete(record.id)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Borrar
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Editar servicio
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Eliminar servicio
+                      </DropdownMenuItem>
+                    </>
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -348,62 +323,22 @@ export default function ServicesTable({ initialData, clients }: Props) {
           </div>
         ))}
         {tableRows.length === 0 && (
-          <div className="text-muted-foreground text-sm">No hay servicios registrados.</div>
+          <CatalogEmptyState
+            title={qSearch ? "Sin resultados" : "Aún no hay servicios"}
+            description={qSearch ? "Prueba con otra descripción o cliente." : "Los servicios aparecerán aquí cuando se registren."}
+          />
         )}
       </div>
 
       {/* Pagination */}
-      <div className="flex flex-col items-center justify-between gap-4 text-sm sm:flex-row">
-        <div className="flex items-center gap-4 lg:gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-              Filas por página
-            </span>
-            <Select value={String(rowsPerPage)} onValueChange={changeLimit}>
-              <SelectTrigger className="w-[4.5rem]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-            Página {currentPage}
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(1)}
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(currentPage - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={!hasMore}
-              onClick={() => goToPage(currentPage + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <CatalogPagination
+        rowsPerPage={rowsPerPage}
+        currentPage={currentPage}
+        hasMore={hasMore}
+        onRowsPerPageChange={changeLimit}
+        onGoToPage={goToPage}
+        total={initialData.total}
+      />
 
         {/* Unified Service Modal (Create/Edit) */}
         <ServiceModal

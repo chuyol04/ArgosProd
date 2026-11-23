@@ -3,8 +3,6 @@
 import { useMemo, useState } from "react";
 import { IDefectsResponse } from "@/app/(protected)/defects/types/defects.types";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,6 +14,14 @@ import DefectDetailModal from "./DefectDetailModal";
 import DefectModal from "./DefectModal";
 import { deleteDefect } from "@/app/(protected)/defects/actions/defects.actions";
 import PageContainer from "@/components/layout/PageContainer";
+import { useUser } from "@/contexts/users/userContext";
+import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogPagination,
+  CatalogSearch,
+} from "@/components/common/CatalogPageElements";
 
 type ModalMode = "create" | "edit";
 
@@ -24,7 +30,11 @@ type Props = {
 };
 
 export default function DefectsTable({ initialData }: Props) {
+  const { user } = useUser();
+  const isInspectorOnly = hasOnlyInspectorRole(user?.roles ?? []);
   const [search, setSearch] = useState("");
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedDetailId, setSelectedDetailId] = useState<number | null>(null);
@@ -50,7 +60,7 @@ export default function DefectsTable({ initialData }: Props) {
     if (!result.success) alert(result.error || "Error al eliminar defecto");
   };
 
-  const defects = useMemo(() => {
+  const filteredDefects = useMemo(() => {
     const all = initialData.defects ?? [];
     if (!search.trim()) return all;
     const q = search.toLowerCase();
@@ -61,30 +71,46 @@ export default function DefectsTable({ initialData }: Props) {
     );
   }, [initialData.defects, search]);
 
+  const defects = filteredDefects.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
+  const hasMore = currentPage * rowsPerPage < filteredDefects.length;
+
+  const handleSearchChange = (value: string) => {
+    setSearch(value);
+    setCurrentPage(1);
+  };
+
+  const changeLimit = (value: string) => {
+    setRowsPerPage(Number(value));
+    setCurrentPage(1);
+  };
+
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
-            Catálogo de Defectos
-          </h1>
-          <Button onClick={() => openModal("create")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Crear Defecto
-          </Button>
-        </div>
+        <CatalogPageHeader
+          title="Defectos"
+          description="Consulta los defectos que pueden asociarse a las instrucciones de trabajo y a cada caja inspeccionada."
+          readOnly={isInspectorOnly}
+          action={!isInspectorOnly ? (
+            <Button className="w-full sm:w-auto" onClick={() => openModal("create")}>
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+              Nuevo defecto
+            </Button>
+          ) : undefined}
+        />
 
         {/* Search */}
-        <div className="flex flex-col gap-2">
-          <Label htmlFor="search">Buscar:</Label>
-          <Input
-            id="search"
-            placeholder="Buscar por nombre o descripción..."
-            className="max-w-sm"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <CatalogSearch
+          id="defects-search"
+          label="Buscar defectos"
+          placeholder="Nombre o descripción"
+          value={search}
+          onChange={handleSearchChange}
+          onSubmit={() => setCurrentPage(1)}
+        />
 
         {/* Table - Desktop */}
         <div className="border-border hidden overflow-hidden rounded-lg border md:block">
@@ -112,7 +138,7 @@ export default function DefectsTable({ initialData }: Props) {
                     <td className="p-3 text-center lg:p-4">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Acciones para ${defect.name}`}>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -121,17 +147,18 @@ export default function DefectsTable({ initialData }: Props) {
                             <Eye className="mr-2 h-4 w-4" />
                             Ver Detalle
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openModal("edit", defect.id)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Actualizar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(defect.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Borrar
-                          </DropdownMenuItem>
+                          {!isInspectorOnly ? (
+                            <>
+                              <DropdownMenuItem onClick={() => openModal("edit", defect.id)}>
+                                <Pencil className="mr-2 h-4 w-4" />
+                                Editar defecto
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleDelete(defect.id)} className="text-destructive">
+                                <Trash2 className="mr-2 h-4 w-4" />
+                                Eliminar defecto
+                              </DropdownMenuItem>
+                            </>
+                          ) : null}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </td>
@@ -139,7 +166,7 @@ export default function DefectsTable({ initialData }: Props) {
                 ))}
                 {defects.length === 0 && (
                   <tr>
-                    <td className="text-muted-foreground p-4 text-sm" colSpan={4}>
+                    <td className="text-muted-foreground p-8 text-center text-sm" colSpan={4}>
                       {search ? "No se encontraron defectos con esa búsqueda." : "No hay defectos registrados."}
                     </td>
                   </tr>
@@ -163,7 +190,7 @@ export default function DefectsTable({ initialData }: Props) {
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" aria-label={`Acciones para ${defect.name}`}>
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -172,28 +199,39 @@ export default function DefectsTable({ initialData }: Props) {
                       <Eye className="mr-2 h-4 w-4" />
                       Ver Detalle
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => openModal("edit", defect.id)}>
-                      <Pencil className="mr-2 h-4 w-4" />
-                      Actualizar
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleDelete(defect.id)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Borrar
-                    </DropdownMenuItem>
+                    {!isInspectorOnly ? (
+                      <>
+                        <DropdownMenuItem onClick={() => openModal("edit", defect.id)}>
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Editar defecto
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleDelete(defect.id)} className="text-destructive">
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Eliminar defecto
+                        </DropdownMenuItem>
+                      </>
+                    ) : null}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
             </div>
           ))}
           {defects.length === 0 && (
-            <div className="text-muted-foreground text-sm">
-              {search ? "No se encontraron defectos con esa búsqueda." : "No hay defectos registrados."}
-            </div>
+            <CatalogEmptyState
+              title={search ? "Sin resultados" : "Aún no hay defectos"}
+              description={search ? "Prueba con otro nombre o descripción." : "Los defectos aparecerán aquí cuando se registren."}
+            />
           )}
         </div>
+
+        <CatalogPagination
+          rowsPerPage={rowsPerPage}
+          currentPage={currentPage}
+          hasMore={hasMore}
+          onRowsPerPageChange={changeLimit}
+          onGoToPage={setCurrentPage}
+          total={filteredDefects.length}
+        />
       </div>
 
       <DefectDetailModal

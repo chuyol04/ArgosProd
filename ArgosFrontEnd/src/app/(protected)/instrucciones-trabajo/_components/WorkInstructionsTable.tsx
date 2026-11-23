@@ -2,38 +2,27 @@
 
 import { IWorkInstructionsResponse } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
 import { useEffect, useMemo, useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Plus,
-  Eye,
-  Search,
-} from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, Plus, Eye } from "lucide-react";
 import WorkInstructionModal from "./WorkInstructionModal";
 import WorkInstructionDetailsModal from "./WorkInstructionDetailsModal";
 import { deleteWorkInstruction } from "@/app/(protected)/instrucciones-trabajo/actions/instrucciones-trabajo.actions";
 import PageContainer from "@/components/layout/PageContainer";
+import { useUser } from "@/contexts/users/userContext";
+import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogPagination,
+  CatalogSearch,
+} from "@/components/common/CatalogPageElements";
 
 type Props = {
   initialData: IWorkInstructionsResponse;
@@ -41,6 +30,8 @@ type Props = {
 };
 
 export default function WorkInstructionsTable({ initialData, defaultServiceId }: Props) {
+  const { user } = useUser();
+  const isInspectorOnly = hasOnlyInspectorRole(user?.roles ?? []);
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [detailsModalOpen, setDetailsModalOpen] = useState(false);
@@ -61,7 +52,7 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
       setUrlParams({ search: searchInput || null, page: null });
     }, 350);
     return () => clearTimeout(timeout);
-  }, [searchInput]);
+  }, [qSearch, searchInput, setUrlParams]);
 
   const handleSearch = () => {
     setUrlParams({ search: searchInput || null, page: null });
@@ -123,37 +114,27 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
-            Instrucciones de Trabajo
-          </h1>
-          <Button onClick={handleCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Crear IT
-          </Button>
-        </div>
+        <CatalogPageHeader
+          title="Instrucciones de trabajo"
+          description="Consulta la pieza, el servicio y el cliente que definen cada inspección."
+          readOnly={isInspectorOnly}
+          action={!isInspectorOnly ? (
+            <Button className="w-full sm:w-auto" onClick={handleCreate}>
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+              Nueva instrucción
+            </Button>
+          ) : undefined}
+        />
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 lg:gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row lg:gap-4">
-          <div className="flex w-full flex-col gap-2">
-            <Label htmlFor="search">Buscar:</Label>
-            <div className="flex gap-2">
-              <Input
-                id="search"
-                placeholder="Buscar por pieza, servicio o cliente..."
-                className="min-w-0 flex-1"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-              <Button type="button" variant="outline" size="icon" onClick={handleSearch}>
-                <Search className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CatalogSearch
+        id="work-instructions-search"
+        label="Buscar instrucciones"
+        placeholder="Pieza, servicio o cliente"
+        value={searchInput}
+        onChange={setSearchInput}
+        onSubmit={handleSearch}
+      />
 
       {/* Table - Desktop */}
       <div className="border-border hidden overflow-hidden rounded-lg border md:block">
@@ -199,7 +180,7 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
                   <td className="p-3 text-center lg:p-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" aria-label={`Acciones para la instrucción ${record.id}`}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -208,17 +189,18 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
                           <Eye className="mr-2 h-4 w-4" />
                           Ver Detalles
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Actualizar
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => handleDelete(record.id)}
-                          className="text-destructive"
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Borrar
-                        </DropdownMenuItem>
+                        {!isInspectorOnly ? (
+                          <>
+                            <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar instrucción
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar instrucción
+                            </DropdownMenuItem>
+                          </>
+                        ) : null}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </td>
@@ -226,8 +208,8 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
               ))}
               {tableRows.length === 0 && (
                 <tr>
-                  <td className="text-muted-foreground p-4 text-sm" colSpan={5}>
-                    No hay instrucciones de trabajo registradas.
+                  <td className="text-muted-foreground p-8 text-center text-sm" colSpan={5}>
+                    No hay instrucciones que coincidan con la búsqueda.
                   </td>
                 </tr>
               )}
@@ -257,7 +239,7 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" aria-label={`Acciones para la instrucción ${record.id}`}>
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -266,81 +248,40 @@ export default function WorkInstructionsTable({ initialData, defaultServiceId }:
                     <Eye className="mr-2 h-4 w-4" />
                     Ver Detalles
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Actualizar
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleDelete(record.id)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Borrar
-                  </DropdownMenuItem>
+                  {!isInspectorOnly ? (
+                    <>
+                      <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Editar instrucción
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Eliminar instrucción
+                      </DropdownMenuItem>
+                    </>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
           </div>
         ))}
         {tableRows.length === 0 && (
-          <div className="text-muted-foreground text-sm">
-            No hay instrucciones de trabajo registradas.
-          </div>
+          <CatalogEmptyState
+            title={qSearch ? "Sin resultados" : "Aún no hay instrucciones"}
+            description={qSearch ? "Prueba con otra pieza, servicio o cliente." : "Las instrucciones aparecerán aquí cuando se registren."}
+          />
         )}
       </div>
 
       {/* Pagination */}
-      <div className="flex flex-col items-center justify-between gap-4 text-sm sm:flex-row">
-        <div className="flex items-center gap-4 lg:gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-              Filas por página
-            </span>
-            <Select value={String(rowsPerPage)} onValueChange={changeLimit}>
-              <SelectTrigger className="w-[4.5rem]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-            Página {currentPage}
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(1)}
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(currentPage - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={!hasMore}
-              onClick={() => goToPage(currentPage + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <CatalogPagination
+        rowsPerPage={rowsPerPage}
+        currentPage={currentPage}
+        hasMore={hasMore}
+        onRowsPerPageChange={changeLimit}
+        onGoToPage={goToPage}
+        total={initialData.total}
+      />
 
         {/* Create/Update Work Instruction Modal */}
         <WorkInstructionModal

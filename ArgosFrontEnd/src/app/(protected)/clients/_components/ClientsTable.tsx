@@ -2,40 +2,27 @@
 
 import { IClientsResponse } from "@/app/(protected)/clients/types/clients.types";
 import { useEffect, useMemo, useState } from "react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { useRouter } from "next/navigation";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Building2,
-  Plus,
-  Search,
-} from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, Building2, Plus } from "lucide-react";
 import ClientModal from "./ClientModal";
 import { deleteClient } from "@/app/(protected)/clients/actions/clients.actions";
 import PageContainer from "@/components/layout/PageContainer";
 import { useUser } from "@/contexts/users/userContext";
 import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogPagination,
+  CatalogSearch,
+} from "@/components/common/CatalogPageElements";
 
 type ModalMode = "create" | "edit";
 
@@ -74,7 +61,7 @@ export default function ClientsTable({ initialData }: Props) {
       setUrlParams({ search: searchInput || null, page: null });
     }, 350);
     return () => clearTimeout(timeout);
-  }, [searchInput]);
+  }, [qSearch, searchInput, setUrlParams]);
 
   const handleSearch = () => {
     setUrlParams({ search: searchInput || null, page: null });
@@ -129,37 +116,27 @@ export default function ClientsTable({ initialData }: Props) {
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center justify-between">
-        <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
-          Clientes
-        </h1>
-        {!isInspectorOnly && <Button onClick={() => openModal("create")}>
-          <Plus className="mr-2 h-4 w-4" />
-          Crear Cliente
-        </Button>}
-      </div>
+      <CatalogPageHeader
+        title="Clientes"
+        description="Consulta los clientes y abre los servicios asociados a cada cuenta."
+        readOnly={isInspectorOnly}
+        action={!isInspectorOnly ? (
+          <Button className="w-full sm:w-auto" onClick={() => openModal("create")}>
+            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+            Nuevo cliente
+          </Button>
+        ) : undefined}
+      />
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 lg:gap-4">
-        <div className="flex flex-col gap-3 sm:flex-row lg:gap-4">
-          <div className="flex w-full flex-col gap-2">
-            <Label htmlFor="search">Buscar:</Label>
-            <div className="flex gap-2">
-              <Input
-                id="search"
-                placeholder="Buscar por nombre o correo..."
-                className="min-w-0 flex-1"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-              <Button type="button" variant="outline" size="icon" onClick={handleSearch}>
-                <Search className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      <CatalogSearch
+        id="clients-search"
+        label="Buscar clientes"
+        placeholder="Nombre o correo"
+        value={searchInput}
+        onChange={setSearchInput}
+        onSubmit={handleSearch}
+      />
 
       {/* Table - Desktop */}
       <div className="border-border hidden overflow-hidden rounded-lg border md:block">
@@ -205,27 +182,26 @@ export default function ClientsTable({ initialData }: Props) {
                   <td className="p-3 text-center lg:p-4">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
+                        <Button variant="ghost" size="icon" aria-label={`Acciones para ${record.name}`}>
                           <MoreHorizontal className="h-4 w-4" />
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Actualizar
-                        </DropdownMenuItem>
                         {!isInspectorOnly && (
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(record.id)}
-                            className="text-destructive"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Borrar
-                          </DropdownMenuItem>
+                          <>
+                            <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                              <Pencil className="mr-2 h-4 w-4" />
+                              Editar cliente
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar cliente
+                            </DropdownMenuItem>
+                          </>
                         )}
                         <DropdownMenuItem onClick={() => handleViewServices(record.name)}>
                           <Building2 className="mr-2 h-4 w-4" />
-                          Ver Servicios
+                          Ver servicios
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -234,8 +210,8 @@ export default function ClientsTable({ initialData }: Props) {
               ))}
               {tableRows.length === 0 && (
                 <tr>
-                  <td className="text-muted-foreground p-4 text-sm" colSpan={5}>
-                    No hay clientes registrados.
+                  <td className="text-muted-foreground p-8 text-center text-sm" colSpan={5}>
+                    No hay clientes que coincidan con la búsqueda.
                   </td>
                 </tr>
               )}
@@ -268,27 +244,26 @@ export default function ClientsTable({ initialData }: Props) {
               </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon">
+                  <Button variant="ghost" size="icon" aria-label={`Acciones para ${record.name}`}>
                     <MoreHorizontal className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Actualizar
-                  </DropdownMenuItem>
                   {!isInspectorOnly && (
-                    <DropdownMenuItem
-                      onClick={() => handleDelete(record.id)}
-                      className="text-destructive"
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Borrar
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => handleUpdate(record.id)}>
+                        <Pencil className="mr-2 h-4 w-4" />
+                        Editar cliente
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Eliminar cliente
+                      </DropdownMenuItem>
+                    </>
                   )}
                   <DropdownMenuItem onClick={() => handleViewServices(record.name)}>
                     <Building2 className="mr-2 h-4 w-4" />
-                    Ver Servicios
+                    Ver servicios
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -296,62 +271,22 @@ export default function ClientsTable({ initialData }: Props) {
           </div>
         ))}
         {tableRows.length === 0 && (
-          <div className="text-muted-foreground text-sm">No hay clientes registrados.</div>
+          <CatalogEmptyState
+            title={qSearch ? "Sin resultados" : "Aún no hay clientes"}
+            description={qSearch ? "Prueba con otro nombre o correo." : "Los clientes aparecerán aquí cuando se registren."}
+          />
         )}
       </div>
 
       {/* Pagination */}
-      <div className="flex flex-col items-center justify-between gap-4 text-sm sm:flex-row">
-        <div className="flex items-center gap-4 lg:gap-6">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-              Filas por página
-            </span>
-            <Select value={String(rowsPerPage)} onValueChange={changeLimit}>
-              <SelectTrigger className="w-[4.5rem]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="10">10</SelectItem>
-                <SelectItem value="20">20</SelectItem>
-                <SelectItem value="50">50</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-            Página {currentPage}
-          </span>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(1)}
-            >
-              <ChevronsLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={currentPage <= 1}
-              onClick={() => goToPage(currentPage - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              disabled={!hasMore}
-              onClick={() => goToPage(currentPage + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
+      <CatalogPagination
+        rowsPerPage={rowsPerPage}
+        currentPage={currentPage}
+        hasMore={hasMore}
+        onRowsPerPageChange={changeLimit}
+        onGoToPage={goToPage}
+        total={initialData.total}
+      />
 
       {/* Unified Client Modal */}
       <ClientModal

@@ -217,8 +217,13 @@ export default function ServiceModal({
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
+            <div className="space-y-5 py-4">
+              <section className="border-border space-y-4 rounded-lg border p-4" aria-labelledby="service-data-heading">
+                <div>
+                  <h3 id="service-data-heading" className="text-sm font-semibold">Datos del servicio</h3>
+                  <p className="text-muted-foreground mt-1 text-xs">Cliente, descripción y vigencia del contrato.</p>
+                </div>
+                <div className="grid gap-2">
                 <Label htmlFor="client">Cliente *</Label>
                 <Select
                   value={formData.client_id}
@@ -242,14 +247,40 @@ export default function ServiceModal({
                     )}
                   </SelectContent>
                 </Select>
-              </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Descripción</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => handleChange("name", e.target.value)}
+                    disabled={isPending}
+                    placeholder="Descripción del servicio"
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="start_date">Fecha de inicio *</Label>
+                    <Input id="start_date" type="date" value={formData.start_date} onChange={(e) => handleChange("start_date", e.target.value)} disabled={isPending} required />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="end_date">Fecha de fin</Label>
+                    <Input id="end_date" type="date" value={formData.end_date} onChange={(e) => handleChange("end_date", e.target.value)} disabled={isPending} />
+                  </div>
+                </div>
+              </section>
 
-              <div className="grid gap-2">
+              <section className="border-border space-y-3 rounded-lg border p-4" aria-labelledby="service-access-heading">
+                <div>
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 id="service-access-heading" className="text-sm font-semibold">Acceso del portal</h3>
+                    <span className="text-muted-foreground text-xs">{selectedClientUserIds.length} seleccionado(s)</span>
+                  </div>
+                  <p className="text-muted-foreground mt-1 text-xs">Usuarios Cliente autorizados para consultar este servicio.</p>
+                </div>
+                <div className="grid gap-2">
                 <div className="flex items-center justify-between gap-3">
-                  <Label>Usuarios cliente con acceso</Label>
-                  <span className="text-xs text-muted-foreground">
-                    {selectedClientUserIds.length} seleccionado(s)
-                  </span>
+                  <Label>Usuarios con acceso</Label>
                 </div>
                 <div className="rounded-md border">
                   {isUsersLoading ? (
@@ -296,38 +327,8 @@ export default function ServiceModal({
                 <p className="text-xs text-muted-foreground">
                   Solo los usuarios seleccionados podrán consultar los reportes, detalles y Excel de este servicio.
                 </p>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="name">Descripción</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => handleChange("name", e.target.value)}
-                  disabled={isPending}
-                  placeholder="Descripción del servicio"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="start_date">Fecha de Inicio *</Label>
-                <Input
-                  id="start_date"
-                  type="date"
-                  value={formData.start_date}
-                  onChange={(e) => handleChange("start_date", e.target.value)}
-                  disabled={isPending}
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="end_date">Fecha de Fin</Label>
-                <Input
-                  id="end_date"
-                  type="date"
-                  value={formData.end_date}
-                  onChange={(e) => handleChange("end_date", e.target.value)}
-                  disabled={isPending}
-                />
-              </div>
+                </div>
+              </section>
 
               {error && <p className="text-sm text-destructive">{error}</p>}
             </div>

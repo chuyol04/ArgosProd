@@ -2,36 +2,26 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { IPartsResponse } from "@/app/(protected)/parts/types/parts.types";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Plus,
-  Search,
-} from "lucide-react";
+import { MoreHorizontal, Pencil, Trash2, Plus } from "lucide-react";
 import PartModal from "./PartModal";
 import { deletePart } from "@/app/(protected)/parts/actions/parts.actions";
 import PageContainer from "@/components/layout/PageContainer";
+import { useUser } from "@/contexts/users/userContext";
+import { isInspectorOnly as hasOnlyInspectorRole } from "@/lib/constants/roles";
+import {
+  CatalogEmptyState,
+  CatalogPageHeader,
+  CatalogPagination,
+  CatalogSearch,
+} from "@/components/common/CatalogPageElements";
 
 type ModalMode = "create" | "edit";
 
@@ -40,6 +30,8 @@ type Props = {
 };
 
 export default function PartsTable({ initialData }: Props) {
+  const { user } = useUser();
+  const isInspectorOnly = hasOnlyInspectorRole(user?.roles ?? []);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModalMode>("create");
   const [selectedPartId, setSelectedPartId] = useState<number | null>(null);
@@ -65,7 +57,7 @@ export default function PartsTable({ initialData }: Props) {
       setUrlParams({ search: searchInput || null, page: null });
     }, 350);
     return () => clearTimeout(timeout);
-  }, [searchInput]);
+  }, [qSearch, searchInput, setUrlParams]);
 
   const handleSearch = () => {
     setUrlParams({ search: searchInput || null, page: null });
@@ -105,35 +97,27 @@ export default function PartsTable({ initialData }: Props) {
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">Piezas</h1>
-          <Button onClick={() => openModal("create")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Crear Pieza
-          </Button>
-        </div>
+        <CatalogPageHeader
+          title="Piezas"
+          description="Consulta el catálogo de piezas disponible para las instrucciones de trabajo."
+          readOnly={isInspectorOnly}
+          action={!isInspectorOnly ? (
+            <Button className="w-full sm:w-auto" onClick={() => openModal("create")}>
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+              Nueva pieza
+            </Button>
+          ) : undefined}
+        />
 
         {/* Filters */}
-        <div className="flex flex-col gap-3 lg:gap-4">
-          <div className="flex flex-col gap-3 sm:flex-row lg:gap-4">
-            <div className="flex w-full flex-col gap-2">
-              <Label htmlFor="search">Buscar:</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="search"
-                  placeholder="Buscar por nombre o descripción..."
-                  className="min-w-0 flex-1"
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                />
-                <Button type="button" variant="outline" size="icon" onClick={handleSearch}>
-                  <Search className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <CatalogSearch
+          id="parts-search"
+          label="Buscar piezas"
+          placeholder="Nombre o descripción"
+          value={searchInput}
+          onChange={setSearchInput}
+          onSubmit={handleSearch}
+        />
 
         {/* Table - Desktop */}
         <div className="border-border hidden overflow-hidden rounded-lg border md:block">
@@ -171,33 +155,34 @@ export default function PartsTable({ initialData }: Props) {
                       {record.description}
                     </td>
                     <td className="p-3 text-center lg:p-4">
+                      {isInspectorOnly ? (
+                        <span className="text-muted-foreground text-xs">Solo lectura</span>
+                      ) : (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
+                          <Button variant="ghost" size="icon" aria-label={`Acciones para ${record.name}`}>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => openModal("edit", record.id)}>
                             <Pencil className="mr-2 h-4 w-4" />
-                            Actualizar
+                            Editar pieza
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(record.id)}
-                            className="text-destructive"
-                          >
+                          <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Borrar
+                            Eliminar pieza
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      )}
                     </td>
                   </tr>
                 ))}
                 {tableRows.length === 0 && (
                   <tr>
-                    <td className="text-muted-foreground p-4 text-sm" colSpan={4}>
-                      No hay piezas registradas.
+                    <td className="text-muted-foreground p-8 text-center text-sm" colSpan={4}>
+                      No hay piezas que coincidan con la búsqueda.
                     </td>
                   </tr>
                 )}
@@ -219,86 +204,43 @@ export default function PartsTable({ initialData }: Props) {
                   <p className="text-muted-foreground mt-1 text-xs">ID: {record.id}</p>
                   <p className="text-muted-foreground mt-1 text-xs truncate">{record.description}</p>
                 </div>
-                <DropdownMenu>
+                {!isInspectorOnly ? <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" aria-label={`Acciones para ${record.name}`}>
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => openModal("edit", record.id)}>
                       <Pencil className="mr-2 h-4 w-4" />
-                      Actualizar
+                      Editar pieza
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => handleDelete(record.id)}
-                      className="text-destructive"
-                    >
+                    <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive">
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Borrar
+                      Eliminar pieza
                     </DropdownMenuItem>
                   </DropdownMenuContent>
-                </DropdownMenu>
+                </DropdownMenu> : null}
               </div>
             </div>
           ))}
           {tableRows.length === 0 && (
-            <div className="text-muted-foreground text-sm">No hay piezas registradas.</div>
+            <CatalogEmptyState
+              title={qSearch ? "Sin resultados" : "Aún no hay piezas"}
+              description={qSearch ? "Prueba con otro nombre o descripción." : "Las piezas aparecerán aquí cuando se registren."}
+            />
           )}
         </div>
 
         {/* Pagination */}
-        <div className="flex flex-col items-center justify-between gap-4 text-sm sm:flex-row">
-          <div className="flex items-center gap-4 lg:gap-6">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-                Filas por página
-              </span>
-              <Select value={String(rowsPerPage)} onValueChange={changeLimit}>
-                <SelectTrigger className="w-[4.5rem]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="10">10</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
-              Página {currentPage} · {total} total
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                disabled={currentPage <= 1}
-                onClick={() => goToPage(1)}
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                disabled={currentPage <= 1}
-                onClick={() => goToPage(currentPage - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                disabled={!hasMore}
-                onClick={() => goToPage(currentPage + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
+        <CatalogPagination
+          rowsPerPage={rowsPerPage}
+          currentPage={currentPage}
+          hasMore={hasMore}
+          onRowsPerPageChange={changeLimit}
+          onGoToPage={goToPage}
+          total={total}
+        />
       </div>
 
       <PartModal

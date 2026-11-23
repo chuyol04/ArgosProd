@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import { RichTextViewer } from "@/components/ui/rich-text-editor";
@@ -17,6 +17,7 @@ import { MediaItem } from "@/components/ui/media-item";
 import { getWorkInstructionDetails } from "@/app/(protected)/instrucciones-trabajo/actions/instrucciones-trabajo.actions";
 import { IWorkInstructionDetails } from "@/app/(protected)/instrucciones-trabajo/types/instrucciones-trabajo.types";
 import { File as FileIcon } from "lucide-react";
+import { formatDateDisplay } from "@/lib/dateTimeUtils";
 
 interface WorkInstructionDetailsModalProps {
   workInstructionId: number | null;
@@ -25,13 +26,7 @@ interface WorkInstructionDetailsModalProps {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "-";
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("es-MX", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  return formatDateDisplay(dateStr);
 }
 
 // Helper component to render description content (HTML or legacy Markdown)
@@ -99,10 +94,10 @@ export default function WorkInstructionDetailsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[92vw] max-w-[92vw] sm:w-[74vw] sm:max-w-[74vw] max-h-[85vh] overflow-hidden p-0">
-        <div className="p-6 pb-0">
+      <DialogContent className="grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <div className="border-border border-b p-4 pr-12 sm:p-6 sm:pr-12">
           <DialogHeader>
-            <DialogTitle>Detalles de Instrucción de Trabajo</DialogTitle>
+            <DialogTitle>Detalles de la instrucción de trabajo</DialogTitle>
             <DialogDescription>
               {details?.instruction?.part_name || "Cargando..."} - {details?.instruction?.service_name || ""}
             </DialogDescription>
@@ -116,11 +111,12 @@ export default function WorkInstructionDetailsModal({
         ) : error ? (
           <div className="py-8 text-center text-destructive">{error}</div>
         ) : details ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-4 max-h-[calc(85vh-100px)] md:h-[calc(85vh-100px)] overflow-y-auto md:overflow-visible">
+          <div className="min-h-0 overflow-y-auto p-4 sm:p-6">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             {/* Left Column - Description */}
-            <div className="flex flex-col h-full min-h-[200px] md:min-h-0">
+            <div className="min-h-[200px]">
               <h3 className="text-sm font-medium text-muted-foreground mb-2">Descripción</h3>
-              <div className="flex-1 p-4 rounded-lg bg-muted/30 border overflow-y-auto">
+              <div className="bg-muted/30 rounded-lg border p-4">
                 {details.instruction.description ? (
                   <DescriptionContent content={details.instruction.description} />
                 ) : (
@@ -136,7 +132,7 @@ export default function WorkInstructionDetailsModal({
             </div>
 
             {/* Right Column - All other content */}
-            <div className="flex flex-col h-full md:overflow-y-auto space-y-4">
+            <div className="space-y-4">
               {/* Basic Info */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -228,7 +224,7 @@ export default function WorkInstructionDetailsModal({
                   Colaboradores Asociados ({details.collaborators.length})
                 </h3>
                 {details.collaborators.length > 0 ? (
-                  <div className="space-y-1.5 max-h-[120px] overflow-y-auto">
+                  <div className="space-y-1.5">
                     {details.collaborators.map((collab) => (
                       <div
                         key={collab.id}
@@ -257,9 +253,9 @@ export default function WorkInstructionDetailsModal({
                   Reportes de Inspección ({details.reports.length})
                 </h3>
                 {details.reports.length > 0 ? (
-                  <div className="border rounded-lg overflow-x-auto max-h-[150px] overflow-y-auto">
+                  <div className="overflow-x-auto rounded-lg border">
                     <table className="w-full min-w-[320px] text-sm">
-                      <thead className="bg-muted sticky top-0">
+                      <thead className="bg-muted">
                         <tr>
                           <th className="p-2 text-left text-xs font-medium text-muted-foreground">ID</th>
                           <th className="p-2 text-left text-xs font-medium text-muted-foreground">Fecha</th>
@@ -285,6 +281,7 @@ export default function WorkInstructionDetailsModal({
                   Ir a Reportes de Inspección
                 </Button>
               </div>
+            </div>
             </div>
           </div>
         ) : null}

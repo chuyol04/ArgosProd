@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { RichTextEditor } from "@/components/ui/rich-text-editor";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -351,16 +350,16 @@ export default function WorkInstructionModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="w-[92vw] max-w-[92vw] sm:w-[74vw] sm:max-w-[74vw] max-h-[85vh] overflow-hidden p-0">
-        <div className="p-6 pb-0">
+      <DialogContent className="grid max-h-[90vh] w-[calc(100vw-2rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <div className="border-border border-b p-4 pr-12 sm:p-6 sm:pr-12">
           <DialogHeader>
             <DialogTitle>
-              {isEditMode ? "Actualizar Instrucción de Trabajo" : "Nueva Instrucción de Trabajo"}
+              {isEditMode ? "Editar instrucción de trabajo" : "Nueva instrucción de trabajo"}
             </DialogTitle>
             <DialogDescription>
               {isEditMode
-                ? "Modifica los datos de la instrucción de trabajo y guarda los cambios."
-                : "Crea una nueva instrucción de trabajo asociada a un servicio y pieza."}
+                ? "Revisa cada sección y guarda los cambios al terminar."
+                : "Define la información, modalidad, defectos, colaboradores y documentos de la instrucción."}
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -370,48 +369,22 @@ export default function WorkInstructionModal({
             <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           </div>
         ) : (
-          <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 pt-4 max-h-[calc(85vh-180px)] md:h-[calc(85vh-180px)] overflow-y-auto md:overflow-visible">
-              {/* Left Column - Description (Rich Text Editor) */}
-              <div className="flex flex-col h-full min-h-[260px] md:min-h-0">
-                <Label htmlFor="description" className="text-sm font-medium text-muted-foreground mb-2">
-                  Descripción
-                </Label>
-                <div className="flex-1 min-h-0">
-                  <RichTextEditor
-                    value={formData.description}
-                    onChange={(value) => handleChange("description", value)}
-                    disabled={isPending}
-                    placeholder="Escribe la descripción de la instrucción de trabajo..."
-                    className="h-full"
-                  />
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-4 sm:p-6">
+              <section className="border-border space-y-4 rounded-lg border p-4" aria-labelledby="wi-information-heading">
+                <div>
+                  <h3 id="wi-information-heading" className="text-sm font-semibold">Información</h3>
+                  <p className="text-muted-foreground mt-1 text-xs">Servicio, pieza, vigencia y condición que debe revisarse.</p>
                 </div>
-                <div className="grid gap-2 mt-4">
-                  <Label htmlFor="problem" className="text-sm font-medium text-muted-foreground">
-                    Problema
-                  </Label>
-                  <Textarea
-                    id="problem"
-                    value={formData.problem}
-                    onChange={(e) => handleChange("problem", e.target.value)}
-                    disabled={isPending}
-                    placeholder="Describe el problema asociado a la IT..."
-                    rows={3}
-                  />
-                </div>
-              </div>
-
-              {/* Right Column - Other Fields + Photos (scrollable) */}
-              <div className="flex flex-col h-full md:overflow-y-auto space-y-4 md:pr-2">
-                <div className="grid gap-4">
-                  <div className="grid gap-2">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2 md:col-span-2">
                     <Label htmlFor="service_id">Servicio *</Label>
                     <Select
                       value={formData.service_id}
                       onValueChange={(value) => handleChange("service_id", value)}
                       disabled={isPending || (!isEditMode && !!defaultServiceId)}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id="service_id">
                         <SelectValue placeholder="Seleccione un servicio" />
                       </SelectTrigger>
                       <SelectContent>
@@ -441,39 +414,6 @@ export default function WorkInstructionModal({
                       ))}
                     </datalist>
                   </div>
-
-                  <div className="grid gap-2">
-                    <Label>Modalidad de inspección *</Label>
-                    <div className="grid grid-cols-2 gap-2 rounded-lg border p-2">
-                      {(["rate", "full_time"] as const).map((mode) => (
-                        <label key={mode} className="flex cursor-pointer items-center gap-2 rounded p-2 hover:bg-muted">
-                          <input
-                            type="radio"
-                            name="inspection_mode"
-                            value={mode}
-                            checked={formData.inspection_mode === mode}
-                            onChange={() => handleChange("inspection_mode", mode)}
-                            disabled={isPending}
-                          />
-                          {mode === "rate" ? "Rate" : "Full time"}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-
-                  {formData.inspection_mode === "rate" && <div className="grid gap-2">
-                    <Label htmlFor="inspection_rate_per_hour">Piezas por hora *</Label>
-                    <Input
-                      id="inspection_rate_per_hour"
-                      type="number"
-                      min="1"
-                      value={formData.inspection_rate_per_hour}
-                      onChange={(e) => handleChange("inspection_rate_per_hour", e.target.value)}
-                      disabled={isPending}
-                      required
-                    />
-                  </div>}
-
                   <div className="grid gap-2">
                     <Label htmlFor="start_date">Fecha de inicio de la contención *</Label>
                     <Input
@@ -485,63 +425,62 @@ export default function WorkInstructionModal({
                       required
                     />
                   </div>
-                </div>
-
-                <Separator />
-
-                {/* Collaborators Section */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Colaboradores ({selectedCollaborators.length} seleccionados)
-                  </Label>
-                  <div className="border rounded-lg p-3 max-h-[150px] overflow-y-auto space-y-2">
-                    {users.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No hay usuarios disponibles</p>
-                    ) : (
-                      users.map((user) => (
-                        <div
-                          key={user.id}
-                          className="flex items-center space-x-3 p-2 rounded hover:bg-muted/50"
-                        >
-                          <Checkbox
-                            id={`user-${user.id}`}
-                            checked={selectedCollaborators.includes(user.id)}
-                            onCheckedChange={() => handleCollaboratorToggle(user.id)}
-                            disabled={isPending}
-                          />
-                          <label
-                            htmlFor={`user-${user.id}`}
-                            className="flex-1 cursor-pointer text-sm"
-                          >
-                            <span className="font-medium">{user.name}</span>
-                            <span className="text-muted-foreground ml-2">({user.email})</span>
-                            {user.role && (
-                              <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                                {user.role}
-                              </span>
-                            )}
-                          </label>
-                        </div>
-                      ))
-                    )}
+                  <div className="grid gap-2 md:col-span-2">
+                    <Label htmlFor="description">Descripción</Label>
+                    <RichTextEditor
+                      value={formData.description}
+                      onChange={(value) => handleChange("description", value)}
+                      disabled={isPending}
+                      placeholder="Escribe la descripción de la instrucción de trabajo..."
+                      className="min-h-[220px]"
+                    />
+                  </div>
+                  <div className="grid gap-2 md:col-span-2">
+                    <Label htmlFor="problem">Problema o condición revisada</Label>
+                    <Textarea id="problem" value={formData.problem} onChange={(e) => handleChange("problem", e.target.value)} disabled={isPending} placeholder="Describe qué debe revisar el inspector" rows={3} />
                   </div>
                 </div>
+              </section>
 
-                <Separator />
+              <section className="border-border space-y-4 rounded-lg border p-4" aria-labelledby="wi-mode-heading">
+                <div>
+                  <h3 id="wi-mode-heading" className="text-sm font-semibold">Modalidad</h3>
+                  <p className="text-muted-foreground mt-1 text-xs">Define si la inspección usa un rate por hora o tiempo completo.</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label>Modalidad de inspección *</Label>
+                    <div className="grid grid-cols-2 gap-2 rounded-lg border p-2">
+                      {(["rate", "full_time"] as const).map((mode) => (
+                        <label key={mode} className="hover:bg-muted flex min-h-11 cursor-pointer items-center gap-2 rounded p-2">
+                          <input type="radio" name="inspection_mode" value={mode} checked={formData.inspection_mode === mode} onChange={() => handleChange("inspection_mode", mode)} disabled={isPending} />
+                          {mode === "rate" ? "Rate" : "Full time"}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {formData.inspection_mode === "rate" ? (
+                    <div className="grid content-start gap-2">
+                      <Label htmlFor="inspection_rate_per_hour">Piezas por hora *</Label>
+                      <Input id="inspection_rate_per_hour" type="number" min="1" value={formData.inspection_rate_per_hour} onChange={(e) => handleChange("inspection_rate_per_hour", e.target.value)} disabled={isPending} required />
+                    </div>
+                  ) : null}
+                </div>
+              </section>
 
-                {/* Expected defects for this work instruction */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium">
-                    Defectos esperados ({selectedDefects.length} seleccionados)
-                  </Label>
-                  <div className="border rounded-lg p-3 max-h-[150px] overflow-y-auto space-y-2">
+              <section className="border-border space-y-3 rounded-lg border p-4" aria-labelledby="wi-defects-heading">
+                <div>
+                  <h3 id="wi-defects-heading" className="text-sm font-semibold">Defectos ({selectedDefects.length})</h3>
+                  <p className="text-muted-foreground mt-1 text-xs">Defectos disponibles durante la captura de esta instrucción.</p>
+                </div>
+                  <div className="border-border space-y-1 rounded-lg border p-2">
                     {defects.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No hay defectos en el catálogo</p>
                     ) : (
                       defects.map((defect) => (
                         <div
                           key={defect.id}
-                          className="flex items-center space-x-3 p-2 rounded hover:bg-muted/50"
+                          className="hover:bg-muted/50 flex items-center space-x-3 rounded p-2"
                         >
                           <Checkbox
                             id={`defect-${defect.id}`}
@@ -564,7 +503,7 @@ export default function WorkInstructionModal({
                       ))
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <Input
                       value={newDefectName}
                       onChange={(e) => setNewDefectName(e.target.value)}
@@ -581,19 +520,38 @@ export default function WorkInstructionModal({
                   <p className="text-xs text-muted-foreground">
                     Los defectos nuevos se guardan en el catálogo y quedan asociados a esta IT.
                   </p>
+              </section>
+
+              <section className="border-border space-y-3 rounded-lg border p-4" aria-labelledby="wi-collaborators-heading">
+                <div>
+                  <h3 id="wi-collaborators-heading" className="text-sm font-semibold">Colaboradores ({selectedCollaborators.length})</h3>
+                  <p className="text-muted-foreground mt-1 text-xs">Personal asignado a esta instrucción de trabajo.</p>
                 </div>
+                <div className="border-border space-y-1 rounded-lg border p-2">
+                  {users.length === 0 ? (
+                    <p className="text-muted-foreground p-2 text-sm">No hay usuarios disponibles</p>
+                  ) : users.map((user) => (
+                    <div key={user.id} className="hover:bg-muted/50 flex items-center space-x-3 rounded p-2">
+                      <Checkbox id={`user-${user.id}`} checked={selectedCollaborators.includes(user.id)} onCheckedChange={() => handleCollaboratorToggle(user.id)} disabled={isPending} />
+                      <label htmlFor={`user-${user.id}`} className="min-w-0 flex-1 cursor-pointer text-sm">
+                        <span className="font-medium">{user.name}</span>
+                        <span className="text-muted-foreground ml-2">({user.email})</span>
+                        {user.role ? <span className="bg-primary/10 text-primary ml-2 rounded-full px-2 py-0.5 text-xs">{user.role}</span> : null}
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
-                <Separator />
-
-                {/* Files Section */}
-                <div className="space-y-2">
-                  <Label className="text-sm font-medium text-muted-foreground">
-                    Archivos (
+              <section className="border-border space-y-3 rounded-lg border p-4" aria-labelledby="wi-documents-heading">
+                <div>
+                  <h3 id="wi-documents-heading" className="text-sm font-semibold">Documentos (
                     {existingFiles.length +
                       (queuedMainFile ? 1 : 0) +
                       queuedComplementaryFiles.length}
-                    )
-                  </Label>
+                    )</h3>
+                  <p className="text-muted-foreground mt-1 text-xs">IT principal firmada y documentos complementarios.</p>
+                </div>
                   <WorkInstructionFiles
                     workInstructionId={workInstructionId ?? null}
                     existingFiles={existingFiles}
@@ -604,17 +562,14 @@ export default function WorkInstructionModal({
                     queuedComplementaryFiles={queuedComplementaryFiles}
                     onQueuedComplementaryFilesChange={setQueuedComplementaryFiles}
                   />
-                </div>
+              </section>
 
-                {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
 
-                <p className="text-xs text-muted-foreground">
-                  Los campos marcados con * son obligatorios.
-                </p>
-              </div>
+              <p className="text-muted-foreground text-xs">Los campos marcados con * son obligatorios.</p>
             </div>
 
-            <DialogFooter className="p-6 pt-0 flex-col sm:flex-row gap-2">
+            <DialogFooter className="border-border shrink-0 gap-2 border-t p-4 sm:p-6">
               <Button
                 type="button"
                 variant="outline"
@@ -626,7 +581,7 @@ export default function WorkInstructionModal({
               <Button type="submit" disabled={isPending}>
                 {isPending
                   ? (isEditMode ? "Guardando..." : "Creando...")
-                  : (isEditMode ? "Guardar Cambios" : "Crear")}
+                  : (isEditMode ? "Guardar cambios" : "Crear instrucción")}
               </Button>
             </DialogFooter>
           </form>
