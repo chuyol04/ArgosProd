@@ -6,18 +6,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OzCab is a manufacturing audit/inspection management system. The MVP focuses on inspecting, approving, and rejecting manufactured parts. The project is a full-stack application with separate `ArgosBackEnd/` and `ArgosFrontEnd/` directories.
 
+## Canonical Project Context
+
+Read these before changing domain behavior, database structure or the UI roadmap:
+
+- [`docs/BUSINESS_RULES.md`](docs/BUSINESS_RULES.md) — current roles, inspection flow, calculations, persistence and security rules.
+- [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) — current tables, relationships, storage and migration discipline.
+- [`docs/UI_UX_ROADMAP.md`](docs/UI_UX_ROADMAP.md) — completed and pending UI/UX phases plus the compact validation protocol.
+
+Executable code and `ArgosBackEnd/new_mysql_schema.sql` remain authoritative. If a historical note conflicts with the canonical documents, verify the current backend validations and update the documentation in the same change.
+
 ## Commands
 
-### Backend (`/back`)
+### Backend (`ArgosBackEnd/`)
 ```bash
 # Development server with hot reload
 npm run dev
 
-# Production start
-npm start
+# Production start (what the Dockerfile runs)
+node server.js
 ```
+`npm start` is broken: it runs `bin/www`, leftover CommonJS (`require`) in an ESM package.
 
-### Frontend (`/front`)
+### Frontend (`ArgosFrontEnd/`)
 ```bash
 # Development server
 npm run dev
@@ -27,6 +38,20 @@ npm run build
 
 # Lint
 npm run lint
+```
+
+### Tests (from repo root)
+```bash
+node --test ArgosBackEnd/tests/*.test.js
+node --experimental-strip-types --test ArgosFrontEnd/tests/*.test.mjs
+```
+
+### Local Docker stack
+```bash
+# MySQL (localhost:3307) + MongoDB (localhost:27017) only
+docker compose -f docker-compose.dev.yml up -d mysql mongo
+# Full stack (adds backend :3001 and frontend :3000)
+docker compose -f docker-compose.dev.yml up -d
 ```
 
 ### Database
@@ -53,7 +78,9 @@ API response format:
 - `/login` - Authentication
 - `/users`, `/clients`, `/roles`, `/parts`, `/defects`
 - `/work-instructions`, `/reports`, `/inspection-details`, `/incidents`
-- `/user-roles`, `/favorite-routes`, `/services`
+- `/user-roles`, `/favorite-routes`, `/services`, `/media`
+
+**File storage**: uploaded files (evidence, IT documents, photos) live in MongoDB GridFS (`argos_mongo`), served by the **frontend's** API routes `src/app/api/media/*` (`src/lib/db/mongoClient.ts`, `src/lib/storage/`). MySQL stores only the resulting URLs; the backend `/media` router just clears those URL references.
 
 ### Frontend (Next.js 15 App Router + TypeScript)
 - **UI**: shadcn-ui components (in `src/components/ui/`), Tailwind CSS v4
@@ -106,19 +133,19 @@ API response format:
     - `blockClientWrites` - on `/reports`, `/inspection-details`, `/incidents`: allows `GET`, 403s any write. The handlers themselves (`reporteHandler.js`, `detalleInspeccionHandler.js`, `incidenciaHandler.js`) additionally scope every query to `requester.client_id` and 404 if a Cliente requests a report/detail/incident belonging to another client (even by guessing an ID in the URL).
   - Frontend `middleware.ts` confines Cliente users to `/mis-reportes` and `/cambiar-contrasena` (redirects everything else there) - this is UX only, not the security boundary.
   - Frontend pages: `(protected)/mis-reportes/page.tsx` (list) and `(protected)/mis-reportes/[id]/page.tsx` (detail) - both read-only Server Components that reuse the existing reports/incidents server actions (no separate client-aware fetchers needed, since the backend auto-scopes by role).
+- **Inspector** restrictions, also in `clientGuard.js` and applied per-router in `app.js` (they only hit users whose roles are Inspector without Manager/Admin - `isInspectorOnly`):
+  - `blockInspectorDeletes` - 403s every `DELETE`, on every protected router.
+  - `blockInspectorCatalogWrites` - 403s any write to `/clients`, `/roles`, `/parts`, `/defects`, `/work-instructions`, `/user-roles`, `/services`, `/media`. Inspectors can still create/update reports, inspection details and incidents.
+- **Global client selector** (staff only): the Header's client dropdown sets the `active_client_id` cookie (`ACTIVE_CLIENT_COOKIE` in `src/lib/clientScope.ts`); feature `data/`/`actions/` files forward it to the backend as `?client_id=`, and handlers resolve it with `resolveClientScope(req, res)` (`lib/helpers/clientScope.js`). For a Cliente user it always returns their own `users.client_id` (or `denyAll` if unset) and ignores the query param - that's what keeps the selector from widening a client's scope. Reuse it in any new client-filtered handler.
 
 ### Sitemap & Navigation
-- **Source of truth**: `ArgosFrontEnd/src/app/(protected)/sitemap/map.json`
-- Contains categories with routes, each route has:
-  - `id`: Unique identifier for favorites
-  - `name`: Display name
-  - `path`: URL path
-  - `permission`: Required permission to view
+- **Source of truth**: `ArgosFrontEnd/src/app/(protected)/sitemap/types/map.json`
+- Categories with routes; each route is just `{ name, path }` - no `id` and no per-route permission field. Role filtering is hardcoded in `Sidebar.tsx`/`Home.tsx`.
 - Used by: Sidebar, SiteMap page, Home favorites section
 
 ### Favorites System
 - Users can star routes in sitemap
-- Stored in `favorite_routes` table with `route_id` (references map.json id)
+- Stored in `favorite_routes.route_id`, which holds the route's **`path`** from map.json (not an id)
 - Server actions in `ArgosFrontEnd/src/app/(protected)/favorite-routes/actions/`
 - Displayed on Home page grouped by category
 
@@ -129,20 +156,21 @@ Client → Service (contract period)
   └→ WorkInstruction (inspection spec for a Part)
        │    └→ WorkInstructionEvidence (1 main signed IT + N complementary docs, via is_main_it)
        └→ InspectionReport
-            └→ InspectionDetail (inspector's work log, one "box")
-                 └→ Incident (defect found, quantity + optional evidence)
-                      → Defect (catalog, OPTIONAL) — incidents.defect_label holds
-                        free-text defects when no catalog entry is used; at least
-                        one of defect_id/defect_label is required.
+            └→ InspectionDetail (inspector's work log)
+                 └→ InspectionDetailSerialNumber (one box: series/lot + counts)
+                      └→ Incident (defect, quantity + optional evidence)
+                           → Defect (catalog; defect_label preserves history)
 
-Client ← (optional, 1:1 per user) ── User (role 'Cliente', via users.client_id)
+Client ← User (role 'Cliente', via users.client_id)
+Service ←→ Client User (explicit access via service_client_users)
 ```
 
 ## Current Implementation Status
 
-### Current rules (2026-09-27)
+### Current rules (2026-11-23)
 
-These supersede historical descriptions below. Release/deploy checklist:
+Canonical rules: [`docs/BUSINESS_RULES.md`](docs/BUSINESS_RULES.md). Data model:
+[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md). Release/deploy checklist:
 [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md), [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 - An inspection detail contains up to 20 boxes (`inspection_detail_serial_numbers`).
@@ -152,8 +180,9 @@ These supersede historical descriptions below. Release/deploy checklist:
 - Inspected, rejected and reworked are nonnegative integers entered per box;
   accepted is read-only = inspected minus rejected. Rejected cannot exceed
   inspected. Detail totals sum the boxes; creation uses one SQL transaction.
-- Defect quantity comes from the selected box's rejected count (read-only in UI,
-  derived again in API). Evidence supports separate native camera/gallery inputs.
+- A box may distribute its rejected pieces across several defects. Each quantity
+  is a positive integer, and the final distribution must equal that box's rejected
+  count. Evidence supports separate native camera/gallery inputs.
 - Client report screen groups by date + shift, with totals and consolidated
   defect descriptions. No per-box cards. Excel retains the individual boxes,
   series, lots, counts and defects. Existing RATE/FULL TIME hours are preserved.
@@ -163,7 +192,7 @@ These supersede historical descriptions below. Release/deploy checklist:
 ### Completed Features
 - Authentication flow (Firebase + session cookies)
 - Protected layout with Header/Sidebar navigation
-- Sitemap with permission-based route filtering
+- Sitemap with role-based route filtering
 - Favorites system (star routes, display on home)
 - Clients table with:
   - Server-side pagination
@@ -183,11 +212,11 @@ These supersede historical descriptions below. Release/deploy checklist:
 - **Piece counts**: `SerialNumbersInput.tsx` captures inspected/rejected/reworked per box; accepted is calculated, not inspected. `InspectionDetailForm.tsx` displays the summed box totals. A non-blocking amber warning remains when total defect quantities differ from rejected pieces.
 - **"Problema / Condición Revisada"**: `inspection_details` queries now also return `report_problem` (= `inspection_reports.problem`), shown read-only in `InspectionDetailForm.tsx` before the piece-count fields, and added as its own column in the Excel export (right after the piece counts, before the per-defect breakdown). It's distinct from a "Defecto" (what was actually found) - it's what the inspector is supposed to be looking for.
 - **Free-text "Pieza" in Work Instructions**: `WorkInstructionModal.tsx`'s part field is now a text input (with a `<datalist>` of existing catalog names as suggestions) instead of a mandatory `<Select>`. The backend (`findOrCreatePartByName` in `instruccionTrabajoHandler.js`) resolves the typed name to an existing `parts` row (case-insensitive match) or creates a new one - `work_instructions.part_id` stays a valid FK either way, no schema change needed.
-- **Home dashboard** (`(protected)/home/_components/Home.tsx`): the old "Favoritos" empty-state message ("No tienes rutas favoritas...") was replaced by an "Accesos Rápidos" section - numbered cards (1. Clientes → 7. Administración) covering the main flow in order, filtered the same way as `Sidebar.tsx` (Admin sees all 7 steps incl. Usuarios/Roles/Media; Manager/Inspector see everything except the admin-only cards). The Favoritos section itself is unchanged and still renders below it, just only when the user actually has starred routes. Role `Cliente` never reaches this page - `middleware.ts` redirects it to `/mis-reportes` before it renders.
+- **Home dashboard** (`(protected)/home/_components/Home.tsx`): a banner, a 5-step workflow strip (`WORKFLOW_ITEMS`: Reporte → Detalle → Revisión → Resultado → Excel), a quick-access card grid (`QUICK_ACCESS_ITEMS`; entries with `adminOnly: true` - Usuarios, Roles, Media - are shown only to Admin), and a "Favoritos" section that renders only when the user has starred routes. Role `Cliente` never reaches this page - `middleware.ts` redirects it to `/mis-reportes` before it renders.
 - **"Rate de Inspección"** card in `InspectionDetailForm.tsx` (below "Conteo de Piezas"): shows the work instruction's `inspection_rate_per_hour` ("Rate Establecido"), the box's live `computedInspectedPieces`, and "Horas Estimadas por Rate" = `round(inspeccionadas / rate, 2)` - use `Math.round(x * 100) / 100`, not `.toFixed(2)`, since JS float rounding on values like `2.025` truncates down with `toFixed`. Falls back to "Rate no configurado" (`inspection_rate_per_hour` is `null`) or "Rate no válido" (rate is `0`, division skipped). Backend: `wi.inspection_rate_per_hour` added to the `getDetalleInspeccionById` join in `detalleInspeccionHandler.js`. This is distinct from "Horas Trabajadas" (real hours) - never conflate the two.
-- **Defects captured before the inspection detail is saved**: `DefectsSection.tsx` now works in two modes based on `inspectionDetailId`. When `null` (create mode), defects are kept in memory only (`pendingDefects` - no upload, no `incidents` row) and can be added/edited/deleted freely; the component exposes `commitPendingDefects(newDetailId)` via `forwardRef`/`useImperativeHandle`, which `InspectionDetailForm.tsx` calls right after `createInspectionDetail` succeeds, uploading evidence and creating each `incident` against the new id. Any defect that fails to save doesn't block navigation to the newly created detail - it's reported via `alert()` so the user can re-add it from there. When `inspectionDetailId` is set (existing detail), defects save immediately as before, and now also support **Editar** (previously only Delete existed) by reusing the same modal, calling `updateIncident` and swapping evidence via `deleteMediaIfExists` when a new file replaces an old one. Defect quantity is now required and must be `> 0` in both modes.
-- **Multiple serial numbers per box**: `inspection_details.serial_number` (single column) was replaced by a child table, `inspection_detail_serial_numbers` (`inspection_detail_id`, `serial_number`, unique per pair) - a box can now relate to up to 20 serial numbers instead of exactly one. Migration: `ArgosBackEnd/migrations/multiple_serial_numbers.sql` (creates the table, backfills existing single values, then drops the old column - already applied to local dev DB, **still needs to be re-applied manually on the VPS** per the standard migration workflow below). Backend: `POST /inspection-details/:id/serial-numbers` and `DELETE /inspection-details/:id/serial-numbers/:serialId` in `detalleInspeccionHandler.js` add/remove one at a time for an existing detail; `createDetalleInspeccion` also accepts an optional `serial_numbers: string[]` array to bulk-insert together with a brand-new detail (no separate commit step needed, unlike defect evidence, since there's no file upload involved). Every read path that used to select `idt.serial_number` now aggregates via a `GROUP_CONCAT` subquery (`serial_numbers_list`, used in the Excel export and `incidenciaHandler.js`'s joins) or returns the full array (`serial_numbers: {id, serial_number}[]`, used by `getDetalleInspeccionById`, `getDetallesInspeccion`, and `getReporteById`) - never a single value. Frontend: `SerialNumbersInput.tsx` follows the same pending/saved dual-mode pattern as `DefectsSection.tsx` - pending mode (creating a new detail) keeps values as a plain `string[]` in the parent form's `formData.serial_numbers`; saved mode (editing/viewing an existing detail) manages its own list and hits the add/delete endpoints immediately. Validation: at least one required, no duplicates (case-insensitive, stored uppercased+trimmed), max 20, enforced both client-side (inline messages) and server-side (400/409 responses).
-- **Required-field validation** in `InspectionDetailForm.tsx` (Número de Serie, Número de Lote, Inspector, Turno, Fecha de Inspección, Fecha de Manufactura, Hora de Inicio, Hora de Fin - all marked with `*`): errors are computed continuously (`validateFormData`) but only surfaced once a field is blurred or Save is attempted (`touched`/`submitAttempted` state) - never immediately on opening the form. On a failed save, the first invalid field (in form order, via `fieldRefs`) is scrolled into view and focused. Red border comes from the existing `aria-invalid` styling already built into `Input`/`SelectTrigger` (`components/ui/input.tsx`/`select.tsx`) - no new styling needed, just pass `aria-invalid={!!error}`. "Turno" was changed from free text (`"Turno 1"`, `"Matutino"`) to a digits-only numeric field per this validation pass. "Fecha de Manufactura" must not be after "Fecha de Inspección"; "Hora de Fin" must be strictly after "Hora de Inicio" (see above). Time inputs got `lang="es-MX"` to push the native picker into 24h display (Chrome/Edge) - the stored value was always 24h `"HH:MM"` regardless.
+- **Defects captured before the inspection detail is saved**: `DefectsSection.tsx` works in two modes based on `inspectionDetailId`. When `null`, defects stay in memory until `createInspectionDetail` succeeds; then `commitPendingDefects` uploads evidence and creates each incident. A failed defect does not delete the new detail and is reported for recovery. Existing-detail defects persist individually and support edit, delete and evidence replacement. Several defects may share a box, but their quantities must exactly distribute its rejected pieces.
+- **Multiple boxes per detail**: `inspection_detail_serial_numbers` stores up to 20 boxes per detail. Each row has its own series/lote and inspected/accepted/rejected/reworked counts. A box needs series or lot; lot-only boxes keep `serial_number = NULL`, and repeated lots remain distinct by row ID. Pending boxes are created with the detail; existing boxes persist individually. See `docs/BUSINESS_RULES.md` for current validation details.
+- **Required-field validation** in `InspectionDetailForm.tsx` ("Número de serie o lote" - one of the two per box, Inspector, Turno, Fecha de Inspección, Fecha de Manufactura, Hora de Inicio, Hora de Fin - all marked with `*`): errors are computed continuously (`validateFormData`) but only surfaced once a field is blurred or Save is attempted (`touched`/`submitAttempted` state) - never immediately on opening the form. On a failed save, the first invalid field (in form order, via `fieldRefs`) is scrolled into view and focused. Red border comes from the existing `aria-invalid` styling already built into `Input`/`SelectTrigger` (`components/ui/input.tsx`/`select.tsx`) - no new styling needed, just pass `aria-invalid={!!error}`. "Turno" was changed from free text (`"Turno 1"`, `"Matutino"`) to a digits-only numeric field per this validation pass. "Fecha de Manufactura" must not be after "Fecha de Inspección"; "Hora de Fin" must be strictly after "Hora de Inicio" (see above). Time inputs got `lang="es-MX"` to push the native picker into 24h display (Chrome/Edge) - the stored value was always 24h `"HH:MM"` regardless.
 
 ### Patterns to Follow
 
@@ -247,5 +276,8 @@ For detailed context, patterns, and code templates, see:
 
 ## Related Docs
 
+- [`docs/BUSINESS_RULES.md`](docs/BUSINESS_RULES.md) - canonical roles, workflow, calculations and persistence rules
+- [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) - table relationships, storage and migrations
+- [`docs/UI_UX_ROADMAP.md`](docs/UI_UX_ROADMAP.md) - completed and pending interface phases
 - [`ArgosBackEnd/API_REFERENCE.md`](ArgosBackEnd/API_REFERENCE.md) - full endpoint-level request/response reference
 - [`DEPLOYMENT.md`](DEPLOYMENT.md) - VPS infrastructure, deploy workflow, incident history
