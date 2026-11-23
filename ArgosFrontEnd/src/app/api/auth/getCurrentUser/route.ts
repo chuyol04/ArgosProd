@@ -47,8 +47,11 @@ export async function GET(req:NextRequest) {
 
         const roles: string[] = value.roles ?? [];
         let clientOptions: Array<{ id: number; name: string }> = [];
+        const canSelectClient = roles.some(
+            (role) => role === "Admin" || role === "Manager" || role === "Inspector"
+        );
 
-        if (roles.includes("Admin")) {
+        if (canSelectClient) {
             try {
                 const clientsResp = await fetch(
                     EXPRESS_BASE_URL + "/clients?limit=1000&offset=0",

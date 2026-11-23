@@ -17,7 +17,9 @@ export default function Header({ onMenuClick, menuOpen }: HeaderProps) {
     const router = useRouter();
     const { user } = useUser();
     const isClientOnly = user?.roles?.includes("Cliente") ?? false;
-    const isAdmin = user?.roles?.includes("Admin") ?? false;
+    const canSelectClient = user?.roles?.some(
+        (role) => role === "Admin" || role === "Manager" || role === "Inspector"
+    ) ?? false;
     const homePath = isClientOnly ? "/mis-reportes" : "/home";
     const [activeClientId, setActiveClientId] = useState("all");
     const [isChangingClient, startClientTransition] = useTransition();
@@ -87,7 +89,7 @@ export default function Header({ onMenuClick, menuOpen }: HeaderProps) {
                 </div>
             </div>
 
-            {isAdmin && (
+            {canSelectClient && (
                 <label className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
                     <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                     <span className="sr-only">Cliente activo</span>
