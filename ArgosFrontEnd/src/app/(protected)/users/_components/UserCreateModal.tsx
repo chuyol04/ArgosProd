@@ -156,15 +156,16 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                 <DialogHeader>
                     <DialogTitle>Crear Usuario</DialogTitle>
                 </DialogHeader>
-                <div className="space-y-4 py-2">
+                <div className="space-y-4 py-2" aria-busy={isPending}>
                     {error && (
-                        <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                        <div role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
                             {error}
                         </div>
                     )}
                     <div className="space-y-2">
-                        <Label>Nombre *</Label>
+                        <Label htmlFor="create-user-name">Nombre *</Label>
                         <Input
+                            id="create-user-name"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             placeholder="Nombre completo"
@@ -172,8 +173,9 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Correo *</Label>
+                        <Label htmlFor="create-user-email">Correo *</Label>
                         <Input
+                            id="create-user-email"
                             type="email"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
@@ -182,8 +184,10 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Teléfono</Label>
+                        <Label htmlFor="create-user-phone">Teléfono</Label>
                         <Input
+                            id="create-user-phone"
+                            type="tel"
                             value={phoneNumber}
                             onChange={(e) => setPhoneNumber(e.target.value)}
                             placeholder="000-000-0000"
@@ -191,13 +195,13 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Rol</Label>
+                        <Label htmlFor="create-user-role">Rol</Label>
                         <Select
                             value={selectedRoleId}
                             onValueChange={setSelectedRoleId}
                             disabled={isPending}
                         >
-                            <SelectTrigger>
+                            <SelectTrigger id="create-user-role">
                                 <SelectValue placeholder="Seleccionar rol..." />
                             </SelectTrigger>
                             <SelectContent>
@@ -211,13 +215,13 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
                     </div>
                     {isClientRoleSelected && (
                         <div className="space-y-2">
-                            <Label>Cliente Asociado *</Label>
+                            <Label htmlFor="create-user-client">Cliente Asociado *</Label>
                             <Select
                                 value={selectedClientId}
                                 onValueChange={setSelectedClientId}
                                 disabled={isPending}
                             >
-                                <SelectTrigger>
+                                <SelectTrigger id="create-user-client">
                                     <SelectValue placeholder="Seleccionar cliente..." />
                                 </SelectTrigger>
                                 <SelectContent>

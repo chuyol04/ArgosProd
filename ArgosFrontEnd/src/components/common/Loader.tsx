@@ -9,7 +9,10 @@ interface messageProp{
 
 const Loader: React.FC<messageProp> = ({message}) => {
     return(
-        <div className='flex flex-col w-full h-[100vh] justify-center items-center'><span className="my-4">{message}</span> <GridLoader color="#005B94" /></div>
+        <div role="status" aria-live="polite" className="flex min-h-[50vh] w-full flex-col items-center justify-center px-4 text-center">
+            <span className="my-4">{message || "Cargando…"}</span>
+            <div data-slot="loading-indicator" aria-hidden="true"><GridLoader color="#005B94" /></div>
+        </div>
     )
 };
 

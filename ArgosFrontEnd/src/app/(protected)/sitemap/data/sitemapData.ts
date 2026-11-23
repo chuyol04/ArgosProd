@@ -13,6 +13,16 @@ export interface ISitemapCategory {
 
 export const sitemapData: ISitemapCategory[] = mapData.categories;
 
+// Navigation visibility mirrors the existing role policy; the server enforces access.
+export function getVisibleCategories(roles: string[]): ISitemapCategory[] {
+    if (roles.includes("Cliente")) {
+        return [{ name: "Mi cuenta", routes: [{ name: "Mis reportes", path: "/mis-reportes" }] }];
+    }
+    return roles.includes("Admin")
+        ? sitemapData
+        : sitemapData.filter((category) => category.name !== "Administración");
+}
+
 // Build a lookup map for quick path -> route info resolution
 const routeMap = new Map<string, ISitemapRoute>();
 for (const category of sitemapData) {

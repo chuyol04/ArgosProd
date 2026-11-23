@@ -1,65 +1,47 @@
-'use client'
+'use client';
 
-import React from 'react';
-import { useRouter } from "next/navigation";
-import { ICategoryData } from '../types/sitemap.types';
+import Link from 'next/link';
 import { Star } from 'lucide-react';
+import { ICategoryData } from '../types/sitemap.types';
+import { Button } from '@/components/ui/button';
 
 interface CategoryProps extends ICategoryData {
-    favorites?: string[]; // Array of favorited route paths
+    favorites?: string[];
     onToggleFavorite?: (routePath: string) => void;
     showStars?: boolean;
+    disabled?: boolean;
 }
 
-const Category: React.FC<CategoryProps> = ({
-    name,
-    routes,
-    favorites = [],
-    onToggleFavorite,
-    showStars = true
-}) => {
-    const router = useRouter();
-
-    const handleStarClick = (e: React.MouseEvent, routePath: string) => {
-        e.stopPropagation();
-        if (onToggleFavorite) {
-            onToggleFavorite(routePath);
-        }
-    };
-
+export default function Category({ name, routes, favorites = [], onToggleFavorite, showStars = true, disabled = false }: CategoryProps) {
     return (
-        <div className='flex flex-col w-full py-5'>
-            <div><span className='font-bold text-xl'>{name}</span></div>
-            {routes.map(route => {
-                const isFavorite = favorites.includes(route.path);
-                return (
-                    <div key={route.path} className="flex items-center gap-2 group">
-                        <button
-                            onClick={() => router.push(route.path)}
-                            className="text-base hover:text-blue-800 transition-colors"
-                        >
-                            {route.name}
-                        </button>
-                        {showStars && onToggleFavorite && (
-                            <button
-                                onClick={(e) => handleStarClick(e, route.path)}
-                                className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-                                title={isFavorite ? "Quitar de favoritos" : "Agregar a favoritos"}
-                            >
-                                <Star
-                                    className={`h-4 w-4 transition-colors ${
-                                        isFavorite
-                                            ? 'fill-yellow-400 text-yellow-400'
-                                            : 'text-gray-400 hover:fill-yellow-400 hover:text-yellow-400'
-                                    }`}
-                                />
-                            </button>
-                        )}
-                    </div>
-                );
-            })}
-        </div>
-    )
-};
-
-export default Category;
+        <section className="min-w-0">
+            <h2 className="mb-3 text-lg font-semibold text-foreground">{name}</h2>
+            <ul className="divide-y rounded-xl border bg-card">
+                {routes.map((route) => {
+                    const isFavorite = favorites.includes(route.path);
+                    const favoriteLabel = (isFavorite ? 'Quitar ' : 'Agregar ') + route.name + (isFavorite ? ' de favoritos' : ' a favoritos');
+                    return (
+                        <li key={route.path} className="flex min-w-0 items-center gap-2 px-3">
+                            <Link href={route.path} className="min-w-0 flex-1 break-words rounded-md py-3 text-sm font-medium text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+                                {route.name}
+                            </Link>
+                            {showStars && onToggleFavorite && (
+                                <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    disabled={disabled}
+                                    onClick={() => onToggleFavorite(route.path)}
+                                    aria-pressed={isFavorite}
+                                    aria-label={favoriteLabel}
+                                >
+                                    <Star aria-hidden="true" className={isFavorite ? 'fill-amber-700 text-amber-700' : 'text-muted-foreground'} />
+                                </Button>
+                            )}
+                        </li>
+                    );
+                })}
+            </ul>
+        </section>
+    );
+}

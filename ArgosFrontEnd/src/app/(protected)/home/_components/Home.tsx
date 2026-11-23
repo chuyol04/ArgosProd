@@ -2,179 +2,64 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useEffect, useMemo, useState, useTransition } from 'react';
-import {
-    AlertTriangle,
-    ArrowRight,
-    BriefcaseBusiness,
-    CheckCircle2,
-    ClipboardCheck,
-    ClipboardList,
-    Download,
-    FileImage,
-    FileText,
-    PackageSearch,
-    SearchCheck,
-    ShieldCheck,
-    UserCog,
-    Users,
-    Wrench,
-    type LucideIcon,
-} from 'lucide-react';
+import { useEffect, useState, useTransition } from 'react';
+import { ClipboardCheck, FileText } from 'lucide-react';
 import Category from '@/app/(protected)/sitemap/_components/Category';
 import { toggleFavoriteRoute } from '@/app/(protected)/favorite-routes/actions/favorite-routes.actions';
 import { getFavoriteRoutes } from '@/app/(protected)/favorite-routes/data/favorite-routes.data';
-import { sitemapData } from '@/app/(protected)/sitemap/data/sitemapData';
-import { ICategoryData } from '@/app/(protected)/sitemap/types/sitemap.types';
+import { getVisibleCategories } from '@/app/(protected)/sitemap/data/sitemapData';
 import { useUser } from '@/contexts/users/userContext';
+import PageContainer from '@/components/layout/PageContainer';
+import { Button } from '@/components/ui/button';
 
-interface IQuickAccessItem {
-    title: string;
-    description: string;
-    path: string;
-    icon: LucideIcon;
-    adminOnly?: boolean;
-}
-
-const WORKFLOW_ITEMS = [
-    { title: 'Reporte', icon: FileText, path: '/reportes-inspeccion' },
-    { title: 'Detalle', icon: ClipboardList, path: '/detalles-inspeccion/crear' },
-    { title: 'Revisión', icon: SearchCheck, path: '/reportes-inspeccion' },
-    { title: 'Resultado', icon: CheckCircle2, path: '/reportes-inspeccion' },
-    { title: 'Excel', icon: Download, path: '/reportes-inspeccion' },
+const WORKFLOW = [
+    ['Reporte', 'Selecciona la instrucción de trabajo y crea el reporte.'],
+    ['Detalle', 'Captura cajas, piezas y defectos del reporte.'],
+    ['Revisión', 'Comprueba las cantidades y evidencias capturadas.'],
+    ['Resultado', 'Consulta el resultado del reporte seleccionado.'],
+    ['Excel', 'Descarga el archivo desde el reporte.'],
 ];
-
-const QUICK_ACCESS_ITEMS: IQuickAccessItem[] = [
-    {
-        title: 'Reportes de inspección',
-        description: 'Crear, consultar y dar seguimiento a reportes.',
-        path: '/reportes-inspeccion',
-        icon: FileText,
-    },
-    {
-        title: 'Detalles de inspección',
-        description: 'Capturar cajas, piezas, rechazos y defectos.',
-        path: '/detalles-inspeccion/crear',
-        icon: ClipboardCheck,
-    },
-    {
-        title: 'Clientes',
-        description: 'Alta y consulta del catálogo de clientes.',
-        path: '/clients',
-        icon: Users,
-    },
-    {
-        title: 'Servicios',
-        description: 'Servicios asociados a cada cliente.',
-        path: '/services',
-        icon: BriefcaseBusiness,
-    },
-    {
-        title: 'Piezas',
-        description: 'Consulta y administración del catálogo de piezas.',
-        path: '/parts',
-        icon: Wrench,
-    },
-    {
-        title: 'Defectos',
-        description: 'Consulta y administración del catálogo de defectos.',
-        path: '/defects',
-        icon: AlertTriangle,
-    },
-    {
-        title: 'Instrucciones de trabajo',
-        description: 'Documentos e instrucciones para cada operación.',
-        path: '/instrucciones-trabajo',
-        icon: PackageSearch,
-    },
-    {
-        title: 'Usuarios',
-        description: 'Administración de cuentas de usuario.',
-        path: '/users',
-        icon: UserCog,
-        adminOnly: true,
-    },
-    {
-        title: 'Roles',
-        description: 'Administración de roles y accesos.',
-        path: '/roles',
-        icon: ShieldCheck,
-        adminOnly: true,
-    },
-    {
-        title: 'Archivos y evidencias',
-        description: 'Administración de archivos del sistema.',
-        path: '/media',
-        icon: FileImage,
-        adminOnly: true,
-    },
-];
-
-function QuickAccessCard({ item }: { item: IQuickAccessItem }) {
-    const Icon = item.icon;
-
-    return (
-        <Link
-            href={item.path}
-            className="group flex min-h-32 items-start gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md"
-        >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-50 text-orange-600">
-                <Icon className="h-5 w-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-                <span className="flex items-center justify-between gap-3 font-semibold text-slate-900">
-                    {item.title}
-                    <ArrowRight className="h-4 w-4 shrink-0 text-slate-400 transition group-hover:translate-x-1 group-hover:text-orange-500" />
-                </span>
-                <span className="mt-2 block text-sm leading-5 text-slate-500">
-                    {item.description}
-                </span>
-            </span>
-        </Link>
-    );
-}
 
 export default function Home() {
     const { user } = useUser();
     const [favoriteRouteIds, setFavoriteRouteIds] = useState<string[]>([]);
+    const [favoritesLoading, setFavoritesLoading] = useState(true);
+    const [favoriteError, setFavoriteError] = useState('');
+    const [favoriteStatus, setFavoriteStatus] = useState('');
     const [isPending, startTransition] = useTransition();
 
     useEffect(() => {
         if (!user) return;
-
+        let active = true;
+        setFavoritesLoading(true);
+        setFavoriteRouteIds([]);
+        setFavoriteError('');
         getFavoriteRoutes()
-            .then((favorites) => setFavoriteRouteIds(favorites.map((favorite) => favorite.route_id)))
-            .catch((error) => console.error('Failed to load favorite routes:', error));
+            .then((favorites) => { if (active) setFavoriteRouteIds(favorites.map((favorite) => favorite.route_id)); })
+            .catch(() => { if (active) setFavoriteError('No pudimos cargar tus favoritos. Puedes usar el menú o el mapa del sitio.'); })
+            .finally(() => { if (active) setFavoritesLoading(false); });
+        return () => { active = false; };
     }, [user]);
 
-    const isAdmin = user?.roles?.includes('Admin') ?? false;
-
-    const visibleQuickAccessItems = useMemo(
-        () => QUICK_ACCESS_ITEMS.filter((item) => !item.adminOnly || isAdmin),
-        [isAdmin]
-    );
-
-    const favoritesByCategory = useMemo(() => {
-        if (!user) return [];
-
-        return sitemapData.reduce<ICategoryData[]>((categories, category) => {
-            const routes = category.routes.filter((route) =>
-                favoriteRouteIds.includes(route.path)
-            );
-
-            if (routes.length > 0) categories.push({ name: category.name, routes });
-            return categories;
-        }, []);
-    }, [favoriteRouteIds, user]);
+    const categories = user ? getVisibleCategories(user.roles) : [];
+    const favoritesByCategory = categories
+        .map((category) => ({ ...category, routes: category.routes.filter((route) => favoriteRouteIds.includes(route.path)) }))
+        .filter((category) => category.routes.length > 0);
 
     const handleRemoveFavorite = (routeId: string) => {
+        if (isPending || favoritesLoading) return;
+        const previousFavorites = favoriteRouteIds;
+        setFavoriteError('');
+        setFavoriteStatus('');
         setFavoriteRouteIds((current) => current.filter((id) => id !== routeId));
-
         startTransition(async () => {
-            const result = await toggleFavoriteRoute(routeId);
-            if (!result.success) {
-                setFavoriteRouteIds((current) => [...current, routeId]);
-                console.error('Failed to remove favorite:', result.error);
+            try {
+                const result = await toggleFavoriteRoute(routeId);
+                if (!result.success) throw new Error('favorite');
+                setFavoriteStatus('Favorito eliminado.');
+            } catch {
+                setFavoriteRouteIds(previousFavorites);
+                setFavoriteError('No se guardó el cambio. Tu favorito se ha conservado; intenta de nuevo.');
             }
         });
     };
@@ -182,113 +67,50 @@ export default function Home() {
     if (!user) return null;
 
     return (
-        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-            <section className="grid min-h-72 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[0.9fr_1.1fr]">
-                <div className="flex flex-col justify-center p-7 sm:p-10">
-                    <p className="text-sm font-semibold uppercase tracking-[0.18em] text-orange-600">
-                        Panel administrativo
-                    </p>
-                    <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-                        Bienvenida, {user.name}
-                    </h1>
-                    <p className="mt-4 max-w-xl text-base leading-7 text-slate-600">
-                        Supervisa la operación y continúa el flujo de inspección desde un solo lugar.
-                    </p>
-                    <div className="mt-7 flex flex-wrap gap-3">
-                        <Link
-                            href="/reportes-inspeccion"
-                            className="inline-flex items-center gap-2 rounded-lg bg-orange-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600"
-                        >
-                            <ClipboardCheck className="h-4 w-4" />
-                            Nueva inspección
-                        </Link>
-                        <Link
-                            href="/reportes-inspeccion"
-                            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
-                        >
-                            Ver reportes
-                            <ArrowRight className="h-4 w-4" />
-                        </Link>
+        <PageContainer className="space-y-8">
+            <section className="grid overflow-hidden rounded-2xl border bg-card lg:grid-cols-2">
+                <div className="min-w-0 p-6 sm:p-8">
+                    <h1 className="break-words text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Hola, {user.name || 'bienvenido'}</h1>
+                    <p className="mt-3 max-w-prose text-pretty text-base leading-7 text-muted-foreground">Consulta tus reportes o continúa con la captura de una inspección.</p>
+                    <div className="mt-6 flex flex-wrap gap-3">
+                        <Button asChild size="lg"><Link href="/reportes-inspeccion"><FileText aria-hidden="true" />Reportes de inspección</Link></Button>
+                        <Button asChild variant="outline" size="lg"><Link href="/detalles-inspeccion/crear"><ClipboardCheck aria-hidden="true" />Capturar detalle</Link></Button>
                     </div>
                 </div>
-                <div className="relative aspect-[1917/821] bg-slate-900 lg:aspect-auto lg:min-h-full">
-                    <Image
-                        src="/images/bannerozcabinspeccion.png"
-                        alt="Equipo de inspección de OZCAB"
-                        fill
-                        sizes="(min-width: 1024px) 55vw, 100vw"
-                        className="object-contain lg:object-cover lg:object-center"
-                        priority
-                    />
+                <div className="relative aspect-[1917/821] self-center bg-slate-900">
+                    <Image src="/images/bannerozcabinspeccion.png" alt="Equipo de inspección de OZCAB" fill sizes="(min-width: 1024px) 50vw, 100vw" className="object-contain" priority />
                 </div>
             </section>
 
-            <section>
-                <div className="mb-4">
-                    <p className="text-sm font-semibold uppercase tracking-[0.16em] text-orange-600">
-                        Flujo operativo
-                    </p>
-                    <h2 className="mt-1 text-2xl font-bold text-slate-950">
-                        De la captura al resultado
-                    </h2>
+            <section aria-labelledby="favorites-heading" aria-busy={favoritesLoading || isPending}>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <h2 id="favorites-heading" className="text-xl font-semibold">Tus favoritos</h2>
+                    <Button asChild variant="outline" size="sm"><Link href="/sitemap">Organizar favoritos</Link></Button>
                 </div>
-                <div className="grid overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-2 lg:grid-cols-5">
-                    {WORKFLOW_ITEMS.map((item, index) => {
-                        const Icon = item.icon;
-                        return (
-                            <Link
-                                key={item.title}
-                                href={item.path}
-                                className="group relative flex items-center gap-3 border-b border-slate-200 p-4 last:border-b-0 hover:bg-orange-50 sm:border-r lg:border-b-0"
-                            >
-                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700 group-hover:bg-orange-500 group-hover:text-white">
-                                    {index + 1}
-                                </span>
-                                <span>
-                                    <Icon className="mb-1 h-4 w-4 text-orange-500" />
-                                    <span className="text-sm font-semibold text-slate-800">{item.title}</span>
-                                </span>
-                            </Link>
-                        );
-                    })}
-                </div>
+                {favoriteError && <p role="alert" className="mb-3 text-sm text-destructive">{favoriteError}</p>}
+                <p role="status" className="text-sm text-muted-foreground">{favoritesLoading ? 'Cargando favoritos…' : isPending ? 'Guardando favorito…' : favoriteStatus}</p>
+                {favoritesByCategory.length > 0 ? (
+                    <div className="mt-3 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                        {favoritesByCategory.map((category) => <Category key={category.name} {...category} favorites={favoriteRouteIds} onToggleFavorite={handleRemoveFavorite} disabled={isPending || favoritesLoading} />)}
+                    </div>
+                ) : !favoritesLoading && !favoriteError && !isPending && (
+                    <p className="text-sm text-muted-foreground">Agrega tus pantallas más usadas con la estrella del mapa del sitio.</p>
+                )}
             </section>
 
-            <section>
-                <div className="mb-4 flex items-end justify-between gap-4">
-                    <div>
-                        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-orange-600">
-                            Accesos rápidos
-                        </p>
-                        <h2 className="mt-1 text-2xl font-bold text-slate-950">
-                            Herramientas de administración
-                        </h2>
-                    </div>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                    {visibleQuickAccessItems.map((item) => (
-                        <QuickAccessCard key={item.path} item={item} />
+            <div className="grid items-start gap-6 lg:grid-cols-2">
+                {categories.filter((category) => category.name !== 'Operación').map((category) => <Category key={category.name} {...category} showStars={false} />)}
+            </div>
+
+            <details className="rounded-xl border bg-card p-4 sm:p-5">
+                <summary className="cursor-pointer rounded-md font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">¿Cómo se completa una inspección?</summary>
+                <ol className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                    {WORKFLOW.map(([title, description], index) => (
+                        <li key={title} className="min-w-0 text-sm"><p className="font-semibold">{index + 1}. {title}</p><p className="mt-1 leading-6 text-muted-foreground">{description}</p></li>
                     ))}
-                </div>
-            </section>
-
-            {favoritesByCategory.length > 0 && (
-                <section className={isPending ? 'pointer-events-none opacity-70' : ''}>
-                    <h2 className="mb-4 text-2xl font-bold text-slate-950">Favoritos</h2>
-                    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                        {favoritesByCategory.map((category) => (
-                            <Category
-                                key={category.name}
-                                name={category.name}
-                                routes={category.routes}
-                                favorites={favoriteRouteIds}
-                                onToggleFavorite={handleRemoveFavorite}
-                                showStars
-                            />
-                        ))}
-                    </div>
-                </section>
-            )}
-        </div>
+                </ol>
+                <p className="mt-4 text-sm text-muted-foreground">La revisión, los resultados y la exportación se consultan dentro del reporte seleccionado.</p>
+            </details>
+        </PageContainer>
     );
 }

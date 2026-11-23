@@ -29,6 +29,8 @@ import {
   Plus,
   Eye,
   Search,
+  ArrowRight,
+  ClipboardList,
 } from "lucide-react";
 import ReportModal from "./ReportModal";
 import { deleteInspectionReport } from "@/app/(protected)/reportes-inspeccion/actions/reportes-inspeccion.actions";
@@ -65,7 +67,7 @@ export default function ReportsTable({ initialData }: Props) {
       setUrlParams({ search: searchInput || null, page: null });
     }, 350);
     return () => clearTimeout(timeout);
-  }, [searchInput]);
+  }, [qSearch, searchInput, setUrlParams]);
 
   const handleSearch = () => {
     setUrlParams({ search: searchInput || null, page: null });
@@ -81,6 +83,8 @@ export default function ReportsTable({ initialData }: Props) {
         service_name: report.service_name,
         client_name: report.client_name,
         start_date: report.start_date,
+        total_inspected_pieces: report.total_inspected_pieces ?? 0,
+        total_rejected_pieces: report.total_rejected_pieces ?? 0,
       })),
     [initialData.reports]
   );
@@ -118,21 +122,31 @@ export default function ReportsTable({ initialData }: Props) {
   return (
     <PageContainer>
       <div className="flex flex-col gap-4 lg:gap-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-foreground text-xl font-bold text-balance lg:text-3xl">
-            Reportes de Inspección
-          </h1>
-          <Button onClick={() => openModal("create")}>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-primary text-xs font-semibold uppercase tracking-[0.16em]">Operación</p>
+            <h1 className="text-foreground text-2xl font-bold text-balance lg:text-3xl">Reportes de inspección</h1>
+            <p className="text-muted-foreground max-w-2xl text-sm">Crea el reporte base y continúa con la captura de cajas, piezas y defectos.</p>
+          </div>
+          <Button className="w-full sm:w-auto" onClick={() => openModal("create")}>
             <Plus className="mr-2 h-4 w-4" />
-            Crear Reporte
+            Nuevo reporte
           </Button>
+        </div>
+
+        <div className="border-border bg-muted/30 flex items-start gap-3 rounded-lg border p-4">
+          <ClipboardList className="text-primary mt-0.5 h-5 w-5 shrink-0" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Flujo de captura</p>
+            <p className="text-muted-foreground text-sm">Reporte → detalle de inspección → revisión → exportación. Abre un reporte para continuar o consultar sus capturas.</p>
+          </div>
         </div>
 
         {/* Filters */}
         <div className="flex flex-col gap-3 lg:gap-4">
           <div className="flex flex-col gap-3 sm:flex-row lg:gap-4">
             <div className="flex w-full flex-col gap-2">
-              <Label htmlFor="search">Buscar:</Label>
+              <Label htmlFor="search">Buscar reportes</Label>
               <div className="flex gap-2">
                 <Input
                   id="search"
@@ -142,7 +156,7 @@ export default function ReportsTable({ initialData }: Props) {
                   onChange={(e) => setSearchInput(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 />
-                <Button type="button" variant="outline" size="icon" onClick={handleSearch}>
+                <Button type="button" variant="outline" size="icon" onClick={handleSearch} aria-label="Buscar reportes">
                   <Search className="h-4 w-4" />
                 </Button>
               </div>
@@ -168,6 +182,7 @@ export default function ReportsTable({ initialData }: Props) {
                   <th className="text-muted-foreground p-3 text-left text-xs font-medium lg:p-4 lg:text-sm">
                     Cliente
                   </th>
+                  <th className="text-muted-foreground p-3 text-left text-xs font-medium lg:p-4 lg:text-sm">Captura</th>
                   <th className="text-muted-foreground p-3 text-center text-xs font-medium lg:p-4 lg:text-sm">
                     Acciones
                   </th>
@@ -191,40 +206,29 @@ export default function ReportsTable({ initialData }: Props) {
                     <td className="text-card-foreground p-3 text-xs lg:p-4 lg:text-sm">
                       {record.client_name}
                     </td>
+                    <td className="p-3 lg:p-4">
+                      <p className="text-card-foreground text-xs font-medium lg:text-sm">{record.total_inspected_pieces.toLocaleString("es-MX")} inspeccionadas</p>
+                      <p className="text-muted-foreground mt-0.5 text-xs">{record.total_rejected_pieces.toLocaleString("es-MX")} rechazadas</p>
+                    </td>
                     <td className="p-3 text-center lg:p-4">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openModal("view", record.id)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver Detalles
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => openModal("edit", record.id)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Actualizar
-                          </DropdownMenuItem>
-                          {canDelete && (
-                            <DropdownMenuItem
-                              onClick={() => handleDelete(record.id)}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Borrar
-                            </DropdownMenuItem>
-                          )}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                      <div className="flex items-center justify-center gap-1">
+                        <Button variant="outline" size="sm" onClick={() => openModal("view", record.id)}>Abrir<ArrowRight className="ml-1.5 h-4 w-4" /></Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`Más acciones para el reporte ${record.id}`}><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openModal("view", record.id)}><Eye className="mr-2 h-4 w-4" />Ver reporte</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => openModal("edit", record.id)}><Pencil className="mr-2 h-4 w-4" />Editar reporte</DropdownMenuItem>
+                            {canDelete && <DropdownMenuItem onClick={() => handleDelete(record.id)} className="text-destructive"><Trash2 className="mr-2 h-4 w-4" />Eliminar reporte</DropdownMenuItem>}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </td>
                   </tr>
                 ))}
                 {tableRows.length === 0 && (
                   <tr>
-                    <td className="text-muted-foreground p-4 text-sm" colSpan={5}>
-                      No hay reportes de inspección registrados.
+                    <td className="text-muted-foreground p-8 text-center text-sm" colSpan={6}>
+                      No hay reportes que coincidan con la búsqueda.
                     </td>
                   </tr>
                 )}
@@ -254,21 +258,22 @@ export default function ReportsTable({ initialData }: Props) {
                   <p className="text-muted-foreground mt-1 text-xs">
                     Cliente: {record.client_name}
                   </p>
+                  <p className="text-foreground mt-3 text-xs font-medium">{record.total_inspected_pieces.toLocaleString("es-MX")} inspeccionadas · {record.total_rejected_pieces.toLocaleString("es-MX")} rechazadas</p>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon">
+                    <Button variant="ghost" size="icon" aria-label={`Más acciones para el reporte ${record.id}`}>
                       <MoreHorizontal className="h-4 w-4" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={() => openModal("view", record.id)}>
                       <Eye className="mr-2 h-4 w-4" />
-                      Ver Detalles
+                      Ver reporte
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openModal("edit", record.id)}>
                       <Pencil className="mr-2 h-4 w-4" />
-                      Actualizar
+                      Editar reporte
                     </DropdownMenuItem>
                     {canDelete && (
                       <DropdownMenuItem
@@ -276,24 +281,29 @@ export default function ReportsTable({ initialData }: Props) {
                         className="text-destructive"
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Borrar
+                        Eliminar reporte
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
+              <Button variant="outline" className="w-full justify-between" onClick={() => openModal("view", record.id)}>
+                Ver reporte y continuar<ArrowRight className="h-4 w-4" />
+              </Button>
             </div>
           ))}
           {tableRows.length === 0 && (
-            <div className="text-muted-foreground text-sm">
-              No hay reportes de inspección registrados.
+            <div className="border-border bg-muted/20 rounded-lg border border-dashed p-8 text-center">
+              <p className="text-foreground text-sm font-medium">No hay reportes disponibles</p>
+              <p className="text-muted-foreground mt-1 text-sm">Crea un reporte para comenzar la captura de inspección.</p>
+              <Button className="mt-4" onClick={() => openModal("create")}><Plus className="mr-2 h-4 w-4" />Nuevo reporte</Button>
             </div>
           )}
         </div>
 
         {/* Pagination */}
         <div className="flex flex-col items-center justify-between gap-4 text-sm sm:flex-row">
-          <div className="flex items-center gap-4 lg:gap-6">
+          <div className="flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 sm:w-auto sm:justify-start lg:gap-x-6">
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground text-xs whitespace-nowrap lg:text-sm">
                 Filas por página
@@ -319,6 +329,7 @@ export default function ReportsTable({ initialData }: Props) {
                 className="h-8 w-8"
                 disabled={currentPage <= 1}
                 onClick={() => goToPage(1)}
+                aria-label="Ir a la primera página"
               >
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
@@ -328,6 +339,7 @@ export default function ReportsTable({ initialData }: Props) {
                 className="h-8 w-8"
                 disabled={currentPage <= 1}
                 onClick={() => goToPage(currentPage - 1)}
+                aria-label="Ir a la página anterior"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -337,6 +349,7 @@ export default function ReportsTable({ initialData }: Props) {
                 className="h-8 w-8"
                 disabled={!hasMore}
                 onClick={() => goToPage(currentPage + 1)}
+                aria-label="Ir a la página siguiente"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { Building2, Compass, Menu } from "lucide-react";
@@ -9,9 +10,10 @@ import { ACTIVE_CLIENT_COOKIE } from "@/lib/clientScope";
 
 interface HeaderProps {
     onMenuClick: () => void;
+    menuOpen: boolean;
 }
 
-export default function Header({ onMenuClick }: HeaderProps) {
+export default function Header({ onMenuClick, menuOpen }: HeaderProps) {
     const router = useRouter();
     const { user } = useUser();
     const isClientOnly = user?.roles?.includes("Cliente") ?? false;
@@ -49,80 +51,59 @@ export default function Header({ onMenuClick }: HeaderProps) {
     };
 
     return (
-        <header className="sticky top-0 z-30 flex h-20 items-center border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
-            <button
-                type="button"
-                onClick={onMenuClick}
-                className="mr-3 rounded-lg p-2 text-slate-700 hover:bg-slate-100 lg:hidden"
-                aria-label="Abrir menú"
-            >
-                <Menu className="h-6 w-6" />
-            </button>
+        <header className="sticky top-0 z-30 flex min-h-20 flex-wrap items-center gap-x-3 gap-y-3 border-b border-slate-200 bg-white px-4 py-3 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+                <button
+                    id="mobile-menu-trigger"
+                    type="button"
+                    onClick={onMenuClick}
+                    className="rounded-lg p-2 text-slate-700 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring lg:hidden"
+                    aria-label="Abrir menú"
+                    aria-expanded={menuOpen}
+                    aria-controls="mobile-navigation"
+                    aria-haspopup="dialog"
+                >
+                    <Menu className="h-6 w-6" aria-hidden="true" />
+                </button>
+                <Link href={homePath} aria-label="Ir al inicio" className="min-w-0 rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring">
+                    <Image src="/logo.png" alt="OZCAB Group" width={92} height={34} className="h-9 w-auto object-contain xl:hidden" priority />
+                    <span className="hidden truncate text-lg font-semibold text-slate-900 xl:block">OZCAB Sorting Inspección</span>
+                </Link>
+            </div>
 
-            <button
-                type="button"
-                onClick={() => router.push(homePath)}
-                className="flex min-w-0 items-center gap-3 text-left"
-            >
-                <Image
-                    src="/logo.png"
-                    alt="OZCAB Group"
-                    width={92}
-                    height={34}
-                    className="h-9 w-auto object-contain lg:hidden"
-                    priority
-                />
-                <span className="hidden truncate text-lg font-semibold text-slate-900 sm:block">
-                    OZCAB Sorting Inspección
-                </span>
-            </button>
-
-            <div className="ml-auto flex items-center gap-2 sm:gap-4">
-                {isAdmin && (
-                    <label className="flex min-w-0 items-center gap-2">
-                        <Building2 className="hidden h-4 w-4 shrink-0 text-orange-500 sm:block" />
-                        <span className="sr-only">Cliente activo</span>
-                        <select
-                            value={activeClientId}
-                            onChange={(event) => handleClientChange(event.target.value)}
-                            disabled={isChangingClient}
-                            className="h-10 max-w-40 rounded-lg border border-slate-300 bg-white px-2 text-sm font-medium text-slate-700 outline-none transition focus:border-orange-500 focus:ring-2 focus:ring-orange-100 disabled:opacity-60 sm:max-w-56 sm:px-3"
-                            aria-label="Cliente activo"
-                        >
-                            <option value="all">Todos los clientes</option>
-                            {clientOptions.map((client) => (
-                                <option key={client.id} value={client.id}>
-                                    {client.name}
-                                </option>
-                            ))}
-                        </select>
-                    </label>
-                )}
+            <div className="ml-auto flex items-center gap-3">
                 {!isClientOnly && (
-                    <button
-                        type="button"
-                        onClick={() => router.push("/sitemap")}
-                        className="hidden items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 sm:flex"
-                    >
-                        <Compass className="h-4 w-4" />
-                        Mapa del sitio
-                    </button>
+                    <Link href="/sitemap" aria-label="Mapa del sitio" title="Mapa del sitio" className="hidden rounded-lg p-2 text-slate-600 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring sm:block">
+                        <Compass className="h-5 w-5" aria-hidden="true" />
+                    </Link>
                 )}
-                <div className="h-8 w-px bg-slate-200" />
-                <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">
-                        {initials}
+                <div className="flex min-w-0 items-center gap-2.5">
+                    <div aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{initials}</div>
+                    <div className="hidden xl:block">
+                        <p className="max-w-40 truncate text-sm font-semibold text-slate-900" title={user?.name}>{user?.name ?? "Usuario"}</p>
+                        <p className="text-xs text-slate-600">{user?.roles?.[0] ?? ""}</p>
                     </div>
-                    <div className="hidden sm:block">
-                        <p className="max-w-44 truncate text-sm font-semibold text-slate-900">
-                            {user?.name ?? "Usuario"}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                            {user?.roles?.[0] ?? ""}
-                        </p>
-                    </div>
+                    <span className="sr-only xl:hidden">{user?.name ?? "Usuario"}</span>
                 </div>
             </div>
+
+            {isAdmin && (
+                <label className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                    <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                    <span className="sr-only">Cliente activo</span>
+                    <select
+                        value={activeClientId}
+                        onChange={(event) => handleClientChange(event.target.value)}
+                        disabled={isChangingClient}
+                        className="h-10 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 text-base font-medium text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60 sm:w-44 sm:text-sm xl:w-56"
+                        aria-label="Cliente activo"
+                        aria-busy={isChangingClient}
+                    >
+                        <option value="all">Todos los clientes</option>
+                        {clientOptions.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}
+                    </select>
+                </label>
+            )}
         </header>
     );
 }

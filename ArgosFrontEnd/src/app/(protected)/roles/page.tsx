@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ShieldCheck, UserCog, Users } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import PageContainer from "@/components/layout/PageContainer";
 import { fetchRoles } from "@/app/(protected)/users/actions/users.actions";
 import { fetchUsers } from "@/app/(protected)/users/data/users.data";
 
@@ -20,7 +21,7 @@ export default async function RolesPage() {
     const users = usersResult.data?.users ?? [];
 
     return (
-        <div className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 lg:px-12">
+        <PageContainer className="max-w-6xl space-y-6">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
                     <ShieldCheck className="h-7 w-7 text-muted-foreground" />
@@ -104,6 +105,6 @@ export default async function RolesPage() {
                     })}
                 </div>
             )}
-        </div>
+        </PageContainer>
     );
 }

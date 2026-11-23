@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Eye, Plus, Download } from "lucide-react";
+import { Loader2, Plus, Download, ArrowRight, ClipboardCheck } from "lucide-react";
 import {
   IWorkInstructionOption,
   IInspectionDetail,
@@ -131,8 +131,9 @@ export default function ReportModal({
   };
 
   const handleSubmit = () => {
+    setError(null);
     if (!workInstructionId || !startDate) {
-      alert("IT Asociado y Fecha de inicio son requeridos");
+      setError("Selecciona una instrucción de trabajo y una fecha de inicio.");
       return;
     }
 
@@ -143,18 +144,18 @@ export default function ReportModal({
         problem: problem || undefined,
       };
 
-      let result;
       if (isEditMode && reportId) {
-        result = await updateInspectionReport(reportId, data);
-      } else {
-        result = await createInspectionReport(data);
+        const result = await updateInspectionReport(reportId, data);
+        if (result.success) onOpenChange(false);
+        else setError(result.error || "No fue posible guardar los cambios.");
+        return;
       }
 
-      if (result.success) {
+      const result = await createInspectionReport(data);
+      if (result.success && result.id) {
         onOpenChange(false);
-      } else {
-        alert(result.error || "Error al guardar el reporte");
-      }
+        router.push(`/detalles-inspeccion/crear?report_id=${result.id}`);
+      } else setError(result.error || "No fue posible crear el reporte.");
     });
   };
 
@@ -177,11 +178,11 @@ export default function ReportModal({
   const getTitle = () => {
     switch (mode) {
       case "create":
-        return "Crear Reporte de Inspección";
+        return "Nuevo reporte de inspección";
       case "edit":
-        return "Editar Reporte de Inspección";
+        return "Editar reporte de inspección";
       case "view":
-        return "Detalles de Reporte de Inspección";
+        return "Reporte de inspección";
     }
   };
 
@@ -189,25 +190,35 @@ export default function ReportModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[90vw] max-w-[600px] overflow-hidden p-0">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] w-[90vw] max-w-[600px] flex-col overflow-hidden p-0">
         <div className="p-6 pb-0">
           <DialogHeader>
             <DialogTitle>{getTitle()}</DialogTitle>
-            {!isCreateMode && report && (
-              <DialogDescription>Reporte #{report.id}</DialogDescription>
-            )}
+            <DialogDescription>
+              {isCreateMode ? "Paso 1 de 2: define el reporte y continúa con la captura del detalle." : report ? `Reporte #${report.id} · ${report.client_name}` : "Consulta y administra el reporte de inspección."}
+            </DialogDescription>
           </DialogHeader>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16">
+          <div className="flex items-center justify-center py-16" role="status">
             <Loader2 className="h-8 w-8 animate-spin" />
+            <span className="sr-only">Cargando reporte</span>
           </div>
         ) : error ? (
-          <div className="py-8 text-center text-destructive">{error}</div>
+          <div className="mx-6 my-4 rounded-lg bg-destructive/10 p-4 text-sm text-destructive" role="alert">{error}</div>
         ) : (
-          <div className="max-h-[70vh] overflow-y-auto p-6 pt-4">
+          <div className="min-h-0 overflow-y-auto overscroll-contain p-6 pt-4">
             <div className="space-y-4">
+              {isCreateMode && (
+                <div className="border-border bg-muted/30 flex items-start gap-3 rounded-lg border p-4">
+                  <ClipboardCheck className="text-primary mt-0.5 h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Primero crea el reporte</p>
+                    <p className="text-muted-foreground mt-1 text-sm">Al guardarlo te llevaremos directamente a capturar cajas, cantidades y defectos.</p>
+                  </div>
+                </div>
+              )}
               {/* Form Fields / View Fields */}
               {isViewMode && report ? (
                 // View Mode - Read Only
@@ -251,10 +262,10 @@ export default function ReportModal({
                 // Create/Edit Mode - Editable
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2 sm:col-span-2">
-                    <Label htmlFor="workInstruction">IT Asociado *</Label>
+                    <Label htmlFor="workInstruction">Instrucción de trabajo *</Label>
                     <Select value={workInstructionId} onValueChange={handleWorkInstructionChange}>
                       <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Seleccionar IT..." />
+                        <SelectValue placeholder="Selecciona una instrucción..." />
                       </SelectTrigger>
                       <SelectContent>
                         {workInstructions.length === 0 ? (
@@ -295,114 +306,48 @@ export default function ReportModal({
                 </div>
               )}
 
-              {/* Inspection Details Table - shown for edit and view modes */}
+              {/* Inspection details - shown for edit and view modes */}
               {!isCreateMode && (
                 <>
                   <Separator />
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Detalles de Inspección
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground text-xs">
-                          {inspectionDetails.length} registro(s)
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCreateInspectionDetail}
-                        >
-                          <Plus className="mr-1 h-3 w-3" />
-                          Crear
-                        </Button>
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold">Capturas del reporte</p>
+                        <p className="text-muted-foreground text-xs">{inspectionDetails.length === 1 ? "1 detalle registrado" : `${inspectionDetails.length} detalles registrados`}</p>
                       </div>
+                      <Button variant="outline" size="sm" onClick={handleCreateInspectionDetail}><Plus className="mr-1.5 h-4 w-4" />Capturar detalle</Button>
                     </div>
 
                     {inspectionDetails.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">
-                        No hay detalles de inspección asociados a este reporte.
-                      </p>
+                      <div className="border-border bg-muted/20 rounded-lg border border-dashed p-5 text-center">
+                        <p className="text-sm font-medium">Este reporte aún no tiene capturas</p>
+                        <p className="text-muted-foreground mt-1 text-sm">Agrega el primer detalle para registrar cajas, piezas y defectos.</p>
+                        <Button className="mt-4" size="sm" onClick={handleCreateInspectionDetail}>Capturar primer detalle<ArrowRight className="ml-2 h-4 w-4" /></Button>
+                      </div>
                     ) : (
-                      <div className="border-border overflow-hidden rounded-lg border">
-                        <div className="overflow-x-auto max-h-[200px]">
-                          <table className="w-full text-sm">
-                            <thead className="bg-muted sticky top-0">
-                              <tr>
-                                <th className="text-muted-foreground px-4 py-2 text-left text-xs font-medium">
-                                  ID
-                                </th>
-                                <th className="text-muted-foreground px-4 py-2 text-left text-xs font-medium">
-                                  # Pieza
-                                </th>
-                                <th className="text-muted-foreground px-4 py-2 text-left text-xs font-medium">
-                                  Fecha
-                                </th>
-                                <th className="text-muted-foreground px-4 py-2 text-left text-xs font-medium">
-                                  Turno
-                                </th>
-                                <th className="text-muted-foreground px-4 py-2 text-center text-xs font-medium">
-                                  Ver
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-card">
-                              {inspectionDetails.map((detail, index) => (
-                                <tr
-                                  key={detail.id}
-                                  className={
-                                    index !== inspectionDetails.length - 1
-                                      ? "border-border border-b"
-                                      : ""
-                                  }
-                                >
-                                  <td className="text-card-foreground px-4 py-2 text-xs">
-                                    {detail.id}
-                                  </td>
-                                  <td className="text-card-foreground px-4 py-2 text-xs">
-                                    {detail.serial_numbers.length > 0
-                                      ? detail.serial_numbers.map((s) => `${s.serial_number} / Lote ${s.lot_number || detail.lot_number || "-"}`).join(", ")
-                                      : detail.lot_number || "-"}
-                                  </td>
-                                  <td className="text-card-foreground px-4 py-2 text-xs">
-                                    {formatDate(detail.inspection_date)}
-                                  </td>
-                                  <td className="text-card-foreground px-4 py-2 text-xs">
-                                    {detail.shift || "-"}
-                                  </td>
-                                  <td className="px-4 py-2 text-center">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      onClick={() => handleViewInspectionDetail(detail.id)}
-                                    >
-                                      <Eye className="h-3 w-3" />
-                                    </Button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
+                      <div className="max-h-[260px] space-y-2 overflow-y-auto pr-1">
+                        {inspectionDetails.map((detail) => (
+                          <button key={detail.id} type="button" className="border-border bg-card hover:bg-muted/50 focus-visible:ring-ring flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none" onClick={() => handleViewInspectionDetail(detail.id)}>
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">Detalle #{detail.id}</p>
+                              <p className="text-muted-foreground mt-0.5 truncate text-xs">{detail.serial_numbers.length > 0 ? `${detail.serial_numbers.length} caja(s) · ${detail.inspector_name}` : `Sin cajas · ${detail.inspector_name}`}</p>
+                              <p className="text-muted-foreground mt-0.5 text-xs">{formatDate(detail.inspection_date)} · Turno {detail.shift || "-"}</p>
+                            </div>
+                            <span className="text-primary flex shrink-0 items-center gap-1 text-xs font-medium">Abrir<ArrowRight className="h-4 w-4" /></span>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
                 </>
-              )}
-
-              {/* Create mode message */}
-              {isCreateMode && (
-                <p className="text-muted-foreground text-sm">
-                  Los detalles de inspección se pueden agregar después de crear el reporte.
-                </p>
               )}
             </div>
           </div>
         )}
 
         {/* Footer */}
-        <div className="flex justify-end gap-2 border-t px-6 py-4">
+        <div className="flex shrink-0 flex-col-reverse gap-2 border-t px-6 py-4 sm:flex-row sm:justify-end">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             {isViewMode ? "Cerrar" : "Cancelar"}
           </Button>
@@ -412,17 +357,20 @@ export default function ReportModal({
               Exportar Excel
             </Button>
           )}
+          {isViewMode && reportId && (
+            <Button onClick={handleCreateInspectionDetail}>Capturar detalle<ArrowRight className="ml-2 h-4 w-4" /></Button>
+          )}
           {!isViewMode && (
-            <Button onClick={handleSubmit} disabled={isPending || loading}>
+            <Button onClick={handleSubmit} disabled={isPending || loading} aria-busy={isPending}>
               {isPending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Guardando...
                 </>
               ) : isEditMode ? (
-                "Actualizar"
+                "Guardar cambios"
               ) : (
-                "Crear"
+                <>Crear y capturar detalle<ArrowRight className="ml-2 h-4 w-4" /></>
               )}
             </Button>
           )}

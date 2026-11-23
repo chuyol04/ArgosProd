@@ -2,7 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 
 export const config = {
     // Exclude: api routes, Next.js internals, static assets
-    matcher: ['/((?!api|_next/static|_next/image|favicon.ico|.*\\.png$|.*\\.jpg$|.*\\.jpeg$|.*\\.svg$|.*\\.gif$|.*\\.ico$).*)'],
+    matcher: ['/((?!api|_next/static|_next/image|favicon.ico|bannernuevo1\\.webp$|.*\\.png$|.*\\.jpg$|.*\\.jpeg$|.*\\.svg$|.*\\.gif$|.*\\.ico$).*)'],
 };
 
 const ADMIN_ONLY_PATHS = ['/media', '/users', '/roles'];

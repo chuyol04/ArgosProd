@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowLeft, Pencil, Save, X, Trash2, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Pencil, Save, X, Trash2, AlertTriangle, ClipboardCheck } from "lucide-react";
 import { useUser } from "@/contexts/users/userContext";
 import {
   IInspectionDetailExtended,
@@ -359,7 +359,8 @@ export default function InspectionDetailForm({
       const firstErrorField = REQUIRED_FIELD_ORDER.find((f) => errors[f]);
       if (firstErrorField) {
         const el = fieldRefs.current[firstErrorField];
-        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        el?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "center" });
         el?.querySelector<HTMLElement>("input, button, select, textarea")?.focus();
       }
       return;
@@ -460,18 +461,17 @@ export default function InspectionDetailForm({
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 px-4 sm:px-8 lg:px-12">
+    <div className="mx-auto w-full min-w-0 max-w-4xl space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <Button variant="ghost" size="icon" className="shrink-0" onClick={() => router.back()} aria-label="Volver a reportes">
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <div>
-            <h1 className="text-xl font-bold text-foreground lg:text-2xl">
-              {isCreate
-                ? "Crear Detalle de Inspección"
-                : `Detalle #${detail?.id}`}
+          <div className="min-w-0 space-y-1">
+            <p className="text-primary text-xs font-semibold uppercase tracking-[0.16em]">{isCreate ? "Paso 2 de 2" : isReadOnly ? "Consulta" : "Edición"}</p>
+            <h1 className="text-foreground text-2xl font-bold text-balance lg:text-3xl">
+              {isCreate ? "Capturar detalle de inspección" : `Detalle #${detail?.id}`}
             </h1>
             {detail && (
               <p className="text-sm text-muted-foreground">
@@ -480,7 +480,7 @@ export default function InspectionDetailForm({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
           {isReadOnly && (
             <>
               {canEdit && (
@@ -513,7 +513,7 @@ export default function InspectionDetailForm({
               </Button>
               <Button size="sm" onClick={handleSave} disabled={isPending}>
                 <Save className="mr-1.5 h-4 w-4" />
-                {isPending ? "Guardando..." : "Guardar"}
+                {isPending ? "Guardando..." : "Guardar detalle"}
               </Button>
             </>
           )}
@@ -521,7 +521,7 @@ export default function InspectionDetailForm({
       </div>
 
       {error && (
-        <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+        <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive" role="alert">
           {error}
         </div>
       )}
@@ -530,9 +530,13 @@ export default function InspectionDetailForm({
       {detail && (
         <Card className="bg-muted/30">
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Información del Reporte</CardTitle>
+            <CardTitle className="text-sm font-medium">Contexto del reporte</CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          <CardContent className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Reporte</p>
+              <p className="text-sm font-medium">#{detail.inspection_report_id}</p>
+            </div>
             <div>
               <p className="text-xs text-muted-foreground">Pieza</p>
               <p className="text-sm font-medium">{detail.part_name}</p>
@@ -553,14 +557,15 @@ export default function InspectionDetailForm({
       {isCreate && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Reporte de Inspección</CardTitle>
+            <CardTitle className="text-sm font-medium">Selecciona el reporte</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <p className="text-muted-foreground text-sm">La instrucción, el cliente y los defectos disponibles dependen del reporte.</p>
             <Select
               value={formData.inspection_report_id ? String(formData.inspection_report_id) : ""}
               onValueChange={(val) => handleInputChange("inspection_report_id", Number(val))}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Reporte de inspección">
                 <SelectValue placeholder="Seleccione un reporte" />
               </SelectTrigger>
               <SelectContent>
@@ -577,6 +582,13 @@ export default function InspectionDetailForm({
                 )}
               </SelectContent>
             </Select>
+            {selectedReport && (
+              <div className="border-border bg-muted/30 grid grid-cols-1 gap-3 rounded-lg border p-4 text-sm sm:grid-cols-3">
+                <div><p className="text-muted-foreground text-xs">Reporte</p><p className="font-medium">#{selectedReport.id}</p></div>
+                <div><p className="text-muted-foreground text-xs">Pieza</p><p className="font-medium">{selectedReport.part_name}</p></div>
+                <div><p className="text-muted-foreground text-xs">Servicio</p><p className="font-medium">{selectedReport.service_name}</p></div>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -595,6 +607,16 @@ export default function InspectionDetailForm({
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {!isReadOnly && (
+        <div className="border-border bg-muted/30 flex items-start gap-3 rounded-lg border p-4">
+          <ClipboardCheck className="text-primary mt-0.5 h-5 w-5 shrink-0" />
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Cómo se guarda esta captura</p>
+            <p className="text-muted-foreground text-sm">{isCreate ? "Agrega las cajas, distribuye las piezas rechazadas entre sus defectos y usa “Guardar detalle” al final. Todo se registrará junto." : "Las cajas y los defectos se guardan con sus propios botones. Usa “Guardar detalle” para conservar inspector, fechas, turno y comentarios."}</p>
+          </div>
+        </div>
       )}
 
       {/* Identification Section */}
@@ -924,6 +946,21 @@ export default function InspectionDetailForm({
           />
         </CardContent>
       </Card>
+
+      {!isReadOnly && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="flex flex-col gap-4 py-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Finaliza la captura</p>
+              <p className="text-muted-foreground mt-1 text-sm">Revisa cajas, cantidades y defectos antes de guardar el detalle.</p>
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row">
+              <Button variant="outline" onClick={handleCancel} disabled={isPending}>Cancelar</Button>
+              <Button onClick={handleSave} disabled={isPending} aria-busy={isPending}><Save className="mr-2 h-4 w-4" />{isPending ? "Guardando..." : "Guardar detalle"}</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

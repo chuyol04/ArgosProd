@@ -15,7 +15,6 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
-import { projectShutdown } from "next/dist/build/swc/generated-native"
 
 const Form = FormProvider
 
@@ -156,6 +155,7 @@ function FormMessage({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="form-message"
       id={formMessageId}
+      role="alert"
       className={cn("text-destructive text-sm", className)}
       {...props}
     >

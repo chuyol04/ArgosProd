@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PageContainer from "@/components/layout/PageContainer";
 import {
     Select,
     SelectContent,
@@ -63,7 +64,7 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
     };
 
     return (
-        <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-8 lg:px-12 py-6">
+        <PageContainer className="max-w-6xl space-y-6">
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -93,13 +94,14 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-1 gap-2">
                     <Input
+                        aria-label="Buscar usuarios por nombre, correo o teléfono"
                         placeholder="Buscar por nombre, correo o teléfono..."
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                         className="max-w-sm"
                     />
-                    <Button variant="outline" size="icon" onClick={handleSearch}>
+                    <Button variant="outline" size="icon" onClick={handleSearch} aria-label="Buscar usuarios">
                         <Search className="h-4 w-4" />
                     </Button>
                 </div>
@@ -109,7 +111,7 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                         setUrlParams({ limit: Number(val), page: null });
                     }}
                 >
-                    <SelectTrigger className="w-[100px]">
+                    <SelectTrigger className="w-[100px]" aria-label="Filas por página">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -173,7 +175,7 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                                         <td className="px-4 py-3 text-right">
                                             <DropdownMenu>
                                                 <DropdownMenuTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Acciones de ${user.name}`}>
                                                         <MoreHorizontal className="h-4 w-4" />
                                                     </Button>
                                                 </DropdownMenuTrigger>
@@ -209,10 +211,10 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                         Página {currentPage} de {totalPages}
                     </p>
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" disabled={currentPage <= 1} onClick={() => setQPage(currentPage - 1)}>
+                        <Button variant="outline" size="icon" disabled={currentPage <= 1} onClick={() => setQPage(currentPage - 1)} aria-label="Página anterior">
                             <ChevronLeft className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="icon" disabled={currentPage >= totalPages} onClick={() => setQPage(currentPage + 1)}>
+                        <Button variant="outline" size="icon" disabled={currentPage >= totalPages} onClick={() => setQPage(currentPage + 1)} aria-label="Página siguiente">
                             <ChevronRight className="h-4 w-4" />
                         </Button>
                     </div>
@@ -229,6 +231,6 @@ export default function UsersTable({ initialData, error }: UsersTableProps) {
                 open={!!resetTarget}
                 onOpenChange={(open) => !open && setResetTarget(null)}
             />
-        </div>
+        </PageContainer>
     );
 }

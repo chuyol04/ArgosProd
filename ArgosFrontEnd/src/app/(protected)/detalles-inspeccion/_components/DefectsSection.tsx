@@ -546,9 +546,11 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
           disabled={disabled || defects.length === 0}
         >
           <Plus className="h-4 w-4 mr-1" />
-          Agregar
+          Agregar defecto
         </Button>
       </div>
+
+      {!disabled && <p className="text-xs text-muted-foreground">{isPendingMode ? "Los defectos se registrarán cuando guardes el detalle." : "Cada defecto se guarda desde su ventana de captura."}</p>}
 
       {!isLoading && defects.length === 0 && (
         <p className="text-sm text-amber-700 dark:text-amber-300">
@@ -595,6 +597,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => handleOpenEditPending(pending)}
+                        aria-label={`Editar defecto ${pending.defect_label}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -605,6 +608,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={() => handleDeletePending(pending.tempId)}
                         disabled={deletingId === pending.tempId}
+                        aria-label={`Eliminar defecto ${pending.defect_label}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -665,6 +669,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                         size="icon"
                         className="h-8 w-8"
                         onClick={() => handleOpenEditSaved(incident)}
+                        aria-label={`Editar defecto ${incident.defect_name}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -675,6 +680,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                         className="h-8 w-8 text-destructive hover:text-destructive"
                         onClick={() => handleDeleteSaved(incident.id)}
                         disabled={deletingId === incident.id}
+                        aria-label={`Eliminar defecto ${incident.defect_name}`}
                       >
                         {deletingId === incident.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -855,7 +861,7 @@ export const DefectsSection = forwardRef<DefectsSectionHandle, DefectsSectionPro
                   Guardando...
                 </>
               ) : (
-                "Guardar"
+                isEditing ? "Guardar cambios" : "Agregar defecto"
               )}
             </Button>
           </DialogFooter>

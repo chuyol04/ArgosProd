@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import PageContainer from "@/components/layout/PageContainer";
 import {
   Select,
   SelectContent,
@@ -135,7 +136,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
   };
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 px-4 sm:px-8 lg:px-12 py-6">
+    <PageContainer className="max-w-6xl space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -168,13 +169,14 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 gap-2">
           <Input
+            aria-label="Buscar archivos por nombre"
             placeholder="Buscar por nombre de archivo..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             className="max-w-sm"
           />
-          <Button variant="outline" size="icon" onClick={handleSearch}>
+          <Button variant="outline" size="icon" onClick={handleSearch} aria-label="Buscar archivos">
             <Search className="h-4 w-4" />
           </Button>
         </div>
@@ -195,7 +197,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
               setUrlParams({ limit: Number(val), page: null });
             }}
           >
-            <SelectTrigger className="w-[100px]">
+            <SelectTrigger className="w-[100px]" aria-label="Archivos por página">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -230,6 +232,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                 {/* Checkbox */}
                 <div className="absolute top-2 left-2 z-10">
                   <Checkbox
+                    aria-label={`Seleccionar ${file.filename}`}
                     checked={selected}
                     onCheckedChange={() => toggleSelect(file._id)}
                     className="bg-background/80 backdrop-blur-sm"
@@ -259,28 +262,29 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                 )}
 
                 {/* Actions overlay */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none group-hover:pointer-events-auto">
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity motion-reduce:transition-none flex items-center justify-center gap-2 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto">
                   <Button
                     type="button"
                     variant="secondary"
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => setPreviewFile(file)}
+                    aria-label={`Vista previa de ${file.filename}`}
                     title="Vista previa"
                   >
                     <Eye className="h-4 w-4" />
                   </Button>
-                  <a href={mediaDownloadUrl(file._id)} download>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon"
-                      className="h-8 w-8"
-                      title="Descargar"
-                    >
+                  <Button
+                    asChild
+                    variant="secondary"
+                    size="icon"
+                    className="h-8 w-8"
+                    title="Descargar"
+                  >
+                    <a href={mediaDownloadUrl(file._id)} download aria-label={`Descargar ${file.filename}`}>
                       <Download className="h-4 w-4" />
-                    </Button>
-                  </a>
+                    </a>
+                  </Button>
                   <Button
                     type="button"
                     variant="destructive"
@@ -291,6 +295,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                       setConfirmDelete(true);
                     }}
                     title="Eliminar"
+                    aria-label={`Eliminar ${file.filename}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -323,6 +328,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
               variant="outline"
               size="icon"
               disabled={currentPage <= 1}
+              aria-label="Página anterior"
               onClick={() => setQPage(currentPage - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
@@ -331,6 +337,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
               variant="outline"
               size="icon"
               disabled={currentPage >= totalPages}
+              aria-label="Página siguiente"
               onClick={() => setQPage(currentPage + 1)}
             >
               <ChevronRight className="h-4 w-4" />
@@ -422,6 +429,6 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageContainer>
   );
 }

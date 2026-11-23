@@ -12,7 +12,7 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.15 0 0);
   --primary: oklch(0.72 0.175 55);
-  --primary-foreground: oklch(1 0 0);
+  --primary-foreground: oklch(0.18 0.02 260);
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.15 0 0);
   --muted: oklch(0.96 0 0);
@@ -23,7 +23,7 @@
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.9 0 0);
   --input: oklch(0.9 0 0);
-  --ring: oklch(0.72 0.175 55);
+  --ring: oklch(0.52 0.15 45);
   --radius: 0.5rem;
 
   /* Added status badge colors */
@@ -152,6 +152,31 @@
   td, th {
     overflow-wrap: anywhere;
     vertical-align: top;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:focus-within {
+    scroll-behavior: auto;
+  }
+
+  [data-slot="button"],
+  [data-slot="checkbox"],
+  [data-slot="input"],
+  [data-slot="textarea"],
+  [data-slot="select-trigger"],
+  [data-slot="dialog-overlay"],
+  [data-slot="dialog-content"],
+  [data-slot="popover-content"],
+  [data-slot="select-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"] {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  [data-slot="loading-indicator"] * {
+    animation: none !important;
   }
 }
 

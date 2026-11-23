@@ -135,12 +135,15 @@ export function SerialNumbersInput({ inspectionDetailId, disabled = false, canDe
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {COUNT_FIELDS.map((field) => <label key={field} className="text-xs text-muted-foreground">{labels[field]}<Input type="number" min="0" step="1" max={field === "rejected_pieces" && Number.isFinite(draft.inspected_pieces) ? draft.inspected_pieces : 2147483647} readOnly={field === "accepted_pieces"} value={Number.isFinite(draft[field]) ? draft[field] : ""} onChange={(event) => setValue(field, event.target.value)} className="mt-1 read-only:bg-muted" /></label>)}
           </div>
-          <Button type="button" variant="outline" onClick={addBox} disabled={busyId !== null}><Plus className="mr-1 h-4 w-4" />Agregar caja</Button>
+          <Button type="button" variant="outline" onClick={addBox} disabled={busyId !== null} aria-busy={busyId === "new"}><Plus className="mr-1 h-4 w-4" />Agregar caja al detalle</Button>
         </div>
       )}
 
       {(error || localError) && <p role="alert" className="text-xs text-destructive">{localError || error}</p>}
-      <p className="text-xs text-muted-foreground">Cajas con serie o lote agregadas: {boxes.length}</p>
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Cajas agregadas: {boxes.length}</p>
+        {!disabled && <p className="text-xs text-muted-foreground">{pendingMode ? "Estas cajas se registrarán cuando guardes el detalle." : "Los cambios de cada caja se registran con su botón “Guardar caja”."}</p>}
+      </div>
 
       <div className="space-y-2">
         {boxes.map((box, index) => {
@@ -149,14 +152,14 @@ export function SerialNumbersInput({ inspectionDetailId, disabled = false, canDe
           const value = disabled ? editable : calculateAccepted(editable);
           return (
             <div key={persisted?.id ?? `${box.serial_number}-${index}`} className="rounded-lg border p-3">
-              <div className="mb-2 flex items-center justify-between"><strong className="text-sm">Caja {index + 1}</strong>{!disabled && (pendingMode || canDelete) && <Button type="button" variant="ghost" size="icon" onClick={() => removeBox(index)} disabled={busyId !== null}><X className="h-4 w-4" /></Button>}</div>
+              <div className="mb-2 flex items-center justify-between"><strong className="text-sm">Caja {index + 1}</strong>{!disabled && (pendingMode || canDelete) && <Button type="button" variant="ghost" size="icon" onClick={() => removeBox(index)} disabled={busyId !== null} aria-label={`Eliminar caja ${index + 1}`}><X className="h-4 w-4" /></Button>}</div>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
                 {(["serial_number", "lot_number", ...COUNT_FIELDS] as const).map((field) => {
                   const isCount = COUNT_FIELDS.includes(field as (typeof COUNT_FIELDS)[number]);
                   return <label key={field} className="text-xs text-muted-foreground">{labels[field]}<Input type={isCount ? "number" : "text"} min={isCount ? 0 : undefined} step={isCount ? 1 : undefined} max={field === "rejected_pieces" && Number.isFinite(value.inspected_pieces) ? value.inspected_pieces : isCount ? 2147483647 : undefined} maxLength={isCount ? undefined : 50} readOnly={field === "accepted_pieces"} value={isCount && !Number.isFinite(value[field]) ? "" : value[field]} disabled={disabled || pendingMode} onChange={(event) => persisted && setEdits((current) => ({ ...current, [persisted.id]: calculateAccepted({ ...value, [field]: isCount ? (event.target.value === "" ? NaN : Number(event.target.value)) : event.target.value }) }))} className="mt-1 read-only:bg-muted" /></label>;
                 })}
               </div>
-              {persisted && !disabled && <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => saveBox(persisted)} disabled={busyId !== null}><Save className="mr-1 h-3.5 w-3.5" />Guardar caja</Button>}
+              {persisted && !disabled && <Button type="button" size="sm" variant="outline" className="mt-2" onClick={() => saveBox(persisted)} disabled={busyId !== null} aria-busy={busyId === persisted.id}><Save className="mr-1 h-3.5 w-3.5" />Guardar caja {index + 1}</Button>}
             </div>
           );
         })}

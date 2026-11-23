@@ -34,24 +34,29 @@ export default function Login() {
 
       {/* Hero Banner */}
       <div
-        className="h-48 w-full bg-cover bg-center"
+        className="h-48 w-full bg-cover bg-[position:center_30%]"
         style={{ backgroundImage: "url('/bannernuevo1.webp')" }}
       ></div>
 
       {/* Login Form */}
-      <div className="flex w-full mt-12 justify-center items-center">
-        <form onSubmit={handleSubmit} className="space-y-6 flex flex-col w-80">
+      <main id="main-content" className="mx-auto mt-8 w-full max-w-sm px-4 pb-8 sm:mt-12">
+        <h1 className="sr-only">Iniciar sesión</h1>
+        <form onSubmit={handleSubmit} className="flex w-full flex-col space-y-6" aria-busy={loading}>
           {error && (
-            <div className="bg-destructive/10 text-destructive text-sm p-3 rounded">
+            <div id="login-error" role="alert" className="bg-destructive/10 text-destructive text-sm p-3 rounded">
               {error}
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">Correo electrónico</Label>
             <Input
               id="email"
+              name="email"
               type="email"
+              autoComplete="username"
+              spellCheck={false}
+              aria-describedby={error ? "login-error" : undefined}
               placeholder="ejemplo@mail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -63,6 +68,9 @@ export default function Login() {
             <Label htmlFor="password">Contraseña</Label>
             <Input
               id="password"
+              name="password"
+              autoComplete="current-password"
+              aria-describedby={error ? "login-error" : undefined}
               type={showPassword ? "text" : "password"}
               placeholder="contraseña"
               value={password}
@@ -92,7 +100,7 @@ export default function Login() {
             )}
           </Button>
         </form>
-      </div>
+      </main>
     </>
   );
 }
