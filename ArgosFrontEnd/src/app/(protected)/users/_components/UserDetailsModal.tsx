@@ -46,9 +46,9 @@ export default function UserDetailsModal({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-y-auto">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[600px]">
                 <DialogHeader>
-                    <DialogTitle>Detalles del Usuario</DialogTitle>
+                    <DialogTitle>Detalles del usuario</DialogTitle>
                 </DialogHeader>
 
                 {isLoading && (
@@ -77,7 +77,7 @@ export default function UserDetailsModal({
                                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                     Correo
                                 </p>
-                                <p className="text-sm font-medium">{details.email}</p>
+                                <p className="break-all text-sm font-medium">{details.email}</p>
                             </div>
                             <div>
                                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -101,12 +101,12 @@ export default function UserDetailsModal({
                                     {details.is_active ? "Activo" : "Inactivo"}
                                 </span>
                             </div>
-                            <div className="col-span-2">
+                            <div className="sm:col-span-2">
                                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                                     Rol
                                 </p>
                                 {details.roles.length > 0 ? (
-                                    <div className="flex gap-1 mt-1">
+                                    <div className="mt-1 flex flex-wrap gap-1">
                                         {details.roles.map((role) => (
                                             <span
                                                 key={role.id}
@@ -128,8 +128,8 @@ export default function UserDetailsModal({
                                 Instrucciones de Trabajo ({details.work_instructions.length})
                             </h3>
                             {details.work_instructions.length > 0 ? (
-                                <div className="rounded-lg border overflow-hidden">
-                                    <table className="w-full text-sm">
+                                <div className="overflow-x-auto rounded-lg border">
+                                    <table className="min-w-[560px] w-full text-sm">
                                         <thead className="bg-muted/50">
                                             <tr>
                                                 <th className="text-left px-3 py-2 font-medium text-muted-foreground text-xs">

@@ -10,8 +10,10 @@ type Props = {
 export default async function UsersPage({ searchParams }: Props) {
     const params = await searchParams;
     const search = typeof params.search === "string" ? params.search : null;
-    const limit = typeof params.limit === "string" ? parseInt(params.limit, 10) : 10;
-    const page = typeof params.page === "string" ? parseInt(params.page, 10) : 1;
+    const requestedLimit = typeof params.limit === "string" ? parseInt(params.limit, 10) : 10;
+    const requestedPage = typeof params.page === "string" ? parseInt(params.page, 10) : 1;
+    const limit = [10, 20, 50].includes(requestedLimit) ? requestedLimit : 10;
+    const page = Number.isInteger(requestedPage) ? Math.max(requestedPage, 1) : 1;
     const offset = (page - 1) * limit;
 
     const result = await fetchUsers(search, limit, offset);

@@ -200,7 +200,12 @@ export async function getInspectionReportById(
 
 export async function getInspectionReportDetails(
   id: number
-): Promise<{ success: boolean; data?: IInspectionReportDetails; error?: string }> {
+): Promise<{
+  success: boolean;
+  data?: IInspectionReportDetails;
+  error?: string;
+  status?: number;
+}> {
   try {
     if (!EXPRESS_BASE_URL) {
       throw new Error("EXPRESS_BASE_URL is not defined");
@@ -224,7 +229,11 @@ export async function getInspectionReportDetails(
     const json = await res.json();
 
     if (!res.ok) {
-      throw new Error(json.motive || "Failed to fetch inspection report details");
+      return {
+        success: false,
+        error: json.motive || "Failed to fetch inspection report details",
+        status: res.status,
+      };
     }
 
     if (!json.data) {
@@ -240,6 +249,7 @@ export async function getInspectionReportDetails(
     return {
       success: false,
       error: err instanceof Error ? err.message : "Unknown error",
+      status: 500,
     };
   }
 }

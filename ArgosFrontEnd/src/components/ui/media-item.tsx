@@ -8,11 +8,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { mediaViewUrl, mediaDownloadUrl, formatFileSize } from "@/lib/storage/fileUpload";
+import { mediaViewUrl, mediaDownloadUrl } from "@/lib/storage/fileUpload";
 import {
   File as FileIcon,
   Download,
   Eye,
+  LoaderCircle,
 } from "lucide-react";
 
 interface MediaFileInfo {
@@ -60,39 +61,64 @@ export function MediaItem({
   className = "",
 }: MediaItemProps) {
   const [info, setInfo] = useState<MediaFileInfo | null>(null);
+  const [infoStatus, setInfoStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [imgLoading, setImgLoading] = useState(true);
   const [imgFailed, setImgFailed] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
 
   useEffect(() => {
-    if (!mediaId || !/^[a-f0-9]{24}$/.test(mediaId)) return;
+    setInfo(null);
+    setInfoStatus("idle");
+    setImgLoading(true);
+    setImgFailed(false);
+  }, [mediaId]);
+
+  useEffect(() => {
+    if (!previewOpen || infoStatus !== "idle") return;
+    if (!mediaId || !/^[a-f0-9]{24}$/i.test(mediaId)) {
+      setInfoStatus("error");
+      return;
+    }
+
+    setInfoStatus("loading");
 
     fetch("/api/media/info", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ media_ids: [mediaId] }),
     })
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load media info");
+        return res.json();
+      })
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {
           setInfo(data[0]);
+          setInfoStatus("ready");
+          return;
         }
+        setInfoStatus("error");
       })
-      .catch(() => {});
-  }, [mediaId]);
+      .catch(() => {
+        setInfoStatus("error");
+      });
+  }, [infoStatus, mediaId, previewOpen]);
 
   const filename = info?.filename || label || "Archivo";
   const contentType = info?.contentType || "application/octet-stream";
   const isImage = info
     ? isImageByType(contentType) || isImageByName(info.filename)
-    : false;
+    : Boolean(label && isImageByName(label));
   const viewUrl = mediaViewUrl(mediaId);
   const dlUrl = mediaDownloadUrl(mediaId);
 
   return (
     <>
       {/* Thumbnail */}
-      <div
-        className={`group relative rounded-lg border overflow-hidden bg-muted/30 cursor-pointer ${sizeClasses[size]} ${className}`}
+      <button
+        type="button"
+        aria-label={`Abrir vista previa de ${filename}`}
+        className={`group relative overflow-hidden rounded-lg border bg-muted/30 text-left ${sizeClasses[size]} ${className}`}
         onClick={() => setPreviewOpen(true)}
       >
         {!imgFailed ? (
@@ -100,11 +126,20 @@ export function MediaItem({
             <img
               src={viewUrl}
               alt={filename}
-              className="w-full h-full object-cover"
-              onError={() => setImgFailed(true)}
+              className="h-full w-full object-cover"
+              onLoad={() => setImgLoading(false)}
+              onError={() => {
+                setImgLoading(false);
+                setImgFailed(true);
+              }}
             />
-            {/* Hover overlay */}
-            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            {imgLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-muted">
+                <LoaderCircle className="h-5 w-5 animate-spin text-muted-foreground" aria-hidden="true" />
+                <span className="sr-only">Cargando archivo</span>
+              </div>
+            )}
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
               <Eye className="h-5 w-5 text-white" />
             </div>
           </>
@@ -116,7 +151,7 @@ export function MediaItem({
             </p>
           </div>
         )}
-      </div>
+      </button>
 
       {/* Preview Dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
@@ -125,7 +160,12 @@ export function MediaItem({
             <DialogTitle className="truncate pr-8">{filename}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            {isImage && !imgFailed ? (
+            {(infoStatus === "idle" || infoStatus === "loading") ? (
+              <div className="flex min-h-48 flex-col items-center justify-center rounded-lg bg-muted/30">
+                <LoaderCircle className="h-7 w-7 animate-spin text-muted-foreground" aria-hidden="true" />
+                <p className="mt-3 text-sm text-muted-foreground">Cargando información del archivo...</p>
+              </div>
+            ) : isImage && !imgFailed ? (
               <div className="flex justify-center">
                 <img
                   src={viewUrl}
@@ -140,16 +180,20 @@ export function MediaItem({
                   Vista previa no disponible para este tipo de archivo
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">{contentType}</p>
+                {infoStatus === "error" && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    No fue posible cargar los datos de la vista previa.
+                  </p>
+                )}
               </div>
             )}
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted-foreground space-y-0.5">
-                <p>{filename}</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-0.5 text-sm text-muted-foreground">
+                <p className="truncate">{filename}</p>
                 <p className="text-xs">{contentType}</p>
-                <p className="font-mono text-xs">ID: {mediaId}</p>
               </div>
               <a href={dlUrl} download>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" className="w-full sm:w-auto">
                   <Download className="mr-1.5 h-4 w-4" />
                   Descargar
                 </Button>

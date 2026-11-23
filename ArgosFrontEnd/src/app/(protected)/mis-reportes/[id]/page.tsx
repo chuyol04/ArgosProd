@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Download, ExternalLink, FileText, ImageIcon, MessageSquare } from "lucide-react";
 import { getInspectionReportDetails } from "@/app/(protected)/reportes-inspeccion/actions/reportes-inspeccion.actions";
 import { fetchIncidentsByDetail, IIncident } from "@/app/(protected)/detalles-inspeccion/actions/incidents.actions";
+import { PortalState } from "@/app/(protected)/mis-reportes/_components/PortalState";
 import PageContainer from "@/components/layout/PageContainer";
 import { MediaItem } from "@/components/ui/media-item";
 import { formatDateDisplay } from "@/lib/dateTimeUtils";
@@ -42,7 +43,24 @@ export default async function MisReporteDetallePage({ params }: Props) {
   const reportId = Number((await params).id);
   if (!Number.isInteger(reportId)) notFound();
   const result = await getInspectionReportDetails(reportId);
-  if (!result.success || !result.data) notFound();
+  if (result.status === 404) notFound();
+  if (!result.success || !result.data) {
+    const restricted = result.status === 401 || result.status === 403;
+    return (
+      <PageContainer>
+        <PortalState
+          kind={restricted ? "restricted" : "error"}
+          title={restricted ? "Acceso restringido" : "No pudimos cargar este reporte"}
+          description={
+            restricted
+              ? "Tu cuenta no tiene acceso a este reporte. Verifica que el servicio esté asignado a tu usuario."
+              : "Ocurrió un problema al consultar la información. Intenta abrir el reporte nuevamente en unos minutos."
+          }
+          backHref="/mis-reportes"
+        />
+      </PageContainer>
+    );
+  }
 
   const { report, inspections, documents = [] } = result.data;
   const incidentLists = await Promise.all(inspections.map((detail) => fetchIncidentsByDetail(detail.id)));
@@ -83,21 +101,30 @@ export default async function MisReporteDetallePage({ params }: Props) {
   return (
     <PageContainer>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Link href="/mis-reportes" className="text-muted-foreground hover:text-foreground"><ArrowLeft className="h-5 w-5" /></Link>
+            <Link
+              href="/mis-reportes"
+              aria-label="Volver a mis reportes"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md border text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Link>
             <h1 className="text-xl font-bold lg:text-2xl">Reporte #{report.id}</h1>
           </div>
-          <Link href={`/api/reports/${report.id}/export`} className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+          <Link
+            href={`/api/reports/${report.id}/export`}
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
             <Download className="mr-2 h-4 w-4" />Exportar Excel
           </Link>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 rounded-lg border bg-card p-4 sm:grid-cols-3">
-          {[["Cliente", report.client_name], ["Servicio", report.service_name], ["Pieza", report.part_name], ["Fecha de Inicio", formatDateDisplay(report.start_date)], ["Modalidad", report.inspection_mode === "rate" ? "RATE" : "FULL TIME"]].map(([label, value]) => <div key={label}><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm font-medium">{value}</p></div>)}
+        <div className="grid grid-cols-1 gap-4 rounded-lg border bg-card p-4 sm:grid-cols-2 lg:grid-cols-5">
+          {[["Cliente", report.client_name], ["Servicio", report.service_name], ["Pieza", report.part_name], ["Fecha de inicio", formatDateDisplay(report.start_date)], ["Modalidad", report.inspection_mode === "rate" ? "RATE" : "FULL TIME"]].map(([label, value]) => <div key={label} className="min-w-0"><p className="text-xs text-muted-foreground">{label}</p><p className="break-words text-sm font-medium">{value}</p></div>)}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           {[[shiftGroups.length, "Turnos registrados", ""], [totalBoxes, "Cajas", ""], [totals.inspected, "Inspeccionadas", ""], [totals.accepted, "Aceptadas", "text-green-600"], [totals.rejected, "Rechazadas", "text-red-600"], [totals.reworked, "Retrabajadas", "text-amber-600"]].map(([value, label, color]) => <div key={String(label)} className="rounded-lg border bg-card p-3 text-center"><p className={`text-xl font-bold ${color}`}>{value}</p><p className="text-xs uppercase text-muted-foreground">{label}</p></div>)}
         </div>
 
@@ -106,8 +133,8 @@ export default async function MisReporteDetallePage({ params }: Props) {
             <h2 className="text-base font-semibold">Resultado general</h2>
             <p className="mt-1 text-sm text-muted-foreground">Distribución acumulada de todo el reporte</p>
           </div>
-          <div className="grid items-center gap-8 p-5 md:grid-cols-[minmax(260px,360px)_1fr] md:p-8">
-            <div className="mx-auto w-full max-w-[300px]">
+          <div className="grid items-center gap-6 p-4 sm:p-5 md:grid-cols-[minmax(220px,320px)_minmax(0,1fr)] md:gap-8 md:p-8">
+            <div className="mx-auto w-full max-w-[230px] sm:max-w-[300px]">
               <div
                 className="relative aspect-square rounded-full p-[22px] shadow-lg ring-1 ring-black/5"
                 style={{ background: chartBackground }}
@@ -115,7 +142,7 @@ export default async function MisReporteDetallePage({ params }: Props) {
                 aria-label={`Resultado total: ${totals.accepted} aceptadas, ${totals.rejected} rechazadas y ${totals.reworked} retrabajadas`}
               >
                 <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-card text-center shadow-inner">
-                  <span className="text-4xl font-bold tracking-tight">{totals.inspected}</span>
+                  <span className="text-3xl font-bold tracking-tight sm:text-4xl">{totals.inspected}</span>
                   <span className="mt-1 text-xs font-medium uppercase tracking-widest text-muted-foreground">Inspeccionadas</span>
                 </div>
               </div>
@@ -158,7 +185,7 @@ export default async function MisReporteDetallePage({ params }: Props) {
               <p className="mt-1 text-sm text-muted-foreground">Archivos asociados al reporte y a su instrucción de trabajo.</p>
             </div>
           </div>
-          <div className="p-5">
+          <div className="p-4 sm:p-5">
             {generalAttachments.length === 0 ? (
               <p className="text-sm text-muted-foreground">No hay documentos generales cargados.</p>
             ) : (
@@ -194,7 +221,7 @@ export default async function MisReporteDetallePage({ params }: Props) {
                 }))
             );
             return <div key={groupKey} className="space-y-3 rounded-lg border bg-card p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="font-semibold">{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</h3><p className="text-xs text-muted-foreground">{details.map((item) => item.inspector_name).filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(", ") || "Sin inspector"}</p></div><p className="text-sm font-medium">{summary.hours.toFixed(2)} horas totales del turno</p></div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="font-semibold">{formatDateDisplay(details[0]?.inspection_date ?? null)} · Turno {shift}</h3><p className="text-xs text-muted-foreground">{details.map((item) => item.inspector_name).filter(Boolean).filter((name, index, all) => all.indexOf(name) === index).join(", ") || "Sin inspector"}</p></div><p className="text-sm font-medium sm:text-right">{summary.hours.toFixed(2)} horas totales del turno</p></div>
               <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 {[["Inspeccionadas", summary.inspected, ""], ["Aceptadas", summary.accepted, "text-green-600"], ["Rechazadas", summary.rejected, "text-red-600"], ["Retrabajadas", summary.reworked, "text-amber-600"]].map(([label, value, color]) => (
                   <div key={String(label)} className="rounded-md bg-muted/30 p-3">

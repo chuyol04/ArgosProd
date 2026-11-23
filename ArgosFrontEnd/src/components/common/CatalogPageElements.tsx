@@ -13,6 +13,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50];
+
 type CatalogPageHeaderProps = {
   title: string;
   description: string;
@@ -109,6 +111,7 @@ type CatalogPaginationProps = {
   onRowsPerPageChange: (value: string) => void;
   onGoToPage: (page: number) => void;
   total?: number;
+  pageSizeOptions?: number[];
 };
 
 export function CatalogPagination({
@@ -118,6 +121,7 @@ export function CatalogPagination({
   onRowsPerPageChange,
   onGoToPage,
   total,
+  pageSizeOptions = DEFAULT_PAGE_SIZE_OPTIONS,
 }: CatalogPaginationProps) {
   return (
     <div className="flex flex-col items-center justify-between gap-4 text-sm sm:flex-row">
@@ -129,9 +133,9 @@ export function CatalogPagination({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-              <SelectItem value="50">50</SelectItem>
+              {pageSizeOptions.map((option) => (
+                <SelectItem key={option} value={String(option)}>{option}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

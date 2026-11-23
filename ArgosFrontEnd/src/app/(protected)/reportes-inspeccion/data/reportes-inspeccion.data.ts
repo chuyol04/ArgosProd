@@ -21,7 +21,11 @@ export async function fetchInspectionReports(
 
   if (!EXPRESS_BASE_URL) {
     console.error("EXPRESS_BASE_URL is not defined");
-    return { reports: [], total: 0 };
+    return {
+      reports: [],
+      total: 0,
+      loadError: { status: 500, message: "No fue posible conectar con el servicio." },
+    };
   }
 
   const cookieStore = await cookies();
@@ -29,7 +33,11 @@ export async function fetchInspectionReports(
 
   if (!session) {
     console.error("No session cookie");
-    return { reports: [], total: 0 };
+    return {
+      reports: [],
+      total: 0,
+      loadError: { status: 401, message: "Tu sesión no está disponible." },
+    };
   }
 
   const offset = (page - 1) * limit;
@@ -59,7 +67,14 @@ export async function fetchInspectionReports(
 
     if (!res.ok || !json.success) {
       console.error("Failed to fetch inspection reports:", json.motive);
-      return { reports: [], total: 0 };
+      return {
+        reports: [],
+        total: 0,
+        loadError: {
+          status: res.status,
+          message: json.motive || "No fue posible cargar los reportes.",
+        },
+      };
     }
 
     return {
@@ -68,7 +83,11 @@ export async function fetchInspectionReports(
     };
   } catch (error) {
     console.error("Error fetching inspection reports:", error);
-    return { reports: [], total: 0 };
+    return {
+      reports: [],
+      total: 0,
+      loadError: { status: 503, message: "No fue posible cargar los reportes." },
+    };
   }
 }
 
@@ -76,14 +95,20 @@ export async function fetchReportDashboard(): Promise<IReportDashboard> {
   const emptyDashboard = { total_hours: 0, hours_history: [] };
   if (!EXPRESS_BASE_URL) {
     console.error("EXPRESS_BASE_URL is not defined");
-    return emptyDashboard;
+    return {
+      ...emptyDashboard,
+      loadError: { status: 500, message: "No fue posible conectar con el servicio." },
+    };
   }
 
   const cookieStore = await cookies();
   const session = cookieStore.get("session")?.value;
   if (!session) {
     console.error("No session cookie");
-    return emptyDashboard;
+    return {
+      ...emptyDashboard,
+      loadError: { status: 401, message: "Tu sesión no está disponible." },
+    };
   }
 
   const queryParams = new URLSearchParams();
@@ -104,11 +129,20 @@ export async function fetchReportDashboard(): Promise<IReportDashboard> {
     const json = await res.json();
     if (!res.ok || !json.success) {
       console.error("Failed to fetch report dashboard:", json.motive);
-      return emptyDashboard;
+      return {
+        ...emptyDashboard,
+        loadError: {
+          status: res.status,
+          message: json.motive || "No fue posible cargar el resumen.",
+        },
+      };
     }
     return json.data ?? emptyDashboard;
   } catch (error) {
     console.error("Error fetching report dashboard:", error);
-    return emptyDashboard;
+    return {
+      ...emptyDashboard,
+      loadError: { status: 503, message: "No fue posible cargar el resumen." },
+    };
   }
 }

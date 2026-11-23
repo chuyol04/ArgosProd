@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useUrlInt, useUrlParams, useUrlString } from "@/lib/useUrlState";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import PageContainer from "@/components/layout/PageContainer";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CatalogEmptyState,
+  CatalogPagination,
+  CatalogSearch,
+} from "@/components/common/CatalogPageElements";
 import {
   Dialog,
   DialogContent,
@@ -24,26 +22,24 @@ import { deleteMediaFiles } from "@/app/(protected)/media/actions/media.actions"
 import { formatFileSize, mediaViewUrl, mediaDownloadUrl } from "@/lib/storage/fileUpload";
 import { IMediaListResponse, IMediaFile } from "@/app/(protected)/media/types/media.types";
 import {
-  Search,
   Trash2,
   Download,
   Eye,
-  ChevronLeft,
-  ChevronRight,
   Loader2,
   Image as ImageIcon,
   FileText,
   FileSpreadsheet,
   File as FileIcon,
-  Upload,
-  X,
   CheckSquare,
+  ImageOff,
 } from "lucide-react";
 
 interface MediaGalleryProps {
   initialData: IMediaListResponse;
   error?: string;
 }
+
+const MEDIA_PAGE_SIZES = [12, 20, 40, 60];
 
 function FileTypeIcon({ contentType, filename }: { contentType: string; filename: string }) {
   if (contentType?.startsWith("image/")) return <ImageIcon className="h-8 w-8 text-green-500" />;
@@ -68,10 +64,51 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function isImage(contentType: string, filename?: string) {
+  if (contentType?.startsWith("image/")) return true;
+  const ext = filename?.split(".").pop()?.toLowerCase() || "";
+  return ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext);
+}
+
+function MediaThumbnail({ file, onOpen }: { file: IMediaFile; onOpen: () => void }) {
+  const [imageState, setImageState] = useState<"loading" | "ready" | "error">("loading");
+
+  return (
+    <button
+      type="button"
+      className="relative flex aspect-square w-full items-center justify-center overflow-hidden bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      onClick={onOpen}
+      aria-label={`Vista previa de ${file.filename}`}
+    >
+      {isImage(file.contentType, file.filename) && imageState !== "error" ? (
+        <>
+          <img
+            src={mediaViewUrl(file._id)}
+            alt={file.filename}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onLoad={() => setImageState("ready")}
+            onError={() => setImageState("error")}
+          />
+          {imageState === "loading" ? <span className="absolute inset-0 animate-pulse bg-muted" /> : null}
+        </>
+      ) : imageState === "error" ? (
+        <span className="flex flex-col items-center gap-2 p-3 text-xs text-muted-foreground">
+          <ImageOff className="h-8 w-8" aria-hidden="true" />
+          No se pudo cargar
+        </span>
+      ) : (
+        <FileTypeIcon contentType={file.contentType} filename={file.filename} />
+      )}
+    </button>
+  );
+}
+
 export function MediaGallery({ initialData, error }: MediaGalleryProps) {
+  const router = useRouter();
   const [qSearch] = useUrlString("search");
-  const [qLimit] = useUrlInt("limit", 20);
-  const [qPage, setQPage] = useUrlInt("page", 1);
+  const [urlLimit] = useUrlInt("limit", 20);
+  const [urlPage, setQPage] = useUrlInt("page", 1);
   const setUrlParams = useUrlParams();
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -79,18 +116,13 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [previewFile, setPreviewFile] = useState<IMediaFile | null>(null);
   const [searchInput, setSearchInput] = useState(qSearch);
+  const [operationError, setOperationError] = useState<string | null>(null);
 
   const files = initialData.files;
   const total = initialData.total;
-  const currentPage = qPage;
-  const rowsPerPage = qLimit;
+  const currentPage = Math.max(urlPage, 1);
+  const rowsPerPage = MEDIA_PAGE_SIZES.includes(urlLimit) ? urlLimit : 20;
   const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
-
-  const isImage = (contentType: string, filename?: string) => {
-    if (contentType?.startsWith("image/")) return true;
-    const ext = filename?.split(".").pop()?.toLowerCase() || "";
-    return ["jpg", "jpeg", "png", "gif", "webp", "svg"].includes(ext);
-  };
 
   const toggleSelect = useCallback((id: string) => {
     setSelectedIds((prev) => {
@@ -115,42 +147,40 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
 
   const handleDelete = async () => {
     if (selectedIds.size === 0) return;
+    setOperationError(null);
     setIsDeleting(true);
     try {
       const result = await deleteMediaFiles(Array.from(selectedIds));
       if (result.deleted > 0) {
         setSelectedIds(new Set());
         setConfirmDelete(false);
-        // Trigger re-fetch by resetting page
-        setQPage(currentPage);
-        window.location.reload();
+        router.refresh();
       }
       if (result.errors.length > 0) {
-        alert(`Errores al eliminar: ${result.errors.join(", ")}`);
+        setOperationError(`No se eliminaron todos los archivos: ${result.errors.join(", ")}`);
       }
     } catch {
-      alert("Error al eliminar archivos");
+      setOperationError("No fue posible eliminar los archivos. Intenta nuevamente.");
     } finally {
       setIsDeleting(false);
     }
   };
 
   return (
-    <PageContainer className="max-w-6xl space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground lg:text-2xl">
-            Media
+    <PageContainer className="max-w-6xl space-y-5 lg:space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold text-balance text-foreground lg:text-3xl">
+            Archivos y evidencias
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {total} archivo{total !== 1 ? "s" : ""} almacenado{total !== 1 ? "s" : ""}
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Consulta y administra los archivos almacenados. {total} archivo{total !== 1 ? "s" : ""} disponible{total !== 1 ? "s" : ""}.
           </p>
         </div>
         {selectedIds.size > 0 && (
           <Button
             variant="destructive"
-            size="sm"
+            className="min-h-11 w-full sm:w-auto"
             onClick={() => setConfirmDelete(true)}
           >
             <Trash2 className="mr-1.5 h-4 w-4" />
@@ -159,73 +189,49 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
         )}
       </div>
 
-      {error && (
-        <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
+      {(error || operationError) && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
+          {operationError || `No fue posible cargar los archivos. ${error}`}
         </div>
       )}
 
-      {/* Search & Controls */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 gap-2">
-          <Input
-            aria-label="Buscar archivos por nombre"
-            placeholder="Buscar por nombre de archivo..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            className="max-w-sm"
-          />
-          <Button variant="outline" size="icon" onClick={handleSearch} aria-label="Buscar archivos">
-            <Search className="h-4 w-4" />
-          </Button>
-        </div>
-        <div className="flex items-center gap-2">
+      <div className="grid gap-4 rounded-lg border bg-card p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        <CatalogSearch
+          id="media-search"
+          label="Buscar archivos"
+          placeholder="Nombre de archivo"
+          value={searchInput}
+          onChange={setSearchInput}
+          onSubmit={handleSearch}
+        />
+        <div className="flex items-center">
           <Button
             variant="outline"
-            size="sm"
+            className="min-h-11 w-full md:w-auto"
             onClick={toggleSelectAll}
+            disabled={files.length === 0}
           >
             <CheckSquare className="mr-1.5 h-4 w-4" />
             {selectedIds.size === files.length && files.length > 0
               ? "Deseleccionar"
               : "Seleccionar todo"}
           </Button>
-          <Select
-            value={String(rowsPerPage)}
-            onValueChange={(val) => {
-              setUrlParams({ limit: Number(val), page: null });
-            }}
-          >
-            <SelectTrigger className="w-[100px]" aria-label="Archivos por página">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="12">12</SelectItem>
-              <SelectItem value="20">20</SelectItem>
-              <SelectItem value="40">40</SelectItem>
-              <SelectItem value="60">60</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
-      {/* Gallery Grid */}
       {files.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed p-12 text-center">
-          <Upload className="h-10 w-10 text-muted-foreground mb-3" />
-          <p className="text-sm text-muted-foreground">
-            No hay archivos multimedia
-          </p>
-        </div>
+        <CatalogEmptyState
+          title={qSearch ? "Sin coincidencias" : "No hay archivos almacenados"}
+          description={qSearch ? "Prueba con otro nombre de archivo." : "Los documentos y evidencias aparecerán aquí cuando se carguen desde los flujos operativos."}
+        />
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
           {files.map((file) => {
             const selected = selectedIds.has(file._id);
             return (
-              <div
+              <article
                 key={file._id}
-                className={`group relative rounded-lg border overflow-hidden bg-card transition-colors ${
+                className={`relative overflow-hidden rounded-lg border bg-card transition-colors ${
                   selected ? "ring-2 ring-primary border-primary" : ""
                 }`}
               >
@@ -239,35 +245,22 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                   />
                 </div>
 
-                {/* Thumbnail */}
-                {isImage(file.contentType, file.filename) ? (
-                  <div
-                    className="aspect-square cursor-pointer"
-                    onClick={() => setPreviewFile(file)}
-                  >
-                    <img
-                      src={mediaViewUrl(file._id)}
-                      alt={file.filename}
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="aspect-square flex flex-col items-center justify-center bg-muted/30 cursor-pointer"
-                    onClick={() => setPreviewFile(file)}
-                  >
-                    <FileTypeIcon contentType={file.contentType} filename={file.filename} />
-                  </div>
-                )}
+                <MediaThumbnail file={file} onOpen={() => setPreviewFile(file)} />
 
-                {/* Actions overlay */}
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity motion-reduce:transition-none flex items-center justify-center gap-2 pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto [@media(hover:none)]:opacity-100 [@media(hover:none)]:pointer-events-auto">
+                <div className="space-y-2 border-t p-3">
+                  <div className="space-y-0.5">
+                    <p className="truncate text-xs font-medium" title={file.filename}>{file.filename}</p>
+                    <div className="flex flex-col text-xs text-muted-foreground xl:flex-row xl:justify-between">
+                      <span>{formatFileSize(file.length)}</span>
+                      <span>{formatDate(file.uploadDate)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-1 border-t pt-2">
                   <Button
                     type="button"
                     variant="secondary"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-11 w-11"
                     onClick={() => setPreviewFile(file)}
                     aria-label={`Vista previa de ${file.filename}`}
                     title="Vista previa"
@@ -278,7 +271,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                     asChild
                     variant="secondary"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-11 w-11"
                     title="Descargar"
                   >
                     <a href={mediaDownloadUrl(file._id)} download aria-label={`Descargar ${file.filename}`}>
@@ -289,7 +282,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                     type="button"
                     variant="destructive"
                     size="icon"
-                    className="h-8 w-8"
+                    className="h-11 w-11"
                     onClick={() => {
                       setSelectedIds(new Set([file._id]));
                       setConfirmDelete(true);
@@ -299,56 +292,31 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
-                </div>
-
-                {/* Info footer */}
-                <div className="p-2 border-t space-y-0.5">
-                  <p className="text-xs font-medium truncate" title={file.filename}>
-                    {file.filename}
-                  </p>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>{formatFileSize(file.length)}</span>
-                    <span>{formatDate(file.uploadDate)}</span>
                   </div>
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>
       )}
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Página {currentPage} de {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={currentPage <= 1}
-              aria-label="Página anterior"
-              onClick={() => setQPage(currentPage - 1)}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              disabled={currentPage >= totalPages}
-              aria-label="Página siguiente"
-              onClick={() => setQPage(currentPage + 1)}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
+      {total > 0 && (
+        <div className="rounded-lg border bg-card p-3">
+          <CatalogPagination
+            rowsPerPage={rowsPerPage}
+            currentPage={currentPage}
+            hasMore={currentPage < totalPages}
+            onRowsPerPageChange={(value) => setUrlParams({ limit: Number(value), page: null })}
+            onGoToPage={setQPage}
+            total={total}
+            pageSizeOptions={MEDIA_PAGE_SIZES}
+          />
         </div>
       )}
 
       {/* Preview Dialog */}
       <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
-        <DialogContent className="max-w-4xl max-h-[90vh]">
+        <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="truncate pr-8">
               {previewFile?.filename}
@@ -372,15 +340,15 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
                   </p>
                 </div>
               )}
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <div className="space-y-1">
+              <div className="flex flex-col gap-4 text-sm text-muted-foreground sm:flex-row sm:items-end sm:justify-between">
+                <div className="min-w-0 space-y-1">
                   <p>Tipo: {previewFile.contentType}</p>
                   <p>Tamaño: {formatFileSize(previewFile.length)}</p>
                   <p>Fecha: {formatDate(previewFile.uploadDate)}</p>
-                  <p className="font-mono text-xs">ID: {previewFile._id}</p>
+                  <p className="break-all text-xs">ID: {previewFile._id}</p>
                 </div>
                 <a href={mediaDownloadUrl(previewFile._id)} download>
-                  <Button variant="outline" size="sm">
+                  <Button variant="outline" className="min-h-11 w-full sm:w-auto">
                     <Download className="mr-1.5 h-4 w-4" />
                     Descargar
                   </Button>
@@ -395,7 +363,7 @@ export function MediaGallery({ initialData, error }: MediaGalleryProps) {
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
-            <DialogTitle>Confirmar Eliminación</DialogTitle>
+            <DialogTitle>Confirmar eliminación</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             ¿Estás seguro de que deseas eliminar {selectedIds.size} archivo

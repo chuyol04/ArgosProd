@@ -10,8 +10,10 @@ type Props = {
 export default async function MediaPage({ searchParams }: Props) {
   const params = await searchParams;
   const search = typeof params.search === "string" ? params.search : undefined;
-  const limit = typeof params.limit === "string" ? parseInt(params.limit, 10) : 20;
-  const page = typeof params.page === "string" ? parseInt(params.page, 10) : 1;
+  const requestedLimit = typeof params.limit === "string" ? parseInt(params.limit, 10) : 20;
+  const requestedPage = typeof params.page === "string" ? parseInt(params.page, 10) : 1;
+  const limit = [12, 20, 40, 60].includes(requestedLimit) ? requestedLimit : 20;
+  const page = Number.isInteger(requestedPage) ? Math.max(requestedPage, 1) : 1;
 
   const result = await fetchMediaList(search || null, limit, page);
 

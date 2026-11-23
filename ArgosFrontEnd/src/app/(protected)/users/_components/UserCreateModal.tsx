@@ -95,11 +95,14 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
         });
     };
 
-    const handleCopy = () => {
+    const handleCopy = async () => {
         if (tempPassword) {
-            navigator.clipboard.writeText(tempPassword);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
+            try {
+                await navigator.clipboard.writeText(tempPassword);
+                setCopied(true);
+            } catch {
+                setError("No fue posible copiar la contraseña. Selecciónala manualmente.");
+            }
         }
     };
 
@@ -107,28 +110,30 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
     if (tempPassword) {
         return (
             <Dialog open={open} onOpenChange={onOpenChange}>
-                <DialogContent className="sm:max-w-[420px]">
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[420px]">
                     <DialogHeader>
-                        <DialogTitle>Usuario Creado</DialogTitle>
+                        <DialogTitle>Usuario creado</DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
+                        {error ? <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive" role="alert">{error}</div> : null}
                         <p className="text-sm text-muted-foreground">
                             El usuario <span className="font-medium text-foreground">{email}</span> ha sido creado exitosamente.
                         </p>
 
                         <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
                             <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                                Contraseña Temporal
+                                Contraseña temporal
                             </Label>
                             <div className="flex items-center gap-2">
-                                <code className="flex-1 rounded bg-background px-3 py-2 text-sm font-mono font-bold tracking-wider border">
+                                <code className="min-w-0 flex-1 break-all rounded border bg-background px-3 py-2 font-mono text-sm font-bold tracking-wider">
                                     {tempPassword}
                                 </code>
                                 <Button
                                     variant="outline"
                                     size="icon"
-                                    className="h-9 w-9"
+                                    className="h-11 w-11 shrink-0"
                                     onClick={handleCopy}
+                                    aria-label="Copiar contraseña temporal"
                                 >
                                     {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
                                 </Button>
@@ -152,9 +157,9 @@ export default function UserCreateModal({ open, onOpenChange }: UserCreateModalP
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[450px]">
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[450px]">
                 <DialogHeader>
-                    <DialogTitle>Crear Usuario</DialogTitle>
+                    <DialogTitle>Crear usuario</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 py-2" aria-busy={isPending}>
                     {error && (

@@ -19,20 +19,25 @@ export default async function RolesPage() {
         fetchUsers(null, 1000, 0),
     ]);
     const users = usersResult.data?.users ?? [];
+    const usersByRole = new Map<string, typeof users>();
+    for (const user of users) {
+        for (const roleName of user.roles?.split(",").map((name) => name.trim()) ?? []) {
+            const assigned = usersByRole.get(roleName) ?? [];
+            assigned.push(user);
+            usersByRole.set(roleName, assigned);
+        }
+    }
 
     return (
         <PageContainer className="max-w-6xl space-y-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex items-center gap-3">
-                    <ShieldCheck className="h-7 w-7 text-muted-foreground" />
-                    <div>
-                        <h1 className="text-xl font-bold text-foreground lg:text-2xl">Roles</h1>
-                        <p className="text-sm text-muted-foreground">
-                            Consulta los niveles de acceso y sus usuarios asignados.
-                        </p>
-                    </div>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div className="space-y-1">
+                    <h1 className="text-2xl font-bold text-balance text-foreground lg:text-3xl">Roles</h1>
+                    <p className="max-w-2xl text-sm text-muted-foreground">
+                        Consulta los niveles de acceso y las cuentas que los tienen asignados.
+                    </p>
                 </div>
-                <Button asChild>
+                <Button asChild className="min-h-11 w-full sm:w-auto">
                     <Link href="/users">
                         <UserCog className="mr-1.5 h-4 w-4" />
                         Administrar usuarios
@@ -40,13 +45,13 @@ export default async function RolesPage() {
                 </Button>
             </div>
 
-            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
-                Los permisos dependen del nombre del rol. Para conservar las reglas de acceso,
-                los roles se consultan aquí y se asignan desde la sección de Usuarios.
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <p>Los permisos dependen del nombre del rol. Los roles se consultan aquí y se asignan desde Usuarios.</p>
             </div>
 
             {usersResult.error && (
-                <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
                     No fue posible cargar los usuarios asignados: {usersResult.error}
                 </div>
             )}
@@ -58,19 +63,14 @@ export default async function RolesPage() {
             ) : (
                 <div className="grid gap-4 md:grid-cols-2">
                     {roles.map((role) => {
-                        const assignedUsers = users.filter((user) =>
-                            user.roles
-                                ?.split(",")
-                                .map((name) => name.trim())
-                                .includes(role.name)
-                        );
+                        const assignedUsers = usersByRole.get(role.name) ?? [];
 
                         return (
                             <section key={role.id} className="rounded-lg border bg-card p-5 shadow-sm">
                                 <div className="flex items-start justify-between gap-4">
-                                    <div>
+                                    <div className="min-w-0">
                                         <h2 className="text-lg font-semibold">{role.name}</h2>
-                                        <p className="mt-1 text-sm text-muted-foreground">
+                                        <p className="mt-1 break-words text-sm text-muted-foreground">
                                             {role.description?.trim() || ROLE_SCOPE[role.name] || "Sin descripción."}
                                         </p>
                                     </div>
@@ -88,15 +88,20 @@ export default async function RolesPage() {
                                         <p className="text-sm text-muted-foreground">Ningún usuario asignado.</p>
                                     ) : (
                                         <div className="flex flex-wrap gap-2">
-                                            {assignedUsers.map((user) => (
+                                            {assignedUsers.slice(0, 8).map((user) => (
                                                 <span
                                                     key={user.id}
-                                                    className="rounded-full border bg-background px-2.5 py-1 text-xs"
+                                                    className="max-w-full truncate rounded-full border bg-background px-2.5 py-1 text-xs"
                                                     title={user.email}
                                                 >
                                                     {user.name}
                                                 </span>
                                             ))}
+                                            {assignedUsers.length > 8 ? (
+                                                <span className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                                                    +{assignedUsers.length - 8} más
+                                                </span>
+                                            ) : null}
                                         </div>
                                     )}
                                 </div>

@@ -79,22 +79,24 @@ Resultado:
 
 ### UI/UX-5 — Portal del cliente
 
-Estado: siguiente fase.
+Estado: completada.
 
-- Diferenciar cero real, error, acceso restringido y no encontrado.
-- Mejorar lectura móvil de reportes, horas y gráficas.
-- Revisar evidencias, documentos y carga de medios.
-- Medir consultas antes de agrupar o cargar bajo demanda.
+- Se diferenciaron cero real, error, acceso restringido y no encontrado sin revelar recursos fuera del alcance del cliente.
+- Se mejoró la lectura móvil de tarjetas, horas, gráfica, resumen y detalle de reportes.
+- Evidencias y documentos conservan las rutas autorizadas; la información de cada medio se consulta al abrir la vista previa y muestra carga o fallo explícitos.
+- Presupuesto medido: la lista mantiene 2 consultas paralelas; el detalle mantiene 1 consulta de reporte y 1 por detalle para incidencias. No se añadió agrupación global porque ampliaría el volumen y el alcance de datos.
 
 ### UI/UX-6 — Administración y cierre
 
-Estado: pendiente.
+Estado: completada.
 
-- Usuarios y roles.
-- Archivos y evidencias.
-- Cambio de contraseña.
-- Acceso denegado y estados auxiliares.
-- Consistencia final de búsqueda, paginación, estados y acciones.
+- Se unificaron encabezados, búsqueda, paginación, estados vacíos y acciones de usuarios y archivos, con tablas de escritorio y tarjetas móviles donde corresponde.
+- Roles muestra asignaciones de forma legible y evita trabajo repetido al agrupar los usuarios una sola vez.
+- Archivos y evidencias incorpora carga y fallo explícitos de miniaturas, controles táctiles visibles y vista previa adaptable sin alterar sus rutas ni permisos.
+- Cambio de contraseña se reorganizó como formulario accesible con validación, estados de envío y explicación del cierre de sesión.
+- Se añadieron estados coherentes para acceso denegado, página no encontrada y errores recuperables de rutas protegidas.
+- Los modales administrativos mejoraron su adaptación móvil, lectura de contenido largo y copia segura de contraseñas temporales.
+- Validación visual completada en 390 px y 1440 px sin desbordamiento horizontal; la validación integrada con roles y persistencia reales permanece separada al final de este documento.
 
 ### Alcance funcional separado
 

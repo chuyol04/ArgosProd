@@ -26,6 +26,12 @@ export interface IInspectionReport {
 export interface IInspectionReportsResponse {
   reports: IInspectionReport[];
   total: number;
+  loadError?: IDataLoadError;
+}
+
+export interface IDataLoadError {
+  status: number;
+  message: string;
 }
 
 export interface IReportHoursPoint {
@@ -37,6 +43,7 @@ export interface IReportHoursPoint {
 export interface IReportDashboard {
   total_hours: number;
   hours_history: IReportHoursPoint[];
+  loadError?: IDataLoadError;
 }
 
 export interface CreateInspectionReportData {

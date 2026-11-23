@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { FormEvent, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
+import { changePassword } from "@/app/(protected)/users/actions/users.actions";
+import PageContainer from "@/components/layout/PageContainer";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { changePassword } from "@/app/(protected)/users/actions/users.actions";
-import { ArrowLeft, Loader2, KeyRound } from "lucide-react";
 
 export default function ChangePasswordPage() {
     const router = useRouter();
@@ -18,106 +19,122 @@ export default function ChangePasswordPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = () => {
+    const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
         setError(null);
 
-        if (!password || password.length < 6) {
-            setError("La contraseña debe tener al menos 6 caracteres");
+        if (password.length < 6) {
+            setError("La contraseña debe tener al menos 6 caracteres.");
             return;
         }
         if (password !== confirmPassword) {
-            setError("Las contraseñas no coinciden");
+            setError("Las contraseñas no coinciden.");
             return;
         }
 
         startTransition(async () => {
             const result = await changePassword(password);
             if (result.success) {
-                // Logout after password change
                 await fetch("/api/auth/logout", { method: "POST" });
                 router.push("/login");
-            } else {
-                setError(result.error || "Error al cambiar contraseña");
+                return;
             }
+            setError(result.error || "No fue posible cambiar la contraseña.");
         });
     };
 
     return (
-        <div className="mx-auto max-w-md space-y-6 px-4 py-12">
-            <div className="flex items-center gap-3">
-                <Button variant="ghost" size="icon" onClick={() => router.back()}>
-                    <ArrowLeft className="h-5 w-5" />
-                </Button>
-                <h1 className="text-xl font-bold text-foreground">Cambiar Contraseña</h1>
-            </div>
-
-            <Card>
-                <CardHeader className="pb-3">
-                    <CardTitle className="text-sm font-medium flex items-center gap-2">
-                        <KeyRound className="h-4 w-4" />
-                        Nueva Contraseña
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                    {error && (
-                        <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-                            {error}
-                        </div>
-                    )}
-
-                    <div className="space-y-2">
-                        <Label htmlFor="password">Contraseña</Label>
-                        <Input
-                            id="password"
-                            type={showPassword ? "text" : "password"}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            placeholder="Mínimo 6 caracteres"
-                            disabled={isPending}
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label htmlFor="confirm">Confirmar Contraseña</Label>
-                        <Input
-                            id="confirm"
-                            type={showPassword ? "text" : "password"}
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            placeholder="Repite la contraseña"
-                            disabled={isPending}
-                            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                        />
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        <Checkbox
-                            id="show"
-                            checked={showPassword}
-                            onCheckedChange={(checked) => setShowPassword(checked === true)}
-                        />
-                        <Label htmlFor="show" className="text-sm cursor-pointer">
-                            Mostrar contraseña
-                        </Label>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground">
-                        Al confirmar, se cerrará tu sesión y deberás iniciar sesión con la nueva contraseña.
-                    </p>
-
+        <PageContainer className="max-w-lg py-6 sm:py-10">
+            <div className="space-y-6">
+                <div className="flex items-center gap-3">
                     <Button
-                        className="w-full"
-                        onClick={handleSubmit}
-                        disabled={isPending || !password || !confirmPassword}
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-11 w-11 shrink-0"
+                        onClick={() => router.back()}
+                        aria-label="Volver"
                     >
-                        {isPending ? (
-                            <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" />Cambiando...</>
-                        ) : (
-                            "Confirmar"
-                        )}
+                        <ArrowLeft className="h-5 w-5" aria-hidden="true" />
                     </Button>
-                </CardContent>
-            </Card>
-        </div>
+                    <div>
+                        <h1 className="text-2xl font-bold text-foreground">Cambiar contraseña</h1>
+                        <p className="mt-1 text-sm text-muted-foreground">Actualiza la contraseña de tu cuenta.</p>
+                    </div>
+                </div>
+
+                <Card>
+                    <CardHeader className="pb-3">
+                        <CardTitle className="flex items-center gap-2 text-base">
+                            <KeyRound className="h-4 w-4" aria-hidden="true" />
+                            Nueva contraseña
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <form className="space-y-4" onSubmit={handleSubmit}>
+                            {error ? (
+                                <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive" role="alert">
+                                    {error}
+                                </div>
+                            ) : null}
+
+                            <div className="space-y-2">
+                                <Label htmlFor="password">Contraseña nueva</Label>
+                                <Input
+                                    id="password"
+                                    name="new-password"
+                                    type={showPassword ? "text" : "password"}
+                                    value={password}
+                                    onChange={(event) => setPassword(event.target.value)}
+                                    placeholder="Mínimo 6 caracteres"
+                                    autoComplete="new-password"
+                                    minLength={6}
+                                    required
+                                    disabled={isPending}
+                                    aria-describedby="password-requirements"
+                                />
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="confirm">Confirmar contraseña</Label>
+                                <Input
+                                    id="confirm"
+                                    name="confirm-password"
+                                    type={showPassword ? "text" : "password"}
+                                    value={confirmPassword}
+                                    onChange={(event) => setConfirmPassword(event.target.value)}
+                                    placeholder="Repite la contraseña"
+                                    autoComplete="new-password"
+                                    minLength={6}
+                                    required
+                                    disabled={isPending}
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <Checkbox
+                                    id="show"
+                                    checked={showPassword}
+                                    onCheckedChange={(checked) => setShowPassword(checked === true)}
+                                />
+                                <Label htmlFor="show" className="cursor-pointer text-sm">Mostrar contraseñas</Label>
+                            </div>
+
+                            <p id="password-requirements" className="text-sm leading-6 text-muted-foreground">
+                                Usa al menos 6 caracteres. Al confirmar, se cerrará tu sesión y deberás ingresar con la nueva contraseña.
+                            </p>
+
+                            <Button className="min-h-11 w-full" type="submit" disabled={isPending || !password || !confirmPassword}>
+                                {isPending ? (
+                                    <><Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden="true" />Cambiando contraseña...</>
+                                ) : (
+                                    "Cambiar contraseña"
+                                )}
+                            </Button>
+                        </form>
+                    </CardContent>
+                </Card>
+            </div>
+        </PageContainer>
     );
 }
